@@ -1,0 +1,30 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+httpx = "*"
+pytest = "*"
+sqlalchemy = "*"
+alembic = "*"
+asyncpg = "*"
+python-multipart = "*"
+phonenumbers = "*"
+pydantic-settings = "*"
+pyjwt = "*"
+psycopg = "*"
+fastapi = {extras = ["standard"], version = "*"}
+uvicorn = {extras = ["standard"], version = "*"}
+yarl = "*"
+sqlalchemy-utils = "*"
+bcrypt = "*"
+python-jose = {extras = ["cryptography"], version = "*"}
+websockets = "*"
+pytest-xdist = "*"
+pydantic-extra-types = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.12"

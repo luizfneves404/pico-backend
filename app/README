@@ -1,0 +1,31 @@
+## random advice and guidelines
+
+If a column needs unique=True, don't add index=True, because of postgres stuff.
+
+if you create an enum in a migration, you may need to add this to the downgrade function:
+op.execute("DROP TYPE enum_name")
+
+always use "async with session.begin()" instead of weird blocks with commit() and rollback().
+
+When adding a new model, make sure to import it or the file it's in in the database.py file. If you need to add stuff to the declaration after the declaration of all models, put it in the init() function and call it in the database.py file.
+
+## Alembic cheat sheet:
+After changing models, run:
+alembic revision --autogenerate -m "message"
+
+to apply one migration:
+alembic upgrade +1
+
+to apply the migrations:
+alembic upgrade head
+
+to revert one migration:
+alembic downgrade -1
+
+to revert all migrations:
+alembic downgrade base
+
+to list migrations:
+alembic history
+
+
