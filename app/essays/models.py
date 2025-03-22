@@ -33,11 +33,7 @@ class EssayType(Base):
 
 
 class Essay(Base):
-    __table_args__ = (
-        UniqueConstraint(
-            "author_id", "essay_topic_id", name="unique_essay_per_user_per_topic"
-        ),
-    )
+    __table_args__ = (UniqueConstraint("author_id", "essay_topic_id"),)
     original_file: Mapped[str] = mapped_column(String(100))
     cleaned_text: Mapped[str] = mapped_column(Text)
     user_corrected_text: Mapped[str] = mapped_column(Text)
