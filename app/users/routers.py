@@ -1,10 +1,11 @@
+import logging
 from typing import Annotated
 
 import users.token as token
-import users.user_service as user_service
 from deps import CurrentUserDep, DBSessionDep
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from users import service
 from users.schemas import (
     RefreshRequest,
     TokenResponse,
@@ -14,6 +15,8 @@ from users.schemas import (
 )
 from users.token import TokenError
 
+logger = logging.getLogger(__name__)
+
 token_router = APIRouter(prefix="/token", tags=["token"])
 user_router = APIRouter(prefix="/users", tags=["users"])
 
@@ -22,8 +25,8 @@ user_router = APIRouter(prefix="/users", tags=["users"])
 async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db_session: DBSessionDep
 ):
-    user = await user_service.authenticate_user(
-        db_session, form_data.username, form_data.password
+    user = await service.authenticate_user(
+        db_session, form_data.username.strip(), form_data.password
     )
 
     if not user:
@@ -46,13 +49,13 @@ async def refresh_token(
         return TokenResponse(access=access, refresh=refresh)
     except TokenError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=e.message)
-    except user_service.UserNotFound:
+    except service.UserNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
         )
 
 
-@token_router.post("/verify", response_model=TokenResponse)
+@token_router.post("/verify")
 async def verify_token(verify_request: VerifyRequest, db_session: DBSessionDep) -> None:
     try:
         await token.process_token(db_session, verify_request.token)
@@ -61,11 +64,17 @@ async def verify_token(verify_request: VerifyRequest, db_session: DBSessionDep) 
 
 
 @user_router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-async def create_user(user_in: UserIn, db_session: DBSessionDep):
+async def create_user(
+    background_tasks: BackgroundTasks,
+    db_session: DBSessionDep,
+    user_in: UserIn,
+):
+    logger.info("Starting create_user")
     try:
-        db_user = await user_service.create_user(
+        db_user = await service.create_user(
+            background_tasks,
             db_session,
-            user_in.username,
+            user_in.username.strip(),
             user_in.password,
             user_in.phone_number,
             user_in.email,
@@ -77,21 +86,33 @@ async def create_user(user_in: UserIn, db_session: DBSessionDep):
             user_in.school,
             user_in.school_id,
         )
-    except user_service.UsernameAlreadyExists:
+    except service.UsernameAlreadyExists:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Username already exists"
+            status_code=status.HTTP_409_CONFLICT, detail="Username already exists"
         )
-    except user_service.PhoneNumberAlreadyExists:
+    except service.PhoneNumberAlreadyExists:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail="Phone number already exists",
         )
+    except service.EmailAlreadyExists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already exists",
+        )
+    except service.ReferredByNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Referred by not found",
+        )
+    logger.info(f"User with username {user_in.username} created successfully")
     return db_user
 
 
 @user_router.get("/me", response_model=UserOut, status_code=status.HTTP_200_OK)
 async def read_users_me(current_user: CurrentUserDep, db_session: DBSessionDep):
     await db_session.refresh(
-        current_user, ["chosen_college", "chosen_course", "referral_count"]
+        current_user,
+        ["school", "chosen_college", "chosen_course", "referral_count"],
     )
     return current_user

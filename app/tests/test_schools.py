@@ -1,24 +1,39 @@
-async def test_list_schools(client, school, school2):
+async def test_list_schools(client):
+    # Create two schools
+    school1_response = await client.post("/schools", json={"name": "School 1"})
+    assert school1_response.status_code == 201
+    school1 = school1_response.json()
+
+    school2_response = await client.post("/schools", json={"name": "School 2"})
+    assert school2_response.status_code == 201
+    school2 = school2_response.json()
+
+    # Get list of schools
     response = await client.get("/schools")
     assert response.status_code == 200
-    assert len(response.json()) == 2
     schools = response.json()
     assert len(schools) == 2
-    assert schools[0]["id"] == school["id"]
-    assert schools[0]["name"] == school["name"]
+    assert schools[0]["id"] == school1["id"]
+    assert schools[0]["name"] == school1["name"]
     assert schools[1]["id"] == school2["id"]
     assert schools[1]["name"] == school2["name"]
 
 
-async def test_get_school_detail(client, school):
-    response = await client.get(f"/schools/{school['id']}")
+async def test_get_school_detail(client):
+    # Create a school
+    create_response = await client.post("/schools", json={"name": "Test School"})
+    assert create_response.status_code == 201
+    school = create_response.json()
+
+    # Get school details
+    response = await client.get(f"/schools/{school['id']}/detail")
     assert response.status_code == 200
     assert response.json()["id"] == school["id"]
     assert response.json()["name"] == school["name"]
 
 
 async def test_get_school_detail_not_found(client):
-    response = await client.get(f"/schools/{9999}")
+    response = await client.get(f"/schools/{9999}/detail")
     assert response.status_code == 404
 
 

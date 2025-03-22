@@ -33,7 +33,7 @@ class VerifyRequest(BaseModel):
 class UserBase(BaseModel):
     model_config = ConfigDict(coerce_numbers_to_str=True, from_attributes=True)
 
-    username: str = Field(max_length=50)
+    username: str = Field(min_length=1, max_length=50)
 
     phone_number: PhoneNumber
     email: EmailStr

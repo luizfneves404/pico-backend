@@ -1,26 +1,14 @@
-from functools import lru_cache
 from typing import Annotated
 
-from config import Settings, settings
 from database import get_db_session
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from users import token as token_service
-from users.models import User as User
+from users.models import User
 
-ALGORITHM = "HS256"
-
-
-@lru_cache
-def get_settings():
-    return Settings()
-
-
-SECRET_KEY = settings.secret_key
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token/pair")
 
 DBSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 

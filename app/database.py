@@ -1,8 +1,12 @@
 import contextlib
+import logging
 from typing import AsyncIterator
 
 # all of these are needed so that the Base subclasses are registered
 import chatrooms.models  # noqa: F401
+import quiz.models  # noqa: F401
+import schools.models  # noqa: F401
+import tournaments.models  # noqa: F401
 import users.models  # noqa: F401
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
@@ -12,7 +16,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-users.models.init()
+logger = logging.getLogger(__name__)
 
 
 class DatabaseSessionManager:
@@ -32,6 +36,17 @@ class DatabaseSessionManager:
             autobegin=False,
             autoflush=False,
         )
+
+    @property
+    def engine(self) -> AsyncEngine:
+        """Returns the engine instance.
+
+        Raises:
+            IOError: If DatabaseSessionManager is not initialized.
+        """
+        if self._engine is None:
+            raise IOError("DatabaseSessionManager is not initialized")
+        return self._engine
 
     async def close(self) -> None:
         if self._engine is None:

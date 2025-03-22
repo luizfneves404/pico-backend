@@ -3,6 +3,7 @@ from contextvars import ContextVar
 from logging.config import fileConfig
 from typing import Any
 
+import database  # noqa: F401
 from alembic import context
 from alembic.environment import EnvironmentContext
 from base import Base

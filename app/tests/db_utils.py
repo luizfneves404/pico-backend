@@ -3,7 +3,7 @@ import os
 import uuid
 from argparse import Namespace
 from pathlib import Path
-from typing import AsyncIterator, Optional, Union
+from typing import Any, AsyncIterator, Optional, Union
 from urllib.parse import urlparse, urlunparse
 
 import sqlalchemy as sa
@@ -53,7 +53,9 @@ def alembic_config_from_url(pg_url: Optional[str] = None) -> AlembicConfig:
 
 
 @contextlib.asynccontextmanager
-async def tmp_database(db_url: str, suffix: str = "", **kwargs) -> AsyncIterator[str]:
+async def tmp_database(
+    db_url: str, suffix: str = "", **kwargs: Any
+) -> AsyncIterator[str]:
     parsed_url = urlparse(db_url)
     tmp_db_name = ".".join([uuid.uuid4().hex, "tests-base", suffix])
     tmp_db_url = urlunparse(parsed_url._replace(path=f"/{tmp_db_name}"))

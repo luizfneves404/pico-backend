@@ -7,9 +7,10 @@ import jwt
 from config import settings
 from fastapi import APIRouter
 from sqlalchemy.ext.asyncio import AsyncSession
-from users import user_service
+from users import service
 from users.models import User as UserDB
 
+JWT_ALGORITHM = "HS256"
 router = APIRouter(prefix="/token", tags=["token"])
 
 logger = logging.getLogger(__name__)
@@ -62,8 +63,12 @@ def generate_tokens(user: UserDB) -> tuple[str, str]:
         "token_type": "refresh",
     }
 
-    access_token = jwt.encode(access_payload, settings.secret_key, algorithm="HS256")
-    refresh_token = jwt.encode(refresh_payload, settings.secret_key, algorithm="HS256")
+    access_token: str = jwt.encode(
+        access_payload, settings.secret_key, algorithm=JWT_ALGORITHM
+    )
+    refresh_token: str = jwt.encode(
+        refresh_payload, settings.secret_key, algorithm=JWT_ALGORITHM
+    )
     return access_token, refresh_token
 
 
@@ -89,10 +94,10 @@ async def process_token(
         UserDBModel: The user associated with the token.
     """
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
+        payload = jwt.decode(token, settings.secret_key, algorithms=[JWT_ALGORITHM])
         if expected_type and payload.get("token_type") != expected_type:
             raise InvalidTokenError(f"Invalid {expected_type} token")
-        user = await user_service.get_user(db_session, id=payload.get("user_id"))
+        user = await service.get_user(db_session, id=payload.get("user_id"))
         if not user:
             raise UserNotFoundError("User not found")
         return user

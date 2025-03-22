@@ -1,16 +1,28 @@
-from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from base import Base
-from sqlalchemy import CheckConstraint, ForeignKey, Index, func, select
-from sqlalchemy.orm import Mapped, aliased, deferred, mapped_column, relationship
+from quiz.models import Session
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    ScalarSelect,
+    String,
+    UniqueConstraint,
+    func,
+    select,
+)
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import Mapped, aliased, mapped_column, relationship
 
 if TYPE_CHECKING:
     from chatrooms.models import Chatroom, Membership, Message
+    from quiz.models import JoinableSession, UserInfo
+    from schools.models import School
 
 
-class EducationLevel(Enum):
+class EducationLevel(StrEnum):
     MIDDLE_SCHOOL = "MS"
     FIRST_YEAR_HIGH_SCHOOL = "FYHS"
     SECOND_YEAR_HIGH_SCHOOL = "SYHS"
@@ -21,55 +33,56 @@ class EducationLevel(Enum):
 
 
 class User(Base):
-    __tablename__ = "user"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    username: Mapped[str] = mapped_column(unique=True)
-    email: Mapped[str] = mapped_column(unique=True)
-    phone_number: Mapped[str] = mapped_column(unique=True)
-    hashed_password: Mapped[str]
-    school_id: Mapped[int | None] = mapped_column(
-        ForeignKey("school.id"), nullable=True
-    )
-    school: Mapped["School"] = relationship(back_populates="users", lazy="raise_on_sql")
+    username: Mapped[str] = mapped_column(String(50), unique=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True)
+    phone_number: Mapped[str] = mapped_column(String(25), unique=True)
+    hashed_password: Mapped[str] = mapped_column(String(255))
+    is_superuser: Mapped[bool] = mapped_column(default=False, server_default="false")
 
     education_level: Mapped[EducationLevel] = mapped_column(
         default=EducationLevel.UNKNOWN
-    )  # no need for create_constraint=True since it is using a native enum, which already constrains
+    )
+    is_premium: Mapped[bool] = mapped_column(default=False)
+
+    commitment: Mapped[int] = mapped_column(default=20)
+
+    balance: Mapped[int] = mapped_column(
+        CheckConstraint("balance >= 0", name="user_balance_check"), default=0
+    )
+
+    is_bot: Mapped[bool] = mapped_column(default=False)
+    bot_difficulty: Mapped[float | None] = mapped_column(default=None)
+
+    signup_source: Mapped[str] = mapped_column(String(255))
+
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("school.id"))
+    school: Mapped["School | None"] = relationship(
+        back_populates="users", lazy="raise_on_sql"
+    )
 
     chosen_college_id: Mapped[int | None] = mapped_column(
-        ForeignKey("college.id"), nullable=True
+        ForeignKey("college.id"),
     )
-    chosen_college: Mapped["College"] = relationship(
+    chosen_college: Mapped["College | None"] = relationship(
         back_populates="users", lazy="raise_on_sql"
     )
 
     chosen_course_id: Mapped[int | None] = mapped_column(
-        ForeignKey("course.id"), nullable=True
+        ForeignKey("course.id"),
     )
-    chosen_course: Mapped["Course"] = relationship(
+    chosen_course: Mapped["Course | None"] = relationship(
         back_populates="users", lazy="raise_on_sql"
     )
 
-    is_premium: Mapped[bool] = mapped_column(default=False)
-
     referred_by_id: Mapped[int | None] = mapped_column(
-        ForeignKey("user.id"), nullable=True
+        ForeignKey("user.id"),
     )
-    referred_by: Mapped["User"] = relationship(
-        remote_side=[id], back_populates="referrals", lazy="raise_on_sql"
+    referred_by: Mapped["User | None"] = relationship(
+        remote_side=[Base.id], back_populates="referrals", lazy="raise_on_sql"
     )
     referrals: Mapped[list["User"]] = relationship(
         back_populates="referred_by", lazy="raise_on_sql"
     )
-
-    commitment: Mapped[int] = mapped_column(default=20)
-
-    balance: Mapped[int] = mapped_column(default=0)
-
-    is_bot: Mapped[bool] = mapped_column(default=False)
-    bot_difficulty: Mapped[float | None] = mapped_column(nullable=True, default=None)
 
     chatrooms: Mapped[list["Chatroom"]] = relationship(
         back_populates="members",
@@ -83,6 +96,20 @@ class User(Base):
     messages: Mapped[list["Message"]] = relationship(
         back_populates="sender", lazy="raise_on_sql"
     )
+    user_info: Mapped["UserInfo"] = relationship(
+        back_populates="user", lazy="raise_on_sql"
+    )
+    sessions_created: Mapped[list["Session"]] = relationship(
+        back_populates="created_by",
+        foreign_keys=[Session.created_by_id],
+        lazy="raise_on_sql",
+    )
+    sessions_participated: Mapped[list["JoinableSession"]] = relationship(
+        back_populates="participants",
+        secondary="session_participation",
+        lazy="raise_on_sql",
+        viewonly=True,
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -92,32 +119,49 @@ class User(Base):
             "is_bot = True AND bot_difficulty IS NOT NULL",
             name="bot_difficulty_check",
         ),
-        Index("ix_user_username_lower", func.lower(username), unique=True),
+        Index(
+            "ix_user_username_lower",
+            func.lower(username),
+            unique=True,
+        ),  # the username is stored as it comes (should be trimmed though), but we use this index to make queries case insensitive and disallow duplicates
+        Index("ix_user_email_lower", func.lower(email), unique=True),
     )
 
+    @hybrid_property
+    def referral_count(self) -> int:
+        return len(self.referrals)
 
-class School(Base):
-    __tablename__ = "school"
+    @referral_count.inplace.expression
+    @classmethod
+    def _referral_count_expression(cls) -> ScalarSelect[int]:
+        """Return a SQL expression for the count when used in a query."""
+        # Create an alias for the User table to use in the subquery
+        ReferredUser = aliased(User, name="referred_users")
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column()
-    users: Mapped[list["User"]] = relationship(
-        back_populates="school", lazy="raise_on_sql"
-    )
+        # Build the subquery with explicit FROM clause and correlation
+        referral_count = (
+            select(func.count())
+            .select_from(ReferredUser)
+            .where(ReferredUser.referred_by_id == cls.id)
+            .scalar_subquery()
+        )
+
+        return referral_count
+
+    def __str__(self):
+        return self.username
 
 
 class CourseCollege(Base):
-    __tablename__ = "course_college"
+    __table_args__ = (UniqueConstraint("course_id", "college_id"),)
 
-    course_id: Mapped[int] = mapped_column(ForeignKey("course.id"), primary_key=True)
-    college_id: Mapped[int] = mapped_column(ForeignKey("college.id"), primary_key=True)
+    course_id: Mapped[int] = mapped_column(ForeignKey("course.id"))
+    college_id: Mapped[int] = mapped_column(ForeignKey("college.id"))
 
 
 class College(Base):
-    __tablename__ = "college"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column()
+    name: Mapped[str] = mapped_column(unique=True)
+    user_submitted: Mapped[bool] = mapped_column()
     courses: Mapped[list["Course"]] = relationship(
         back_populates="colleges", secondary="course_college", lazy="raise_on_sql"
     )
@@ -127,23 +171,11 @@ class College(Base):
 
 
 class Course(Base):
-    __tablename__ = "course"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column()
+    name: Mapped[str] = mapped_column(unique=True)
+    user_submitted: Mapped[bool] = mapped_column()
     colleges: Mapped[list["College"]] = relationship(
         back_populates="courses", secondary="course_college", lazy="raise_on_sql"
     )
     users: Mapped[list["User"]] = relationship(
         back_populates="chosen_course", lazy="raise_on_sql"
-    )
-
-
-def init():
-    referral = aliased(User)
-    User.referral_count = deferred(
-        select(func.count(referral.id).label("referral_count"))
-        .where(referral.referred_by_id == User.id)
-        .scalar_subquery(),
-        raiseload=True,
     )

@@ -10,13 +10,25 @@ async def test_create_user_followed_by_jwt_and_user_me(client, user_factory):
             "school_id": user.school_id,
             "chosen_college": user.chosen_college.name,
             "chosen_course": user.chosen_course.name,
-            "education_level": user.education_level,
+            "education_level": user.education_level.value,
             "referred_by_username": "",
             "commitment": user.commitment,
         },
     )
     assert response.status_code == 201
-    user_id = response.json()["id"]
+    response_data = response.json()
+    user_id = response_data["id"]
+
+    # Check response data
+    assert response_data["username"] == user.username
+    assert response_data["phone_number"] == user.phone_number
+    assert response_data["email"] == user.email
+    assert response_data["school_id"] == user.school_id
+    assert response_data["commitment"] == user.commitment
+    assert response_data["education_level"] == user.education_level.value
+    assert response_data["chosen_college"] == user.chosen_college.name
+    assert response_data["chosen_course"] == user.chosen_course.name
+    assert response_data["referral_count"] == 0
 
     # Login with new user
     token_response = await client.post(
@@ -40,9 +52,39 @@ async def test_create_user_followed_by_jwt_and_user_me(client, user_factory):
     assert me_data["email"] == user.email
     assert me_data["school_id"] == user.school_id
     assert me_data["commitment"] == user.commitment
-    assert me_data["education_level"] == user.education_level
+    assert me_data["education_level"] == user.education_level.value
     assert me_data["chosen_college"] == user.chosen_college.name
     assert me_data["chosen_course"] == user.chosen_course.name
+
+
+async def test_create_user_whitespace(client, user_factory):
+    user = await user_factory(save=False)
+    response = await client.post(
+        "/users",
+        json={
+            "username": f"  {user.username}  ",
+            "password": "defaultpassword",
+            "phone_number": user.phone_number,
+            "email": user.email,
+            "school_id": user.school_id,
+            "chosen_college": user.chosen_college.name,
+            "chosen_course": user.chosen_course.name,
+            "education_level": user.education_level.value,
+        },
+    )
+    assert response.status_code == 201
+    response_data = response.json()
+    assert response_data["username"] == user.username
+
+    # Login with new user
+    token_response = await client.post(
+        "/token/pair",
+        data={
+            "username": user.username,
+            "password": "defaultpassword",
+        },
+    )
+    assert token_response.status_code == 200
 
 
 async def test_create_user_deprecated(client, user_factory):
@@ -54,16 +96,28 @@ async def test_create_user_deprecated(client, user_factory):
             "password": "defaultpassword",
             "phone_number": user.phone_number,
             "email": user.email,
-            "school": user.school_id,
+            "school": user.school.name,
             "chosen_college": user.chosen_college.name,
             "chosen_course": user.chosen_course.name,
-            "education_level": user.education_level,
+            "education_level": user.education_level.value,
             "referred_by_username": "",
             "commitment": user.commitment,
         },
     )
     assert response.status_code == 201
-    user_id = response.json()["id"]
+    response_data = response.json()
+    user_id = response_data["id"]
+
+    # Check response data
+    assert response_data["username"] == user.username
+    assert response_data["phone_number"] == user.phone_number
+    assert response_data["email"] == user.email
+    assert response_data["school"] == user.school.name
+    assert response_data["commitment"] == user.commitment
+    assert response_data["education_level"] == user.education_level.value
+    assert response_data["chosen_college"] == user.chosen_college.name
+    assert response_data["chosen_course"] == user.chosen_course.name
+    assert response_data["referral_count"] == 0
 
     # Login with new user
     token_response = await client.post(
@@ -87,316 +141,413 @@ async def test_create_user_deprecated(client, user_factory):
     assert me_data["email"] == user.email
     assert me_data["school"] == user.school.name
     assert me_data["commitment"] == user.commitment
-    assert me_data["education_level"] == user.education_level
+    assert me_data["education_level"] == user.education_level.value
     assert me_data["chosen_college"] == user.chosen_college.name
     assert me_data["chosen_course"] == user.chosen_course.name
 
 
-""" 
-    def test_create_user_fail_username_case_insensitive(self):
-        url = reverse("api:user_create")
-        username = self.user.username.upper()
-        user2_data = UserFactory.build()
-        user_dict = {
-            "username": username,
-            "password": "defaultpassword",
-            "phone_number": user2_data.phone_number,
-            "email": user2_data.email,
-            "school_id": user2_data.school.id,
-        }
-        response = self.client.post(url, user_dict, content_type="application/json")
-        self.assertEqual(response.status_code, 409)
-
-    def test_retrieve_user_me(self):
-        url = reverse("api:user_me")
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["id"], self.user.pk)
-        self.assertEqual(response.json()["username"], self.user.username)
-        self.assertEqual(response.json()["phone_number"], self.user.phone_number)
-        self.assertEqual(response.json()["email"], self.user.email)
-        self.assertEqual(response.json()["school_id"], self.user.school.id)
-        self.assertEqual(response.json()["commitment"], self.user.commitment)
-        self.assertEqual(response.json()["education_level"], self.user.education_level)
-
-    def test_retrieve_user_me_deprecated(self):
-        url = reverse("api:user_me")
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["id"], self.user.pk)
-        self.assertEqual(response.json()["username"], self.user.username)
-        self.assertEqual(response.json()["phone_number"], self.user.phone_number)
-        self.assertEqual(response.json()["email"], self.user.email)
-        self.assertEqual(response.json()["school"], self.user.school.name)
-        self.assertEqual(response.json()["commitment"], self.user.commitment)
-        self.assertEqual(response.json()["education_level"], self.user.education_level)
-
-    def test_update_username(self):
-        url = reverse("api:user_set_username")
-        data = {"new_username": "newname", "current_password": "defaultpassword"}
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.username, "newname")
-
-    def test_update_username_already_exists(self):
-        url = reverse("api:user_set_username")
-        data = {
-            "new_username": self.user_existing.username,
-            "current_password": "defaultpassword",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 409)
-        self.user.refresh_from_db()
-        self.assertNotEqual(self.user.username, self.user_existing.username)
-
-    def test_update_password(self):
-        url = reverse("api:user_set_password")
-        data = {
-            "new_password": "newpassword605",
-            "current_password": "defaultpassword",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertTrue(self.user.check_password("newpassword605"))
-
-    def test_update_phone_number(self):
-        url = reverse("api:user_set_phone_number")
-        data = {
-            "new_phone_number": "21999202390",
-            "current_password": "defaultpassword",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.phone_number, "tel:+55-21-99920-2390")
-
-    def test_update_phone_number_already_exists(self):
-        url = reverse("api:user_set_phone_number")
-        data = {
-            "new_phone_number": self.user_existing.phone_number,
-            "current_password": "defaultpassword",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 409)
-        self.user.refresh_from_db()
-        self.assertNotEqual(self.user.phone_number, self.user_existing.phone_number)
-
-    def test_update_phone_number_invalid(self):
-        url = reverse("api:user_set_phone_number")
-        data = {
-            "new_phone_number": "invalid",
-            "current_password": "defaultpassword",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 422)
-        self.user.refresh_from_db()
-        self.assertNotEqual(self.user.phone_number, "invalid")
-
-    def test_update_email(self):
-        url = reverse("api:user_set_email")
-        data = {
-            "new_email": "test@example.com",
-            "current_password": "defaultpassword",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.email, "test@example.com")
-
-    def test_update_email_already_exists(self):
-        url = reverse("api:user_set_email")
-        data = {
-            "new_email": self.user_existing.email,
-            "current_password": "defaultpassword",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 409)
-        self.user.refresh_from_db()
-        self.assertNotEqual(self.user.email, self.user_existing.email)
-
-    def test_update_email_invalid(self):
-        url = reverse("api:user_set_email")
-        data = {
-            "new_email": "invalid",
-            "current_password": "defaultpassword",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 422)
-        self.user.refresh_from_db()
-        self.assertNotEqual(self.user.email, "invalid")
-
-    def test_update_school(self):
-        url = reverse("api:user_set_school")
-        school = SchoolFactory.create()
-        data = {
-            "new_school_id": school.id,
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.school, school)
-
-    def test_update_school_deprecated(self):
-        url = reverse("api:user_set_school")
-        data = {
-            "new_school": "new_school",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.school.name, "new_school")
-
-    def test_update_school_to_blank(self):
-        url = reverse("api:user_set_school")
-        data = {
-            "new_school_id": None,
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.school, None)
-
-    def test_update_school_to_blank_deprecated(self):
-        url = reverse("api:user_set_school")
-        data = {
-            "new_school": "",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.school, None)
-
-    def test_update_chosen_college(self):
-        url = reverse("api:user_set_chosen_college")
-        data = {
-            "new_chosen_college": "new_chosen_college",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.chosen_college.name, "new_chosen_college")
-
-    def test_update_chosen_college_to_blank(self):
-        url = reverse("api:user_set_chosen_college")
-        data = {
-            "new_chosen_college": "",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.chosen_college, None)
-
-    def test_update_chosen_course(self):
-        url = reverse("api:user_set_chosen_course")
-        data = {
-            "new_chosen_course": "new_chosen_course",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.chosen_course.name, "new_chosen_course")
-
-    def test_update_chosen_course_to_blank(self):
-        url = reverse("api:user_set_chosen_course")
-        data = {
-            "new_chosen_course": "",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.chosen_course, None)
-
-    def test_update_commitment(self):
-        url = reverse("api:user_set_commitment")
-        data = {
-            "commitment": 10,
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.commitment, 10)
-
-    def test_update_education_level(self):
-        url = reverse("api:user_set_education_level")
-        data = {
-            "education_level": "COL",
-        }
-        response = self.client.patch(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.user.refresh_from_db()
-        self.assertEqual(self.user.education_level, "COL")
-
-    def test_destroy_user(self):
-        url = reverse("api:user_me")
-        data = {"current_password": "defaultpassword"}
-        response = self.client.delete(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 204)
-        self.assertFalse(User.objects.filter(pk=self.user.pk).exists())
-
-    def test_destroy_user_wrong_password(self):
-        url = reverse("api:user_me")
-        data = {"current_password": "wrongpassword"}
-        response = self.client.delete(url, data, content_type="application/json")
-        self.assertEqual(response.status_code, 401)
-        self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
-
-    def test_retrieve_user_stats_me(self):
-        url = reverse("api:user_stats_me")
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["id"], self.user.pk)
-        self.assertEqual(response.json()["username"], self.user.username)
-        self.assertEqual(response.json()["streak"], 0)
-        self.assertEqual(response.json()["done_today"], False)
-        self.assertEqual(response.json()["total_answers"], 0)
-        self.assertEqual(response.json()["correct_answers"], 0)
-        self.assertIn("area_expected_scores", response.json())
-        self.assertEqual(len(response.json()["area_expected_scores"]), 4)
-        for area in [
-            "Matemática",
-            "Linguagem",  # deveria ser Linguagens, mas o front ta esperando errado
-            "Ciências Humanas",
-            "Ciências da Natureza",
-        ]:
-            self.assertIn(area, response.json()["area_expected_scores"])
-            self.assertIsInstance(response.json()["area_expected_scores"][area], float)
-        self.assertIn("score", response.json())
-        self.assertIsInstance(response.json()["score"], float)
-
-    def test_retrieve_user_stats(self):
-        url = reverse("api:user_stats", args=[self.user.username])
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["id"], self.user.pk)
-        self.assertEqual(response.json()["username"], self.user.username)
-        self.assertEqual(response.json()["school_id"], self.user.school.id)
-        self.assertEqual(response.json()["school"], self.user.school.name)  # deprecated
-        self.assertEqual(
-            response.json()["chosen_college"],
-            "" if self.user.chosen_college is None else self.user.chosen_college.name,
-        )
-        self.assertEqual(
-            response.json()["chosen_course"],
-            "" if self.user.chosen_course is None else self.user.chosen_course.name,
-        )
-        self.assertEqual(response.json()["education_level"], self.user.education_level)
-
-        self.assertIn("area_expected_scores", response.json())
-        self.assertEqual(len(response.json()["area_expected_scores"]), 4)
-        for area in [
-            "Matemática",
-            "Linguagem",  # deveria ser Linguagens, mas o front ta esperando errado
-            "Ciências Humanas",
-            "Ciências da Natureza",
-        ]:
-            self.assertIn(area, response.json()["area_expected_scores"])
-            self.assertIsInstance(response.json()["area_expected_scores"][area], float)
-        self.assertIn("score", response.json())
-        self.assertIsInstance(response.json()["score"], float)
+async def test_create_user_fail_username_case_insensitive_and_whitespace(
+    client, user_factory
+):
+    user = await user_factory()
+    user2_data = await user_factory(save=False)
+    user_dict = {
+        "username": f"  {user.username.upper()}  ",
+        "password": "defaultpassword",
+        "phone_number": user2_data.phone_number,
+        "email": user2_data.email,
+        "school_id": user2_data.school.id,
+        "chosen_college": user2_data.chosen_college.name,
+        "chosen_course": user2_data.chosen_course.name,
+        "education_level": user2_data.education_level.value,
+        "commitment": user2_data.commitment,
+    }
+    response = await client.post("/users", json=user_dict)
+    assert response.status_code == 409
 
 
+async def test_create_user_fail_username_empty(client, user_factory):
+    user = await user_factory()
+    user_dict = {
+        "username": "",
+        "password": "defaultpassword",
+        "phone_number": user.phone_number,
+        "email": user.email,
+        "school_id": user.school.id,
+        "chosen_college": user.chosen_college.name,
+        "chosen_course": user.chosen_course.name,
+        "education_level": user.education_level.value,
+        "commitment": user.commitment,
+    }
+    response = await client.post("/users", json=user_dict)
+    assert response.status_code == 422
+
+
+async def test_retrieve_user_me(auth_client, user):
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["id"] == user.id
+    assert response_data["username"] == user.username
+    assert response_data["phone_number"] == user.phone_number
+    assert response_data["email"] == user.email
+    assert response_data["school_id"] == (user.school.id if user.school else None)
+    assert response_data["commitment"] == user.commitment
+    assert response_data["education_level"] == user.education_level.value
+
+
+async def test_retrieve_user_me_deprecated(auth_client, user):
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["id"] == user.id
+    assert response_data["username"] == user.username
+    assert response_data["phone_number"] == user.phone_number
+    assert response_data["email"] == user.email
+    assert response_data["school"] == (user.school.name if user.school else None)
+    assert response_data["commitment"] == user.commitment
+    assert response_data["education_level"] == user.education_level.value
+
+
+async def test_update_username(auth_client):
+    data = {"new_username": "newname", "current_password": "defaultpassword"}
+    response = await auth_client.patch("/users/set-username", json=data)
+    assert response.status_code == 204
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["username"] == "newname"
+
+
+async def test_update_username_already_exists(auth_client, user_factory):
+    existing_user = await user_factory()
+    data = {
+        "new_username": existing_user.username,
+        "current_password": "defaultpassword",
+    }
+    response = await auth_client.patch("/users/set-username", json=data)
+    assert response.status_code == 409
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["username"] != existing_user.username
+
+
+async def test_update_username_already_exists_case_insensitive_and_whitespace(
+    auth_client, user_factory
+):
+    existing_user = await user_factory()
+    data = {
+        "new_username": f"  {existing_user.username.upper()}  ",
+        "current_password": "defaultpassword",
+    }
+    response = await auth_client.patch("/users/set-username", json=data)
+    assert response.status_code == 409
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["username"] != existing_user.username
+
+
+async def test_update_password(auth_client, user):
+    data = {
+        "new_password": "newpassword605",
+        "current_password": "defaultpassword",
+    }
+    response = await auth_client.patch("/users/set-password", json=data)
+    assert response.status_code == 204
+    token_response = await auth_client.post(
+        "/token/pair",
+        data={"username": user.username, "password": "newpassword605"},
+    )
+    assert token_response.status_code == 200
+
+
+async def test_update_phone_number(auth_client, user):
+    data = {
+        "new_phone_number": "21999202390",
+        "current_password": "defaultpassword",
+    }
+    response = await auth_client.patch("/users/set-phone-number", json=data)
+    assert response.status_code == 204
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["phone_number"] == "tel:+55-21-99920-2390"
+
+
+async def test_update_phone_number_already_exists(auth_client, user, user_factory):
+    existing_user = await user_factory()
+    data = {
+        "new_phone_number": existing_user.phone_number,
+        "current_password": "defaultpassword",
+    }
+    response = await auth_client.patch("/users/set-phone-number", json=data)
+    assert response.status_code == 409
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["phone_number"] != existing_user.phone_number
+
+
+async def test_update_phone_number_invalid(auth_client, user):
+    data = {
+        "new_phone_number": "invalid",
+        "current_password": "defaultpassword",
+    }
+    response = await auth_client.patch("/users/set-phone-number", json=data)
+    assert response.status_code == 422
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["phone_number"] != "invalid"
+
+
+async def test_update_email(auth_client, user):
+    data = {
+        "new_email": "test@example.com",
+        "current_password": "defaultpassword",
+    }
+    response = await auth_client.patch("/users/set-email", json=data)
+    assert response.status_code == 204
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["email"] == "test@example.com"
+
+
+async def test_update_email_already_exists(auth_client, user_factory):
+    existing_user = await user_factory()
+    data = {
+        "new_email": existing_user.email,
+        "current_password": "defaultpassword",
+    }
+    response = await auth_client.patch("/users/set-email", json=data)
+    assert response.status_code == 409
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["email"] != existing_user.email
+
+
+async def test_update_email_invalid(auth_client, user):
+    data = {
+        "new_email": "invalid",
+        "current_password": "defaultpassword",
+    }
+    response = await auth_client.patch("/users/set-email", json=data)
+    assert response.status_code == 422
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["email"] != "invalid"
+
+
+async def test_update_school(auth_client, school_factory):
+    school = await school_factory()
+    data = {
+        "new_school_id": school.id,
+    }
+    response = await auth_client.patch("/users/set-school", json=data)
+    assert response.status_code == 204
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["school_id"] == school.id
+
+
+async def test_update_school_deprecated(auth_client):
+    data = {
+        "new_school": "new_school",
+    }
+    response = await auth_client.patch("/users/set-school", json=data)
+    assert response.status_code == 204
+    # get the user details
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["school"] == "new_school"
+
+
+async def test_update_school_to_blank(auth_client):
+    data = {
+        "new_school_id": None,
+    }
+    response = await auth_client.patch("/users/set-school", json=data)
+    assert response.status_code == 204
+    # get the user details
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["school"] == ""
+    assert response_data["school_id"] is None
+
+
+async def test_update_school_to_blank_deprecated(auth_client):
+    data = {
+        "new_school": "",
+    }
+    response = await auth_client.patch("/users/set-school", json=data)
+    assert response.status_code == 204
+    # get the user details
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["school"] == ""
+    assert response_data["school_id"] is None
+
+
+async def test_update_chosen_college(auth_client):
+    data = {
+        "new_chosen_college": "new_chosen_college",
+    }
+    response = await auth_client.patch("/users/set-chosen-college", json=data)
+    assert response.status_code == 204
+    # get the user details
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["chosen_college"] == "new_chosen_college"
+
+
+async def test_update_chosen_college_to_blank(auth_client):
+    data = {
+        "new_chosen_college": "",
+    }
+    response = await auth_client.patch("/users/set-chosen-college", json=data)
+    assert response.status_code == 204
+    # get the user details
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["chosen_college"] == ""
+
+
+async def test_update_chosen_course(auth_client):
+    data = {
+        "new_chosen_course": "new_chosen_course",
+    }
+    response = await auth_client.patch("/users/set-chosen-course", json=data)
+    assert response.status_code == 204
+    # get the user details
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["chosen_course"] == "new_chosen_course"
+
+
+async def test_update_chosen_course_to_blank(auth_client):
+    data = {
+        "new_chosen_course": "",
+    }
+    response = await auth_client.patch("/users/set-chosen-course", json=data)
+    assert response.status_code == 204
+    # get the user details
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["chosen_course"] == ""
+
+
+async def test_update_commitment(auth_client):
+    data = {
+        "commitment": 10,
+    }
+    response = await auth_client.patch("/users/set-commitment", json=data)
+    assert response.status_code == 204
+    # get the user details
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["commitment"] == 10
+
+
+async def test_update_education_level(auth_client):
+    data = {
+        "education_level": "COL",
+    }
+    response = await auth_client.patch("/users/set-education-level", json=data)
+    assert response.status_code == 204
+    # get the user details
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["education_level"] == "COL"
+
+
+async def test_destroy_user(auth_client):
+    data = {"current_password": "defaultpassword"}
+    response = await auth_client.delete("/users/me", json=data)
+    assert response.status_code == 204
+    # Check user doesn't exist
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 401
+
+
+async def test_destroy_user_wrong_password(auth_client):
+    data = {"current_password": "wrongpassword"}
+    response = await auth_client.delete("/users/me", json=data)
+    assert response.status_code == 401
+    # Check user still exists
+    response = await auth_client.get("/users/me")
+    assert response.status_code == 200
+
+
+async def test_retrieve_user_stats_me(auth_client, user):
+    response = await auth_client.get("/users/stats")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["id"] == user.id
+    assert response_data["username"] == user.username
+    assert response_data["streak"] == 0
+    assert response_data["done_today"] is False
+    assert response_data["total_answers"] == 0
+    assert response_data["correct_answers"] == 0
+    assert "area_expected_scores" in response_data
+    assert len(response_data["area_expected_scores"]) == 4
+    for area in [
+        "Matemática",
+        "Linguagem",  # deveria ser Linguagens, mas o front ta esperando errado
+        "Ciências Humanas",
+        "Ciências da Natureza",
+    ]:
+        assert area in response_data["area_expected_scores"]
+        assert isinstance(response_data["area_expected_scores"][area], float)
+    assert "score" in response_data
+    assert isinstance(response_data["score"], float)
+
+
+async def test_retrieve_user_stats(auth_client, user):
+    response = await auth_client.get(f"/users/stats/{user.username}")
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["id"] == user.id
+    assert response_data["username"] == user.username
+    assert response_data["school_id"] == user.school.id
+    assert response_data["school"] == user.school.name  # deprecated
+    assert response_data["chosen_college"] == (
+        "" if user.chosen_college is None else user.chosen_college.name
+    )
+    assert response_data["chosen_course"] == (
+        "" if user.chosen_course is None else user.chosen_course.name
+    )
+    assert response_data["education_level"] == user.education_level
+
+    assert "area_expected_scores" in response_data
+    assert len(response_data["area_expected_scores"]) == 4
+    for area in [
+        "Matemática",
+        "Linguagem",  # deveria ser Linguagens, mas o front ta esperando errado
+        "Ciências Humanas",
+        "Ciências da Natureza",
+    ]:
+        assert area in response_data["area_expected_scores"]
+        assert isinstance(response_data["area_expected_scores"][area], float)
+    assert "score" in response_data
+    assert isinstance(response_data["score"], float)
+
+
+"""
 class UserMiscellaneousTestCase(TestCase):
     @classmethod
     def setUpTestData(cls):
