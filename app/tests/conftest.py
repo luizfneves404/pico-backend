@@ -16,16 +16,18 @@ import pytest
 from alembic.command import upgrade
 from arq_client import ArqClientManager, arq_client_manager
 from base import Base
-from config import settings
 from database import DatabaseSessionManager, db_manager
 from fastapi import FastAPI
 from httpx import AsyncClient
+from quiz.models import Choice, Question, QuestionType, Quiz, SessionQuestion
 from redis_client import RedisManager, redis_manager
 from schools.models import School
 from sqlalchemy.ext.asyncio import AsyncSession
 from tests.db_utils import alembic_config_from_url, tmp_database
-from users.models import College, Course, EducationLevel, User
-from users.service import get_password_hash
+from tests.factories import UserFactory
+from users.models import College, Course, User
+
+from app.config import settings
 
 T = TypeVar("T")
 
@@ -100,9 +102,8 @@ async def migrated_postgres_template(pg_url: str) -> AsyncGenerator[str, None]:
 async def sessionmanager_for_tests(
     migrated_postgres_template: str,
 ) -> AsyncGenerator[DatabaseSessionManager, None]:
-    db_manager.init(db_url=migrated_postgres_template)
-    yield db_manager
-    await db_manager.close()
+    async with db_manager.connect_db(migrated_postgres_template):
+        yield db_manager
 
 
 @pytest.fixture()
@@ -190,6 +191,7 @@ USER_USERNAME_SEQUENCE = sequence(lambda n: f"testuser{n}")
 SCHOOL_NAME_SEQUENCE = sequence(lambda n: f"School {n}")
 COLLEGE_NAME_SEQUENCE = sequence(lambda n: f"College {n}")
 COURSE_NAME_SEQUENCE = sequence(lambda n: f"Course {n}")
+QUESTION_TEXT_SEQUENCE = sequence(lambda n: f"Test question {n}")
 DEFAULT_TEST_PASSWORD = "defaultpassword"
 
 
@@ -198,12 +200,12 @@ async def create_college_courses(
 ):
     if name is Auto:
         name = next(COLLEGE_NAME_SEQUENCE)
-    college = College(name=name)
+    college = College(name=name, user_submitted=True)
     session.add(college)
 
     courses: list[Course] = []
     for _ in range(num_courses):
-        course = Course(name=next(COURSE_NAME_SEQUENCE))
+        course = Course(name=next(COURSE_NAME_SEQUENCE), user_submitted=True)
         session.add(course)
         courses.append(course)
 
@@ -211,113 +213,17 @@ async def create_college_courses(
     return college
 
 
-@pytest.fixture
-async def school_factory(session: AsyncSession):
-    async def create_school(name: str = Auto) -> School:
-        if name is Auto:
-            name = next(SCHOOL_NAME_SEQUENCE)
-        school = School(name=name)
-        session.add(school)
-        return school
-
-    return create_school
+async def create_school(session: AsyncSession, name: str = Auto) -> School:
+    if name is Auto:
+        name = next(SCHOOL_NAME_SEQUENCE)
+    school = School(name=name, user_submitted=True)
+    session.add(school)
+    return school
 
 
-@pytest.fixture
-def user_factory(
-    session: AsyncSession, school_factory: Callable[[], Awaitable[School]]
-) -> Callable[[], Awaitable[User]]:
-    async def create_user(
-        username: str = Auto,
-        password: str = Auto,
-        phone_number: str = Auto,
-        email: str = Auto,
-        school_id: int | None = Auto,
-        chosen_college_id: int | None = Auto,
-        chosen_course_id: int | None = Auto,
-        education_level: str = Auto,
-        commitment: int = Auto,
-        is_premium: bool = Auto,
-        save: bool = True,
-    ) -> User:
-        async with session.begin():
-            hashed_password = get_password_hash(password or DEFAULT_TEST_PASSWORD)
-
-            # Handle school
-            if school_id is Auto:
-                school = await school_factory()
-            elif school_id is None:
-                school = None
-            else:
-                school = await session.get(School, school_id)
-
-            # Initialize college and course variables
-            chosen_college = None
-            chosen_course = None
-
-            # Handle college and course
-            if chosen_college_id is Auto and chosen_course_id is Auto:
-                chosen_college = await create_college_courses(session)
-                chosen_course = chosen_college.courses[0]
-            else:
-                if chosen_college_id is not Auto and chosen_college_id is not None:
-                    chosen_college = await session.get(College, chosen_college_id)
-
-                if chosen_course_id is not Auto and chosen_course_id is not None:
-                    chosen_course = await session.get(Course, chosen_course_id)
-
-            user = User(
-                username=username or next(USER_USERNAME_SEQUENCE),
-                hashed_password=hashed_password,
-                phone_number=phone_number or next(USER_PHONE_NUMBER_SEQUENCE),
-                email=email or next(USER_EMAIL_SEQUENCE),
-                school=school,
-                chosen_college=chosen_college,
-                chosen_course=chosen_course,
-                education_level=education_level
-                or EducationLevel.THIRD_YEAR_HIGH_SCHOOL,
-                commitment=commitment or 17,
-                is_premium=is_premium or False,
-                is_bot=False,
-                bot_difficulty=None,
-            )
-            if save:
-                session.add(user)
-            else:
-                user.chosen_college = chosen_college
-                user.chosen_course = chosen_course
-                if school:
-                    user.school = school
-                else:
-                    user.school_id = None
-            return user
-
-    return create_user
-
-
-@pytest.fixture
-def bot_factory(session: AsyncSession):
-    async def create_bot(
-        username: str = Auto,
-        bot_difficulty: float = Auto,
-    ) -> User:
-        hashed_password = get_password_hash("defaultpassword")
-        bot = User(
-            username=username or next(USER_USERNAME_SEQUENCE),
-            phone_number=next(USER_PHONE_NUMBER_SEQUENCE),
-            email=next(USER_EMAIL_SEQUENCE),
-            hashed_password=hashed_password,
-            is_bot=True,
-            bot_difficulty=bot_difficulty or 0.2,
-        )
-        return bot
-
-    return create_bot
-
-
-@pytest.fixture
-async def user(user_factory: Callable[[], Awaitable[User]]) -> User:
-    return await user_factory()
+@pytest.fixture()
+async def user(session: AsyncSession) -> User:
+    return await UserFactory.create()
 
 
 @pytest.fixture()
@@ -334,3 +240,181 @@ async def auth_client(client: AsyncClient, user: User) -> AsyncIterator[AsyncCli
     client.headers["Authorization"] = f"Bearer {token_data['access']}"
 
     yield client
+
+
+@pytest.fixture
+def question_factory(session: AsyncSession) -> Callable[..., Awaitable[Question]]:
+    async def create_question(
+        text: str = Auto,
+        subject: str = Auto,
+        difficulty: str = Auto,
+        source: str = Auto,
+        is_active: bool = Auto,
+        allow_resubmit: bool = Auto,
+        choices: list[dict[str, str | bool]] | None = None,
+        answer_text: str = Auto,
+        save: bool = True,
+    ) -> Question:
+        if text is Auto:
+            text = next(QUESTION_TEXT_SEQUENCE)
+        if subject is Auto:
+            subject = "Matemática"
+        if difficulty is Auto:
+            difficulty = "Fácil"
+        if source is Auto:
+            source = "ENEM"
+        if is_active is Auto:
+            is_active = True
+        if allow_resubmit is Auto:
+            allow_resubmit = False
+        if answer_text is Auto:
+            answer_text = "This is the correct answer"
+
+        async with session.begin():
+            question = Question(
+                text=text,
+                subject=subject,
+                difficulty=difficulty,
+                source=source,
+                is_active=is_active,
+                allow_resubmit=allow_resubmit,
+                answer_text=answer_text,
+            )
+
+            if choices is not None:
+                for i, choice_data in enumerate(choices):
+                    choice = Choice(
+                        text=choice_data.get("text", f"Choice {i}"),
+                        is_correct=choice_data.get("is_correct", False),
+                        order=i,
+                    )
+                    question.choices.append(choice)
+
+            if save:
+                session.add(question)
+
+        return question
+
+    return create_question
+
+
+@pytest.fixture
+async def quiz1(
+    session: AsyncSession, question_factory: Callable[..., Awaitable[Question]]
+) -> AsyncIterator[Quiz]:
+    async with session.begin():
+        quiz = Quiz(
+            question_type=QuestionType.MULTIPLE_CHOICE,
+            source_filter="",
+            difficulty="",
+        )
+        session.add(quiz)
+
+        # Create 10 multiple choice questions
+        for _ in range(10):
+            question: Question = await question_factory(
+                choices=[
+                    {"text": "Correct answer", "is_correct": True},
+                    {"text": "Wrong answer 1", "is_correct": False},
+                    {"text": "Wrong answer 2", "is_correct": False},
+                    {"text": "Wrong answer 3", "is_correct": False},
+                    {"text": "Wrong answer 4", "is_correct": False},
+                ]
+            )
+            session_question = SessionQuestion(
+                session_id=quiz.id,
+                question_id=question.id,
+                order=len(quiz.questions),
+            )
+            session.add(session_question)
+
+    yield quiz
+
+
+@pytest.fixture
+async def quiz2(
+    session: AsyncSession, question_factory: Callable[..., Awaitable[Question]]
+) -> AsyncIterator[Quiz]:
+    async with session.begin():
+        quiz = Quiz(
+            question_type=QuestionType.MULTIPLE_CHOICE,
+            source_filter="",
+            difficulty="",
+        )
+        session.add(quiz)
+
+        # Create 10 multiple choice questions
+        for _ in range(10):
+            question: Question = await question_factory(
+                choices=[
+                    {"text": "Correct answer", "is_correct": True},
+                    {"text": "Wrong answer 1", "is_correct": False},
+                    {"text": "Wrong answer 2", "is_correct": False},
+                    {"text": "Wrong answer 3", "is_correct": False},
+                    {"text": "Wrong answer 4", "is_correct": False},
+                ]
+            )
+            session_question = SessionQuestion(
+                session_id=quiz.id,
+                question_id=question.id,
+                order=len(quiz.questions),
+            )
+            session.add(session_question)
+
+    yield quiz
+
+
+@pytest.fixture
+async def open_ended_quiz1(
+    session: AsyncSession, question_factory: Callable[..., Awaitable[Question]]
+) -> AsyncIterator[Quiz]:
+    async with session.begin():
+        quiz = Quiz(
+            question_type=QuestionType.OPEN_ENDED,
+            source_filter="",
+            difficulty="",
+        )
+        session.add(quiz)
+
+        # Create 10 open ended questions
+        for _ in range(10):
+            question: Question = await question_factory(
+                text=next(QUESTION_TEXT_SEQUENCE),
+                answer_text="This is the correct answer",
+            )
+            session_question = SessionQuestion(
+                session_id=quiz.id,
+                question_id=question.id,
+                order=len(quiz.questions),
+            )
+            session.add(session_question)
+
+    yield quiz
+
+
+@pytest.fixture
+async def open_ended_quiz2(
+    session: AsyncSession, question_factory: Callable[..., Awaitable[Question]]
+) -> AsyncIterator[Quiz]:
+    async with session.begin():
+        quiz = Quiz(
+            question_type=QuestionType.OPEN_ENDED,
+            source_filter="",
+            difficulty="",
+        )
+        session.add(quiz)
+
+        # Create 10 open ended questions
+        for _ in range(10):
+            question: Question = await question_factory(
+                text=f"Open ended question {next(itertools.count())}",
+                answer_text="This is the correct answer",
+            )
+            session_question = SessionQuestion(
+                session_id=quiz.id,
+                question_id=question.id,
+                order=len(quiz.questions),
+            )
+            session.add(session_question)
+
+    yield quiz

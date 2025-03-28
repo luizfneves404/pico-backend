@@ -1,6 +1,6 @@
 import datetime
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 import amp
 import bcrypt
@@ -8,12 +8,14 @@ import mail
 import timezone
 from fastapi import BackgroundTasks
 from pydantic import TypeAdapter, ValidationError
+from quiz import quiz_service
+from quiz.models import SessionQuestionUser, UserInfo
 from schools.models import School
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from users.models import College, Course, EducationLevel, User
+from users.models import College, Course, EducationLevel, SignupSource, User
 from users.schemas import PhoneNumber
 
 from .constants import (
@@ -192,8 +194,8 @@ async def create_user(
     education_level: EducationLevel,
     commitment: int,
     referred_by_username: str | None = None,
-    school: str = "",  # deprecated
     school_id: int | None = None,
+    signup_source: SignupSource = SignupSource.UNKNOWN,
 ) -> User:
     """Create a new user.
 
@@ -208,9 +210,8 @@ async def create_user(
         education_level (EducationLevel): The education level of the user
         commitment (int): The commitment of the user
         referred_by_username (str | None, optional): The username of the user who referred the new user. Defaults to None.
-        school (str, optional): Deprecated. The name of the school the user is attending.
         school_id (int | None, optional): The ID of the school the user is attending. Defaults to None.
-
+        signup_source (SignupSource, optional): How the user came to know the app. Defaults to SignupSource.UNKNOWN.
     Raises:
         ReferredByNotFoundError: The referred by user was not found
         UsernameAlreadyExists: There's a user with this username, case insensitive
@@ -244,13 +245,12 @@ async def create_user(
         education_level=education_level,
         commitment=commitment,
         referred_by_id=referred_by_id,
+        signup_source=signup_source,
     )
 
     # Handle school information
     if school_id:
         db_user.school_id = school_id
-    elif school:
-        db_user.school = await _get_or_create_school(db_session, school)
 
     # Save user to database
     try:
@@ -267,9 +267,9 @@ async def create_user(
         else:
             raise
 
-    await db_session.refresh(db_user, ["referral_count", "school"])
+    await db_session.refresh(db_user, ["referrals"])
 
-    # TODO: create user info
+    db_session.add(UserInfo(user=db_user))
 
     mail.send_email(
         background_tasks,
@@ -485,7 +485,7 @@ async def delete_user(
     if not verify_password(current_password, user.hashed_password):
         raise InvalidCredentialsError
     logger.info(f"Deleting user {user.id}")
-    amp.delete_user(user.id)
+    await amp.delete_user(user.id)
     await db_session.delete(user)
     await db_session.flush()
 
@@ -493,7 +493,7 @@ async def delete_user(
 async def check_contacts(
     db_session: AsyncSession, raw_phone_numbers: list[str]
 ) -> list[User]:
-    phone_numbers = []
+    phone_numbers: list[str] = []
     for phone_number in raw_phone_numbers:
         try:
             phone_numbers.append(phone_number_adapter.validate_python(phone_number))
@@ -533,7 +533,7 @@ def send_bulk_email(
     html_string: str,
     id_zero_padding: int = 0,
 ) -> None:
-    messages = []
+    messages: list[mail.EmailMessage] = []
     for user in users:
         # Replace template markers with user data
         personalized_html = (
@@ -610,39 +610,61 @@ def get_streak_info(answer_timestamps: list[datetime.datetime]) -> tuple[bool, i
     return done_today, streak
 
 
-async def get_user_stats_from_username(db_session: AsyncSession, username: str) -> dict:
-    user = await get_user(db_session, username=username)
-    if not user:
+async def get_user_stats(
+    db_session: AsyncSession,
+    *,
+    user_id: int | None = None,
+    username: str | None = None,
+) -> dict[str, Any]:
+    """Get statistics for a user.
+
+    Args:
+        db_session: Database session
+        user_id: Optional user ID to look up
+        username: Optional username to look up
+
+    Returns:
+        Dictionary containing user statistics
+
+    Raises:
+        UserNotFoundError: If the user cannot be found
+    """
+    if user_id is not None:
+        found_user = await get_user(db_session, id=user_id)
+    elif username is not None:
+        found_user = await get_user(db_session, username=username)
+    else:
+        raise ValueError("Must provide either user_id or username")
+
+    if not found_user:
         raise UserNotFoundError
-    return await get_user_stats(user)
 
+    user_stats = await quiz_service.calc_user_stats(db_session, found_user.id)
 
-async def get_user_stats_from_id(db_session: AsyncSession, user_id: int) -> dict:
-    user = await get_user(db_session, id=user_id)
-    return await get_user_stats(user)
-
-
-async def get_user_stats(user: User) -> dict:
-    user_stats = await quiz_service.acalc_user_stats(user.id)
-
-    user_out = (await ato_user_out([user.id]))[0]
-    user_answers_timestamps = [
-        answer["timestamp"]
-        async for answer in SessionQuestionUser.objects.filter(
-            Q(choice__isnull=False) | ~Q(submitted_text__exact=""),
-            user_id=user.id,
+    await db_session.refresh(found_user, ["chosen_course", "chosen_college"])
+    # Get user answer timestamps
+    stmt = (
+        select(SessionQuestionUser.timestamp)
+        .where(
+            or_(
+                SessionQuestionUser.choice_id.is_not(None),
+                SessionQuestionUser.submitted_text != "",
+            ),
+            SessionQuestionUser.user_id == found_user.id,
         )
-        .order_by("-timestamp")
-        .values("timestamp")
-    ]
+        .order_by(SessionQuestionUser.timestamp.desc())
+    )
+
+    result = await db_session.execute(stmt)
+    user_answers_timestamps = [row[0] for row in result.all()]
+
     done_today, streak = get_streak_info(user_answers_timestamps)
 
     user_stats.update(
         {
-            "id": user.id,
-            "username": user.username,
-            "school": user_out["school"],
-            "school_id": user_out["school_id"],
+            "id": found_user.id,
+            "username": found_user.username,
+            "school_id": found_user.school_id,
             "score": user_stats["score"],
             "area_expected_scores": {
                 "Matemática": user_stats["area_expected_scores"]["Matemática"],
@@ -656,9 +678,9 @@ async def get_user_stats(user: User) -> dict:
                     "Ciências da Natureza"
                 ],
             },
-            "chosen_college": user_out["chosen_college"],
-            "chosen_course": user_out["chosen_course"],
-            "education_level": user_out["education_level"],
+            "chosen_college": found_user.chosen_college,
+            "chosen_course": found_user.chosen_course,
+            "education_level": found_user.education_level,
             "streak": streak,
             "done_today": done_today,
         }

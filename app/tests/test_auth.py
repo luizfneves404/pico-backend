@@ -1,5 +1,6 @@
 import jwt
-from config import settings
+
+from app.config import settings
 
 
 async def test_token_obtain_pair(client, user_factory):

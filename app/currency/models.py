@@ -3,13 +3,15 @@ from typing import TYPE_CHECKING
 
 from base import Base
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     ForeignKey,
     Index,
+    Integer,
     String,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.ext.associationproxy import association_proxy
+from sqlalchemy.ext.declarative import declared_attr
+from sqlalchemy.orm import Mapped, backref, mapped_column, relationship
 
 if TYPE_CHECKING:
     from users.models import User
@@ -68,7 +70,7 @@ class Currency(Base):
         CheckConstraint("value >= 0", name="currency_currency_value_check"),
     )
     currency_type: Mapped[CurrencyType] = mapped_column()
-    is_default: Mapped[bool] = mapped_column(Boolean)
+    is_default: Mapped[bool] = mapped_column()
     description: Mapped[str] = mapped_column(String(255))
     action: Mapped[CurrencyAction] = mapped_column()
     currency_transaction: Mapped[list["CurrencyTransaction"]] = relationship(
@@ -76,12 +78,70 @@ class Currency(Base):
     )
 
 
+class EntityAssociation(Base):
+    """Associates currency transactions with various entity types."""
+
+    discriminator: Mapped[str] = mapped_column(String(50))
+    """Refers to the type of parent entity."""
+
+    __mapper_args__ = {"polymorphic_on": discriminator}
+
+    currency_transactions: Mapped[list["CurrencyTransaction"]] = relationship(
+        back_populates="entity_association"
+    )
+
+
 class CurrencyTransaction(Base):
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    user: Mapped["User"] = relationship(back_populates="currency_transactions")
     description: Mapped[str] = mapped_column(String(255))
-    object_id: Mapped[int | None] = mapped_column()
-    content_type_id: Mapped[int | None] = mapped_column()
-    currency_id: Mapped[int | None] = mapped_column()
     amount: Mapped[int | None] = mapped_column()
-    currency: Mapped["Currency"] = relationship(back_populates="currency_transactions")
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
+    user: Mapped["User"] = relationship()
+
+    currency_id: Mapped[int | None] = mapped_column(ForeignKey("currency.id"))
+    currency: Mapped["Currency"] = relationship()
+
+    entity_association_id: Mapped[int | None] = mapped_column(
+        ForeignKey("entity_association.id")
+    )
+    entity_association: Mapped["EntityAssociation"] = relationship(
+        back_populates="currency_transactions"
+    )
+
+    entity = association_proxy("entity_association", "parent")
+
+
+class HasCurrencyTransactions:
+    """Mixin for entities that can have currency transactions."""
+
+    @declared_attr
+    @classmethod
+    def entity_association_id(cls) -> Mapped[int | None]:
+        return mapped_column(
+            Integer, ForeignKey("entity_association.id"), nullable=True
+        )
+
+    @declared_attr
+    @classmethod
+    def entity_association(cls):
+        name = cls.__name__
+        discriminator = name.lower()
+
+        # Create a specific association subclass for this entity type
+        assoc_cls = type(
+            f"{name}EntityAssociation",
+            (EntityAssociation,),
+            {
+                "__tablename__": None,  # Don't create a new table
+                "__mapper_args__": {"polymorphic_identity": discriminator},
+            },
+        )
+
+        # Create an association proxy for convenient access to currency transactions
+        cls.currency_transactions = association_proxy(
+            "entity_association",
+            "currency_transactions",
+            creator=lambda transactions: assoc_cls(currency_transactions=transactions),
+        )
+
+        return relationship(assoc_cls, backref=backref("parent", uselist=False))

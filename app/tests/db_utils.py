@@ -8,13 +8,14 @@ from urllib.parse import urlparse, urlunparse
 
 import sqlalchemy as sa
 from alembic.config import Config as AlembicConfig
-from config import settings
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy_utils.functions.database import (
     _set_url_database,
     make_url,
 )
 from sqlalchemy_utils.functions.orm import quote
+
+from app.config import settings
 
 
 def make_alembic_config(

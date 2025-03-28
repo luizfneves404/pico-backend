@@ -13,5 +13,7 @@ class UserWebSocketInfo(Base):
     last_websocket_connection: Mapped[datetime.datetime] = mapped_column()
     last_websocket_disconnection: Mapped[datetime.datetime | None]
 
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), unique=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), unique=True
+    )
     user: Mapped["User"] = relationship(back_populates="user_websocket_info")

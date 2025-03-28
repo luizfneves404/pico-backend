@@ -1,19 +1,31 @@
 import logging
 from typing import Annotated
 
-import users.token as token
+import users.jwt_token as jwt_token
 from deps import CurrentUserDep, DBSessionDep
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from users import service
+from users.jwt_token import TokenError
 from users.schemas import (
+    CollegeUpdateRequest,
+    CommitmentUpdateRequest,
+    CourseUpdateRequest,
+    EducationLevelUpdateRequest,
+    EmailUpdateRequest,
+    PasswordRequest,
+    PasswordUpdateRequest,
+    PhoneNumberUpdateRequest,
     RefreshRequest,
+    SchoolUpdateRequest,
     TokenResponse,
     UserIn,
+    UsernameUpdateRequest,
     UserOut,
+    UserStatsMeResponse,
+    UserStatsResponse,
     VerifyRequest,
 )
-from users.token import TokenError
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +47,7 @@ async def login(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token, refresh_token = token.generate_tokens(user)
+    access_token, refresh_token = jwt_token.generate_tokens(user)
     return {"access": access_token, "refresh": refresh_token}
 
 
@@ -44,8 +56,10 @@ async def refresh_token(
     refresh_request: RefreshRequest, db_session: DBSessionDep
 ) -> TokenResponse:
     try:
-        user = await token.process_token(db_session, refresh_request.refresh, "refresh")
-        access, refresh = token.generate_tokens(user)
+        user = await jwt_token.process_token(
+            db_session, refresh_request.refresh, "refresh"
+        )
+        access, refresh = jwt_token.generate_tokens(user)
         return TokenResponse(access=access, refresh=refresh)
     except TokenError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=e.message)
@@ -58,7 +72,7 @@ async def refresh_token(
 @token_router.post("/verify")
 async def verify_token(verify_request: VerifyRequest, db_session: DBSessionDep) -> None:
     try:
-        await token.process_token(db_session, verify_request.token)
+        await jwt_token.process_token(db_session, verify_request.token)
     except TokenError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=e.message)
 
@@ -75,7 +89,7 @@ async def create_user(
             background_tasks,
             db_session,
             user_in.username.strip(),
-            user_in.password,
+            user_in.password.get_secret_value(),
             user_in.phone_number,
             user_in.email,
             user_in.chosen_college,
@@ -83,8 +97,8 @@ async def create_user(
             user_in.education_level,
             user_in.commitment,
             user_in.referred_by_username,
-            user_in.school,
             user_in.school_id,
+            user_in.signup_source,
         )
     except service.UsernameAlreadyExists:
         raise HTTPException(
@@ -113,6 +127,193 @@ async def create_user(
 async def read_users_me(current_user: CurrentUserDep, db_session: DBSessionDep):
     await db_session.refresh(
         current_user,
-        ["school", "chosen_college", "chosen_course", "referral_count"],
+        ["chosen_college", "chosen_course", "referrals"],
     )
     return current_user
+
+
+@user_router.patch("/set-username", status_code=status.HTTP_204_NO_CONTENT)
+async def update_username(
+    request: UsernameUpdateRequest,
+    current_user: CurrentUserDep,
+    db_session: DBSessionDep,
+):
+    try:
+        await service.set_username(
+            db_session,
+            current_user,
+            request.new_username.strip(),
+            request.current_password.get_secret_value(),
+        )
+    except service.InvalidCredentialsError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password",
+        )
+    except service.UsernameAlreadyExists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already exists",
+        )
+
+
+@user_router.patch("/set-password", status_code=status.HTTP_204_NO_CONTENT)
+async def update_password(
+    request: PasswordUpdateRequest,
+    current_user: CurrentUserDep,
+    db_session: DBSessionDep,
+):
+    try:
+        await service.set_password(
+            db_session,
+            current_user,
+            request.new_password.get_secret_value(),
+            request.current_password.get_secret_value(),
+        )
+    except service.InvalidCredentialsError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password",
+        )
+
+
+@user_router.patch("/set-phone-number", status_code=status.HTTP_204_NO_CONTENT)
+async def update_phone_number(
+    request: PhoneNumberUpdateRequest,
+    current_user: CurrentUserDep,
+    db_session: DBSessionDep,
+):
+    try:
+        await service.set_phone_number(
+            db_session,
+            current_user,
+            request.new_phone_number,
+            request.current_password.get_secret_value(),
+        )
+    except service.InvalidCredentialsError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password",
+        )
+    except service.PhoneNumberAlreadyExists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Phone number already exists",
+        )
+
+
+@user_router.patch("/set-email", status_code=status.HTTP_204_NO_CONTENT)
+async def update_email(
+    request: EmailUpdateRequest,
+    current_user: CurrentUserDep,
+    db_session: DBSessionDep,
+):
+    try:
+        await service.set_email(
+            db_session,
+            current_user,
+            request.new_email,
+            request.current_password.get_secret_value(),
+        )
+    except service.InvalidCredentialsError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password",
+        )
+    except service.EmailAlreadyExists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already exists",
+        )
+
+
+@user_router.patch("/set-school", status_code=status.HTTP_204_NO_CONTENT)
+async def update_school(
+    request: SchoolUpdateRequest,
+    current_user: CurrentUserDep,
+    db_session: DBSessionDep,
+):
+    await service.set_school(
+        db_session, current_user, new_school_id=request.new_school_id
+    )
+
+
+@user_router.patch("/set-chosen-college", status_code=status.HTTP_204_NO_CONTENT)
+async def update_chosen_college(
+    request: CollegeUpdateRequest,
+    current_user: CurrentUserDep,
+    db_session: DBSessionDep,
+):
+    await service.set_chosen_college(
+        db_session, current_user, request.new_chosen_college
+    )
+
+
+@user_router.patch("/set-chosen-course", status_code=status.HTTP_204_NO_CONTENT)
+async def update_chosen_course(
+    request: CourseUpdateRequest,
+    current_user: CurrentUserDep,
+    db_session: DBSessionDep,
+):
+    await service.set_chosen_course(db_session, current_user, request.new_chosen_course)
+
+
+@user_router.patch("/set-commitment", status_code=status.HTTP_204_NO_CONTENT)
+async def update_commitment(
+    request: CommitmentUpdateRequest,
+    current_user: CurrentUserDep,
+    db_session: DBSessionDep,
+):
+    await service.set_commitment(db_session, current_user, request.commitment)
+
+
+@user_router.patch("/set-education-level", status_code=status.HTTP_204_NO_CONTENT)
+async def update_education_level(
+    request: EducationLevelUpdateRequest,
+    current_user: CurrentUserDep,
+    db_session: DBSessionDep,
+):
+    await service.set_education_level(db_session, current_user, request.education_level)
+
+
+@user_router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    request: PasswordRequest,
+    current_user: CurrentUserDep,
+    db_session: DBSessionDep,
+):
+    try:
+        await service.delete_user(
+            db_session,
+            current_user,
+            request.current_password.get_secret_value(),
+        )
+    except service.InvalidCredentialsError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password",
+        )
+
+
+@user_router.get("/stats", response_model=UserStatsMeResponse)
+async def get_user_stats_me(
+    current_user: CurrentUserDep,
+    db_session: DBSessionDep,
+):
+    user_stats = await service.get_user_stats(db_session, user_id=current_user.id)
+    return user_stats
+
+
+@user_router.get("/stats/{username}", response_model=UserStatsResponse)
+async def get_stats_by_username(
+    username: str,
+    db_session: DBSessionDep,
+):
+    try:
+        user_stats = await service.get_user_stats(db_session, username=username)
+        return user_stats
+    except service.UserNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )

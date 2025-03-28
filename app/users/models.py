@@ -2,6 +2,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from base import Base
+from currency.models import HasCurrencyTransactions
 from quiz.models import Session
 from sqlalchemy import (
     CheckConstraint,
@@ -17,9 +18,11 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, aliased, mapped_column, relationship
 
 if TYPE_CHECKING:
-    from chatrooms.models import Chatroom, Membership, Message
+    from chat.models import UserWebSocketInfo
+    from essays.models import Essay
     from quiz.models import JoinableSession, UserInfo
     from schools.models import School
+    from tournaments.models import Tournament, TournamentParticipation
 
 
 class EducationLevel(StrEnum):
@@ -32,7 +35,17 @@ class EducationLevel(StrEnum):
     UNKNOWN = ""
 
 
-class User(Base):
+class SignupSource(StrEnum):
+    REFERRAL = "referral"
+    SOCIAL = "social"
+    INTERNET = "internet"
+    TEACHER = "teacher"
+    EVENT = "event"
+    OTHER = "other"
+    UNKNOWN = ""
+
+
+class User(Base, HasCurrencyTransactions):
     username: Mapped[str] = mapped_column(String(50), unique=True)
     email: Mapped[str] = mapped_column(String(255), unique=True)
     phone_number: Mapped[str] = mapped_column(String(25), unique=True)
@@ -53,7 +66,7 @@ class User(Base):
     is_bot: Mapped[bool] = mapped_column(default=False)
     bot_difficulty: Mapped[float | None] = mapped_column(default=None)
 
-    signup_source: Mapped[str] = mapped_column(String(255))
+    signup_source: Mapped[SignupSource] = mapped_column(default=SignupSource.UNKNOWN)
 
     school_id: Mapped[int | None] = mapped_column(ForeignKey("school.id"))
     school: Mapped["School | None"] = relationship(
@@ -78,26 +91,22 @@ class User(Base):
         ForeignKey("user.id"),
     )
     referred_by: Mapped["User | None"] = relationship(
-        remote_side=[Base.id], back_populates="referrals", lazy="raise_on_sql"
-    )
-    referrals: Mapped[list["User"]] = relationship(
-        back_populates="referred_by", lazy="raise_on_sql"
-    )
-
-    chatrooms: Mapped[list["Chatroom"]] = relationship(
-        back_populates="members",
-        secondary="membership",
-        viewonly=True,
+        foreign_keys=[referred_by_id],
+        remote_side="User.id",
+        back_populates="referrals",
         lazy="raise_on_sql",
     )
-    membership_set: Mapped[list["Membership"]] = relationship(
-        back_populates="user", lazy="raise_on_sql"
+    referrals: Mapped[list["User"]] = relationship(
+        back_populates="referred_by",
+        foreign_keys=[referred_by_id],
+        lazy="raise_on_sql",
     )
-    messages: Mapped[list["Message"]] = relationship(
-        back_populates="sender", lazy="raise_on_sql"
-    )
+
     user_info: Mapped["UserInfo"] = relationship(
-        back_populates="user", lazy="raise_on_sql"
+        back_populates="user",
+        lazy="raise_on_sql",
+        cascade="save-update, merge, expunge, delete, delete-orphan",
+        passive_deletes=True,
     )
     sessions_created: Mapped[list["Session"]] = relationship(
         back_populates="created_by",
@@ -109,6 +118,34 @@ class User(Base):
         secondary="session_participation",
         lazy="raise_on_sql",
         viewonly=True,
+    )
+
+    essays: Mapped[list["Essay"]] = relationship(
+        back_populates="author",
+        lazy="raise_on_sql",
+        cascade="save-update, merge, expunge, delete, delete-orphan",
+        passive_deletes=True,
+    )
+
+    user_websocket_info: Mapped["UserWebSocketInfo"] = relationship(
+        back_populates="user",
+        lazy="raise_on_sql",
+        cascade="save-update, merge, expunge, delete, delete-orphan",
+        passive_deletes=True,
+    )
+
+    tournaments_participating: Mapped[list["Tournament"]] = relationship(
+        back_populates="participants",
+        secondary="tournament_participation",
+        lazy="raise_on_sql",
+        viewonly=True,
+    )
+
+    tournament_participations: Mapped[list["TournamentParticipation"]] = relationship(
+        back_populates="user",
+        lazy="raise_on_sql",
+        cascade="save-update, merge, expunge, delete, delete-orphan",
+        passive_deletes=True,
     )
 
     __table_args__ = (
@@ -155,8 +192,10 @@ class User(Base):
 class CourseCollege(Base):
     __table_args__ = (UniqueConstraint("course_id", "college_id"),)
 
-    course_id: Mapped[int] = mapped_column(ForeignKey("course.id"))
-    college_id: Mapped[int] = mapped_column(ForeignKey("college.id"))
+    course_id: Mapped[int] = mapped_column(ForeignKey("course.id", ondelete="CASCADE"))
+    college_id: Mapped[int] = mapped_column(
+        ForeignKey("college.id", ondelete="CASCADE")
+    )
 
 
 class College(Base):
@@ -169,6 +208,9 @@ class College(Base):
         back_populates="chosen_college", lazy="raise_on_sql"
     )
 
+    def __str__(self):
+        return self.name
+
 
 class Course(Base):
     name: Mapped[str] = mapped_column(unique=True)
@@ -179,3 +221,6 @@ class Course(Base):
     users: Mapped[list["User"]] = relationship(
         back_populates="chosen_course", lazy="raise_on_sql"
     )
+
+    def __str__(self):
+        return self.name

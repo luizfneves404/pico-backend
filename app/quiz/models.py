@@ -8,6 +8,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Iterator, Protocol
 
 from base import Base, auto_now_insert_timestamp
+from currency.models import HasCurrencyTransactions
 from files.models import File
 from shared.code_generation import HasCode
 from sqlalchemy import (
@@ -51,27 +52,25 @@ SUBJECT_TO_AREA = {
 }
 
 CUSTOM_SOURCE = "Custom"
+STARTING_DUEL_SCORE = 500
 
 
 class QuestionType(StrEnum):
     MULTIPLE_CHOICE = "multiple_choice"
     OPEN_ENDED = "open_ended"
     ALL = "all"
-    NOT_APPLICABLE = ""
 
 
 class QuizType(StrEnum):
     QUERY_BASED = "query"
     PERSONALIZED = "personalized"
     CUSTOM = "custom"
-    NOT_APPLICABLE = ""
 
 
 class QuestionSelectionMethod(StrEnum):
     RANDOM_OFFICIAL = "random_official"
     QUERY_OFFICIAL = "query_official"
     USER_GENERATED = "user_generated"
-    NOT_APPLICABLE = ""
 
 
 class DuelTurnPhase(StrEnum):
@@ -80,27 +79,30 @@ class DuelTurnPhase(StrEnum):
 
 
 class DuelStatus(StrEnum):
-    NOT_APPLICABLE = ""
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     ABANDONED = "abandoned"
 
 
 class UserInfo(Base):
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    user: Mapped["User"] = relationship("User", back_populates="user_info")
-    math_score: Mapped[float | None] = mapped_column()
-    language_score: Mapped[float | None] = mapped_column()
-    humanities_score: Mapped[float | None] = mapped_column()
-    science_score: Mapped[float | None] = mapped_column()
-    average_score: Mapped[float] = mapped_column(
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), unique=True
+    )
+    user: Mapped["User"] = relationship(
+        back_populates="user_info",
+    )
+    math_score: Mapped[float | None] = mapped_column(default=None)
+    language_score: Mapped[float | None] = mapped_column(default=None)
+    humanities_score: Mapped[float | None] = mapped_column(default=None)
+    science_score: Mapped[float | None] = mapped_column(default=None)
+    average_score: Mapped[float | None] = mapped_column(
         Computed("(math_score + language_score + humanities_score + science_score) / 4")
     )
-    dynamic_score: Mapped[float] = mapped_column()
-    duel_score: Mapped[float] = mapped_column()
+    dynamic_score: Mapped[float] = mapped_column(default=0)
+    duel_score: Mapped[float] = mapped_column(default=STARTING_DUEL_SCORE)
 
 
-class Session(Base, HasCode):
+class Session(Base, HasCode, HasCurrencyTransactions):
     __mapper_args__ = {
         "polymorphic_on": "session_type",
         "polymorphic_identity": "session",
@@ -124,7 +126,14 @@ class Session(Base, HasCode):
         ForeignKey("session.id"),
     )
     parent_session: Mapped["Session | None"] = relationship(
-        "Session", remote_side=[Base.id], lazy="raise_on_sql"
+        foreign_keys=[parent_session_id],
+        remote_side="Session.id",
+        lazy="raise_on_sql",
+    )
+    child_sessions: Mapped[list["Session"]] = relationship(
+        foreign_keys="Session.parent_session_id",
+        back_populates="parent_session",
+        lazy="raise_on_sql",
     )
 
     questions: Mapped[list["Question"]] = relationship(
@@ -142,10 +151,8 @@ class Session(Base, HasCode):
 class Quiz(Session):
     __mapper_args__ = {"polymorphic_identity": "quiz"}
 
-    question_type: Mapped[QuestionType] = mapped_column(
-        default=QuestionType.NOT_APPLICABLE
-    )
-    quiz_type: Mapped[QuizType] = mapped_column(default=QuizType.NOT_APPLICABLE)
+    question_type: Mapped[QuestionType] = mapped_column(nullable=True)
+    quiz_type: Mapped[QuizType] = mapped_column(nullable=True)
 
     @property
     def title(self) -> str:
@@ -161,10 +168,8 @@ class Quiz(Session):
 class JoinableSession(Session):
     __mapper_args__ = {"polymorphic_abstract": True}
 
-    is_fast: Mapped[bool] = mapped_column(default=True)
-    selection_method: Mapped[QuestionSelectionMethod] = mapped_column(
-        default=QuestionSelectionMethod.NOT_APPLICABLE
-    )
+    is_fast: Mapped[bool] = mapped_column(nullable=True)
+    selection_method: Mapped[QuestionSelectionMethod] = mapped_column(nullable=True)
     participants: Mapped[list["User"]] = relationship(
         "User",
         secondary="session_participation",
@@ -176,8 +181,8 @@ class JoinableSession(Session):
 class Duel(JoinableSession):
     __mapper_args__ = {"polymorphic_identity": "duel"}
 
-    n_questions_per_round: Mapped[int | None] = mapped_column()
-    duel_status: Mapped[DuelStatus] = mapped_column(default=DuelStatus.NOT_APPLICABLE)
+    n_questions_per_round: Mapped[int] = mapped_column(nullable=True)
+    duel_status: Mapped[DuelStatus] = mapped_column(nullable=True)
 
     current_turn_id: Mapped[int | None] = mapped_column(
         ForeignKey("turn.id", use_alter=True)
@@ -216,39 +221,45 @@ class Duel(JoinableSession):
 class Challenge(JoinableSession):
     __mapper_args__ = {"polymorphic_identity": "challenge"}
 
-    start_time: Mapped[datetime | None] = mapped_column()
-    end_time: Mapped[datetime | None] = mapped_column()
+    start_time: Mapped[datetime] = mapped_column(nullable=True)
+    end_time: Mapped[datetime] = mapped_column(nullable=True)
 
 
 class Round(Base):
-    duel_id: Mapped[int] = mapped_column(ForeignKey("session.id"))
     query: Mapped[str] = mapped_column(Text, default="")
-
+    duel_id: Mapped[int] = mapped_column(ForeignKey("session.id", ondelete="CASCADE"))
     duel: Mapped["Duel"] = relationship(foreign_keys=[duel_id])
     users: Mapped[list["User"]] = relationship(
         "User", secondary="turn", viewonly=True, lazy="raise_on_sql"
     )
-    turns: Mapped[list["Turn"]] = relationship("Turn", back_populates="round")
+    turns: Mapped[list["Turn"]] = relationship(
+        "Turn",
+        back_populates="round",
+        cascade="save-update, merge, expunge, delete, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class Turn(Base):
-    round_id: Mapped[int] = mapped_column(ForeignKey("round.id"))
-    user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
     phase: Mapped[DuelTurnPhase] = mapped_column()
     start_time: Mapped[datetime | None] = mapped_column()
 
-    round: Mapped["Round"] = relationship("Round", back_populates="turns")
-    user: Mapped["User | None"] = relationship("User")
+    round_id: Mapped[int] = mapped_column(ForeignKey("round.id", ondelete="CASCADE"))
+    round: Mapped["Round"] = relationship(back_populates="turns", lazy="raise_on_sql")
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
+    user: Mapped["User | None"] = relationship(lazy="raise_on_sql")
 
 
 class SessionParticipation(Base):
-    session_id: Mapped[int] = mapped_column(ForeignKey("session.id"))
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
     confirmed: Mapped[bool] = mapped_column(default=False)
     duel_score_change: Mapped[float | None]
 
-    session: Mapped["Session"] = relationship("Session")
-    user: Mapped["User | None"] = relationship("User")
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("session.id", ondelete="CASCADE")
+    )
+    session: Mapped["Session"] = relationship(lazy="raise_on_sql")
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
+    user: Mapped["User | None"] = relationship(lazy="raise_on_sql")
 
 
 class Question(Base):
@@ -278,13 +289,17 @@ class Question(Base):
     is_fast: Mapped[bool] = mapped_column(default=False)
 
     sessions: Mapped[list["Session"]] = relationship(
-        "Session",
         secondary="session_question",
         back_populates="questions",
         viewonly=True,
+        lazy="raise_on_sql",
     )
     choices: Mapped[list["Choice"]] = relationship(
-        "Choice", back_populates="question", order_by="Choice.order"
+        back_populates="question",
+        order_by="Choice.order",
+        lazy="raise_on_sql",
+        cascade="save-update, merge, expunge, delete, delete-orphan",
+        passive_deletes=True,
     )
 
     @property
@@ -353,50 +368,79 @@ class Question(Base):
 
 
 class Choice(Base):
-    question_id: Mapped[int] = mapped_column(ForeignKey("question.id"))
     image_id: Mapped[int | None] = mapped_column(ForeignKey("file.id"))
     image: Mapped["File | None"] = relationship()
     text: Mapped[str] = mapped_column(Text, default="")
     is_correct: Mapped[bool] = mapped_column(default=False)
     order: Mapped[int] = mapped_column(
-        CheckConstraint("order >= 0", name="choice_order_check"), index=True
+        CheckConstraint("order >= 0", name="choice_order_check"),
     )
 
-    question: Mapped["Question"] = relationship("Question", back_populates="choices")
+    question_id: Mapped[int] = mapped_column(
+        ForeignKey("question.id", ondelete="CASCADE")
+    )
+    question: Mapped["Question"] = relationship(
+        back_populates="choices", lazy="raise_on_sql"
+    )
+
+    __table_args__ = (UniqueConstraint("question_id", "order"),)
 
     def __str__(self) -> str:
         return self.text
 
 
 class SessionQuestion(Base):
-    __table_args__ = (UniqueConstraint("session_id", "question_id"),)
-    session_id: Mapped[int] = mapped_column(ForeignKey("session.id"))
-    question_id: Mapped[int] = mapped_column(ForeignKey("question.id"))
-    order: Mapped[int] = mapped_column(
-        CheckConstraint("order >= 0", name="session_question_order_check"),
-        index=True,
+    __table_args__ = (
+        UniqueConstraint("session_id", "question_id"),
+        UniqueConstraint("session_id", "order"),
     )
 
-    session: Mapped["Session"] = relationship("Session")
-    question: Mapped["Question"] = relationship("Question")
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("session.id", ondelete="CASCADE")
+    )
+    question_id: Mapped[int] = mapped_column(
+        ForeignKey("question.id", ondelete="CASCADE")
+    )
+    order: Mapped[int] = mapped_column(
+        CheckConstraint("order >= 0", name="session_question_order_check"),
+    )
+
+    session: Mapped["Session"] = relationship(lazy="raise_on_sql")
+    question: Mapped["Question"] = relationship(lazy="raise_on_sql")
     users_answered: Mapped[list["User"]] = relationship(
         secondary="session_question_user", viewonly=True, lazy="raise_on_sql"
     )
 
 
 class SessionQuestionUser(Base):
-    session_question_id: Mapped[int] = mapped_column(ForeignKey("session_question.id"))
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    choice_id: Mapped[int | None] = mapped_column(ForeignKey("choice.id"))
     submitted_text: Mapped[str] = mapped_column(Text, default="")
     timestamp: Mapped[auto_now_insert_timestamp]
     feedback: Mapped[str] = mapped_column(Text, default="")
     grade: Mapped[float | None]
     timed_out: Mapped[bool] = mapped_column(default=False)
 
-    session_question: Mapped["SessionQuestion"] = relationship("SessionQuestion")
-    user: Mapped["User | None"] = relationship("User")
-    choice: Mapped["Choice | None"] = relationship("Choice")
+    session_question_id: Mapped[int] = mapped_column(
+        ForeignKey("session_question.id", ondelete="CASCADE")
+    )
+    session_question: Mapped["SessionQuestion"] = relationship(lazy="raise_on_sql")
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
+    user: Mapped["User | None"] = relationship(lazy="raise_on_sql")
+    choice_id: Mapped[int | None] = mapped_column(
+        ForeignKey("choice.id", ondelete="CASCADE")
+    )
+    choice: Mapped["Choice | None"] = relationship(lazy="raise_on_sql")
+
+    __table_args__ = (
+        UniqueConstraint("session_question_id", "user_id"),
+        CheckConstraint(
+            """
+            (choice_id IS NOT NULL AND submitted_text = '' AND timed_out = false) OR
+            (choice_id IS NULL AND submitted_text != '' AND timed_out = false) OR
+            (choice_id IS NULL AND submitted_text = '')
+            """,
+            name="check_session_question_answer_valid_states",
+        ),
+    )
 
     @property
     def is_correct(self) -> bool:

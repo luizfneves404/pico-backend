@@ -46,9 +46,10 @@ class Base(DeclarativeBase):
     }
 
     @declared_attr.directive
+    @classmethod
     def __tablename__(cls) -> str | None:
         """Convert class name to snake_case for table name if it's not inheriting."""
-        if has_inherited_table(cls):  # type: ignore
+        if has_inherited_table(cls):
             return None
         name = re.sub(r"(?<!^)(?=[A-Z])", "_", cls.__name__).lower()
         return name

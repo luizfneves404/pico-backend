@@ -5,12 +5,13 @@ from base import (
     auto_now_update_timestamp,
     register_rollback_action,
 )
-from config import settings
 from fastapi.concurrency import run_in_threadpool
 from files.storage import delete_from_s3, get_presigned_url, upload_to_s3
 from sqlalchemy import String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
+
+from app.config import settings
 
 
 class File(Base):

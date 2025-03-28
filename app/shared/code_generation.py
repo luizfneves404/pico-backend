@@ -15,6 +15,7 @@ class HasCode:
     """Mixin that automatically adds and manages a unique sharing code."""
 
     @declared_attr
+    @classmethod
     def code(cls) -> Mapped[str]:
         return mapped_column(String(10), unique=True)
 

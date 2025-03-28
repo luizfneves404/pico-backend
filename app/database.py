@@ -1,9 +1,13 @@
+import asyncio
 import contextlib
 import logging
 from typing import AsyncIterator
 
 # all of these are needed so that the Base subclasses are registered
-import chatrooms.models  # noqa: F401
+import chat.models  # noqa: F401
+import currency.models  # noqa: F401
+import essays.models  # noqa: F401
+import files.models  # noqa: F401
 import quiz.models  # noqa: F401
 import schools.models  # noqa: F401
 import tournaments.models  # noqa: F401
@@ -12,11 +16,15 @@ from sqlalchemy.ext.asyncio import (
     AsyncConnection,
     AsyncEngine,
     AsyncSession,
+    async_scoped_session,
     async_sessionmaker,
     create_async_engine,
 )
 
 logger = logging.getLogger(__name__)
+
+# Module-level scoped session that will be initialized with the manager
+sc_session: async_scoped_session[AsyncSession] | None = None
 
 
 class DatabaseSessionManager:
@@ -25,6 +33,7 @@ class DatabaseSessionManager:
         self._sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
     def init(self, db_url: str) -> None:
+        global sc_session
         self._engine = create_async_engine(
             url=db_url,
             pool_pre_ping=True,
@@ -35,6 +44,9 @@ class DatabaseSessionManager:
             expire_on_commit=False,
             autobegin=False,
             autoflush=False,
+        )
+        sc_session = async_scoped_session(
+            self._sessionmaker, scopefunc=asyncio.current_task
         )
 
     @property
@@ -49,11 +61,29 @@ class DatabaseSessionManager:
         return self._engine
 
     async def close(self) -> None:
+        global sc_session
         if self._engine is None:
             return
         await self._engine.dispose()
         self._engine = None
         self._sessionmaker = None
+        sc_session = None
+
+    @contextlib.asynccontextmanager
+    async def connect_db(self, db_url: str) -> AsyncIterator[None]:
+        """Context manager that initializes the database connection and closes it when done.
+
+        Args:
+            db_url: Database connection URL
+
+        Yields:
+            None
+        """
+        self.init(db_url)
+        try:
+            yield
+        finally:
+            await self.close()
 
     @contextlib.asynccontextmanager
     async def session(self) -> AsyncIterator[AsyncSession]:

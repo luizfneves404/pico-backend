@@ -1,7 +1,3 @@
-from typing import TypeVar
-
-from config import settings
-from database import get_db_session
 from fastapi import Request
 from quiz.admin import (
     ChallengeAdmin,
@@ -19,15 +15,17 @@ from schools.admin import SchoolAdmin
 from sqladmin import ModelView
 from sqladmin.authentication import AuthenticationBackend
 from users import service as user_service
-from users.admin import UserAdmin
-from users.token import TokenError, generate_tokens, process_token
+from users.admin import CollegeAdmin, CourseAdmin, UserAdmin
+from users.jwt_token import TokenError, generate_tokens, process_token
+
+from app.config import settings
+from app.database import get_db_session
 
 admin_views: list[type[ModelView]] = []
 
-T = TypeVar("T", bound=type[ModelView])
-
-
 admin_views.append(UserAdmin)
+admin_views.append(CollegeAdmin)
+admin_views.append(CourseAdmin)
 admin_views.append(SchoolAdmin)
 admin_views.append(QuizAdmin)
 admin_views.append(SessionAdmin)

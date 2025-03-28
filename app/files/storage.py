@@ -3,12 +3,13 @@ import uuid
 from typing import IO
 
 import boto3
-from config import settings
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-def upload_to_s3(file_obj: IO, bucket_name: str) -> str:
+def upload_to_s3(file_obj: IO[bytes], bucket_name: str) -> str:
     s3 = boto3.client("s3")
     s3_key = f"{uuid.uuid4()}-{file_obj.name}"
     s3.upload_fileobj(file_obj, bucket_name, s3_key)

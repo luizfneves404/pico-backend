@@ -1,14 +1,21 @@
 from typing import Any, ClassVar, Sequence, Union
 
 from fastapi import Request
-from sqladmin import ModelView
+from shared.admin import Admin
 from sqlalchemy import Select, select
 from sqlalchemy.orm import InstrumentedAttribute, selectinload
 from users import service as user_service
-from users.models import User
+from users.models import College, Course, User
 
 
-class UserAdmin(ModelView, model=User):
+def format_string(value: Any) -> Any:
+    """Format string values for admin display, showing a special indicator for empty values."""
+    return value if value else "[EMPTY STRING]"
+
+
+class UserAdmin(Admin, model=User):
+    icon = "fa-solid fa-users"
+
     column_list: ClassVar[
         Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
     ] = [
@@ -16,11 +23,13 @@ class UserAdmin(ModelView, model=User):
         User.username,
         User.email,
         User.phone_number,
+        User.is_superuser,
         User.education_level,
         User.is_premium,
         User.commitment,
         User.balance,
         User.is_bot,
+        User.signup_source,
         "referral_count",
     ]
     column_searchable_list = [User.id, User.username, User.email, User.phone_number]
@@ -28,10 +37,15 @@ class UserAdmin(ModelView, model=User):
         User.id,
         User.username,
         User.email,
+        User.is_superuser,
         User.is_premium,
         User.commitment,
         User.balance,
         User.is_bot,
+        User.signup_source,
+        User.school,
+        User.chosen_college,
+        User.chosen_course,
     ]
     column_details_list: ClassVar[
         Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
@@ -41,39 +55,116 @@ class UserAdmin(ModelView, model=User):
         User.username,
         User.email,
         User.phone_number,
+        User.is_superuser,
         User.school_id,
         User.education_level,
-        User.chosen_college_id,
-        User.chosen_course_id,
+        User.chosen_college,
+        User.chosen_course,
         User.is_premium,
         User.referred_by_id,
         User.commitment,
         User.balance,
         User.is_bot,
         User.bot_difficulty,
+        User.signup_source,
         "referral_count",
     ]
     column_labels: ClassVar[dict[str | InstrumentedAttribute[Any], str]] = {
-        "hashed_password": "password"
+        "hashed_password": "Password",
+        "is_superuser": "Admin?",
+        "is_premium": "Premium?",
+        "is_bot": "Bot?",
+        "referral_count": "Number of Referrals",
+        "signup_source": "Signup Source",
     }
     form_widget_args = {
         "created_at": {
             "readonly": True,
         },
+        "referral_count": {
+            "readonly": True,
+        },
     }
 
+    form_columns = [
+        "username",
+        "email",
+        "phone_number",
+        "hashed_password",
+        "is_superuser",
+        "education_level",
+        "is_premium",
+        "commitment",
+        "balance",
+        "is_bot",
+        "bot_difficulty",
+        "signup_source",
+        "school",
+        "chosen_college",
+        "chosen_course",
+        "referred_by",
+    ]
+
     def list_query(self, request: Request) -> Select[tuple[User]]:
-        return select(User).options(selectinload(User.referrals))
+        return select(User).options(
+            selectinload(User.referrals),
+            selectinload(User.school),
+            selectinload(User.chosen_college),
+            selectinload(User.chosen_course),
+            selectinload(User.referred_by),
+        )
 
     async def get_object_for_details(self, value: Any) -> Any:
         stmt = (
-            select(User).options(selectinload(User.referrals)).where(User.id == value)
+            select(User)
+            .options(
+                selectinload(User.referrals),
+                selectinload(User.school),
+                selectinload(User.chosen_college),
+                selectinload(User.chosen_course),
+                selectinload(User.referred_by),
+            )
+            .where(User.id == int(value))
         )
         return await self._get_object_by_pk(stmt)
 
     async def on_model_change(
         self, data: dict[str, Any], model: User, is_created: bool, request: Request
     ) -> None:
-        data["hashed_password"] = user_service.get_password_hash(
-            data["hashed_password"]
-        )
+        if "hashed_password" in data and data["hashed_password"]:
+            if is_created or (
+                not data["hashed_password"].startswith("$2b$")
+                and data["hashed_password"] != model.hashed_password
+            ):
+                data["hashed_password"] = user_service.get_password_hash(
+                    data["hashed_password"]
+                )
+
+        # Ensure bot_difficulty is set correctly based on is_bot
+        if "is_bot" in data:
+            if not data["is_bot"] and "bot_difficulty" in data:
+                data["bot_difficulty"] = None
+            elif data["is_bot"] and (
+                "bot_difficulty" not in data or data["bot_difficulty"] is None
+            ):
+                data["bot_difficulty"] = 0.5  # Default difficulty
+
+
+class CollegeAdmin(Admin, model=College):
+    icon = "fa-solid fa-university"
+
+    column_list = [College.id, College.name, College.user_submitted]
+    column_searchable_list = [College.name]
+    column_sortable_list = [College.id, College.name, College.user_submitted]
+
+    form_columns = ["name", "user_submitted", "courses", "users"]
+
+
+class CourseAdmin(Admin, model=Course):
+    icon = "fa-solid fa-book"
+
+    column_list = [Course.id, Course.name, Course.user_submitted]
+    column_searchable_list = [Course.name]
+    column_sortable_list = [Course.id, Course.name, Course.user_submitted]
+
+    form_columns = ["name", "user_submitted", "colleges", "users"]

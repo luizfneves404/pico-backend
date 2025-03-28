@@ -22,6 +22,8 @@ If you use an third mapped class as a many to many table, add viewonly=True to t
 
 As defined in the type_annotation_map in base.py, mapped datetimes always use timezone=True, so no need to specify it.
 
+When defining a subclass and using single table inheritance, choose the type as non-nullable as in "Mapped[int]" but set nullable=True in the mapped_column definition. No need to set a default, it will be set to null.
+
 # Alembic cheat sheet:
 After changing models, run:
 alembic revision --autogenerate -m "message"

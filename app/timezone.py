@@ -1,7 +1,7 @@
 import datetime
 from zoneinfo import ZoneInfo
 
-from config import settings
+from app.config import settings
 
 local_tz = ZoneInfo(settings.local_timezone)
 

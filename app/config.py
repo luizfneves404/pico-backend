@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     default_phone_number_country: str = "BR"
 
     secret_key: str = Field(default=...)
+    allowed_hosts: list[str] = Field(default=...)
     jwt_access_expiration_delta: timedelta = Field(default=timedelta(minutes=5))
     jwt_refresh_expiration_delta: timedelta = Field(default=timedelta(days=180))
     local_timezone: str = Field(default="America/Sao_Paulo")
@@ -28,6 +29,12 @@ class Settings(BaseSettings):
     uvicorn_host: str = Field(default=...)
     uvicorn_port: int = 8000
     uvicorn_reload: bool = False
+
+    openai_api_key: str = Field(default=...)
+
+    amplitude_track_events: bool = Field(default=True)
+    amplitude_api_key: str = Field(default=...)
+    amplitude_secret_key: str = Field(default=...)
 
 
 settings = Settings()

@@ -4,11 +4,12 @@ from datetime import datetime, timezone
 from typing import Literal
 
 import jwt
-from config import settings
 from fastapi import APIRouter
 from sqlalchemy.ext.asyncio import AsyncSession
 from users import service
 from users.models import User as UserDB
+
+from app.config import settings
 
 JWT_ALGORITHM = "HS256"
 router = APIRouter(prefix="/token", tags=["token"])

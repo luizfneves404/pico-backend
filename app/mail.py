@@ -1,9 +1,11 @@
 import logging
 
 import boto3
-from config import settings
 from fastapi import BackgroundTasks
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
+from shared.validation import LowercaseEmailStr
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -12,9 +14,9 @@ class EmailMessage(BaseModel):
     subject: str
     body_text: str | None = None
     body_html: str | None = None
-    to_emails: list[EmailStr]
-    cc_emails: list[EmailStr] | None = None
-    bcc_emails: list[EmailStr] | None = None
+    to_emails: list[LowercaseEmailStr]
+    cc_emails: list[LowercaseEmailStr] | None = None
+    bcc_emails: list[LowercaseEmailStr] | None = None
 
 
 def _send_email(email: EmailMessage):

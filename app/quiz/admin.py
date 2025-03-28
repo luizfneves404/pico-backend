@@ -10,10 +10,10 @@ from quiz.models import (
     Turn,
     UserInfo,
 )
-from sqladmin import ModelView
+from shared.admin import Admin
 
 
-class QuizAdmin(ModelView, model=Quiz):
+class QuizAdmin(Admin, model=Quiz):
     column_list = [
         Quiz.id,
         Quiz.code,
@@ -38,7 +38,7 @@ class QuizAdmin(ModelView, model=Quiz):
     ]
 
 
-class SessionAdmin(ModelView, model=Session):
+class SessionAdmin(Admin, model=Session):
     column_list = [
         Session.id,
         Session.code,
@@ -67,7 +67,7 @@ class SessionAdmin(ModelView, model=Session):
     ]
 
 
-class QuestionAdmin(ModelView, model=Question):
+class QuestionAdmin(Admin, model=Question):
     column_list = [
         Question.id,
         Question.subject,
@@ -98,13 +98,13 @@ class QuestionAdmin(ModelView, model=Question):
     ]
 
 
-class ChoiceAdmin(ModelView, model=Choice):
+class ChoiceAdmin(Admin, model=Choice):
     column_list = [Choice.id, Choice.question_id, Choice.text, Choice.is_correct]
     column_searchable_list = [Choice.id, Choice.text, Choice.question_id]
     column_sortable_list = [Choice.id, Choice.question_id, Choice.is_correct]
 
 
-class DuelAdmin(ModelView, model=Duel):
+class DuelAdmin(Admin, model=Duel):
     column_list = [Duel.id, Duel.code, Duel.created_at, Duel.duel_status]
     column_searchable_list = [Duel.id, Duel.code]
     column_sortable_list = [Duel.id, Duel.created_at, Duel.duel_status]
@@ -118,7 +118,7 @@ class DuelAdmin(ModelView, model=Duel):
     ]
 
 
-class ChallengeAdmin(ModelView, model=Challenge):
+class ChallengeAdmin(Admin, model=Challenge):
     column_list = [
         Challenge.id,
         Challenge.code,
@@ -135,7 +135,7 @@ class ChallengeAdmin(ModelView, model=Challenge):
     ]
 
 
-class UserInfoAdmin(ModelView, model=UserInfo):
+class UserInfoAdmin(Admin, model=UserInfo):
     column_list = [
         UserInfo.id,
         UserInfo.user_id,
@@ -153,19 +153,19 @@ class UserInfoAdmin(ModelView, model=UserInfo):
     ]
 
 
-class RoundAdmin(ModelView, model=Round):
+class RoundAdmin(Admin, model=Round):
     column_list = [Round.id, Round.duel_id, Round.query]
     column_searchable_list = [Round.id, Round.duel_id, Round.query]
     column_sortable_list = [Round.id, Round.duel_id]
 
 
-class TurnAdmin(ModelView, model=Turn):
+class TurnAdmin(Admin, model=Turn):
     column_list = [Turn.id, Turn.round_id, Turn.user_id, Turn.phase, Turn.start_time]
     column_searchable_list = [Turn.id, Turn.round_id, Turn.user_id]
     column_sortable_list = [Turn.id, Turn.start_time, Turn.phase]
 
 
-class SessionParticipationAdmin(ModelView, model=SessionParticipation):
+class SessionParticipationAdmin(Admin, model=SessionParticipation):
     column_list = [
         SessionParticipation.id,
         SessionParticipation.session_id,

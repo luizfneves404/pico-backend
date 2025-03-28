@@ -7,10 +7,11 @@ import database  # noqa: F401
 from alembic import context
 from alembic.environment import EnvironmentContext
 from base import Base
-from config import settings
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
+
+from app.config import settings
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

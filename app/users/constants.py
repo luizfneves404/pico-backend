@@ -8,53 +8,53 @@ WELCOME_EMAIL_MESSAGE = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body {
+        body {{
             font-family: Arial, sans-serif;
             line-height: 1.6;
             color: #333;
             max-width: 600px;
             margin: 0 auto;
             padding: 20px;
-        }
-        .container {
+        }}
+        .container {{
             background-color: #f9f9f9;
             border-radius: 8px;
             padding: 25px;
             border: 1px solid #eaeaea;
-        }
-        .header {
+        }}
+        .header {{
             text-align: center;
             margin-bottom: 20px;
-        }
-        .header h1 {
+        }}
+        .header h1 {{
             color: #2c3e50;
             margin-bottom: 10px;
-        }
-        .content {
+        }}
+        .content {{
             margin-bottom: 25px;
-        }
-        .username {
+        }}
+        .username {{
             font-weight: bold;
             color: #3498db;
-        }
-        .footer {
+        }}
+        .footer {{
             text-align: center;
             font-size: 14px;
             color: #7f8c8d;
             margin-top: 30px;
             border-top: 1px solid #eaeaea;
             padding-top: 20px;
-        }
-        .contact {
+        }}
+        .contact {{
             margin: 15px 0;
-        }
-        .contact a {
+        }}
+        .contact a {{
             color: #3498db;
             text-decoration: none;
-        }
-        .contact a:hover {
+        }}
+        .contact a:hover {{
             text-decoration: underline;
-        }
+        }}
     </style>
 </head>
 <body>

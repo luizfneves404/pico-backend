@@ -36,8 +36,25 @@ class Tournament(Base, HasCode):
 
     status: Mapped[TournamentStatus] = mapped_column()
 
+    participants: Mapped[list["User"]] = relationship(
+        secondary="tournament_participation",
+        back_populates="tournaments_participating",
+        lazy="raise_on_sql",
+        viewonly=True,
+    )
+
+    participations: Mapped[list["TournamentParticipation"]] = relationship(
+        back_populates="tournament",
+        lazy="raise_on_sql",
+        cascade="save-update, merge, expunge, delete, delete-orphan",
+        passive_deletes=True,
+    )
+
     prizes: Mapped[list["TournamentPrize"]] = relationship(
-        back_populates="tournament", lazy="raise_on_sql"
+        back_populates="tournament",
+        lazy="raise_on_sql",
+        cascade="save-update, merge, expunge, delete, delete-orphan",
+        passive_deletes=True,
     )
 
     duels: Mapped[list["Duel"]] = relationship(
@@ -47,17 +64,23 @@ class Tournament(Base, HasCode):
 
 class TournamentPrize(Base):
     rank: Mapped[int] = mapped_column(
-        CheckConstraint("rank >= 0", name="tournament_prize_rank_check"), unique=True
+        CheckConstraint("rank >= 0", name="tournament_prize_rank_check")
     )
     amount: Mapped[decimal.Decimal] = mapped_column(Numeric(10, 2))
-    tournament_id: Mapped[int] = mapped_column(ForeignKey("tournament.id"))
+    tournament_id: Mapped[int] = mapped_column(
+        ForeignKey("tournament.id", ondelete="CASCADE")
+    )
     tournament: Mapped["Tournament"] = relationship(back_populates="prizes")
+
+    __table_args__ = (UniqueConstraint("tournament_id", "rank"),)
 
 
 class TournamentParticipation(Base):
     __table_args__ = (UniqueConstraint("user_id", "tournament_id"),)
 
-    tournament_id: Mapped[int] = mapped_column(ForeignKey("tournament.id"))
+    tournament_id: Mapped[int] = mapped_column(
+        ForeignKey("tournament.id", ondelete="CASCADE")
+    )
     tournament: Mapped["Tournament"] = relationship(back_populates="participations")
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
     user: Mapped["User"] = relationship(back_populates="tournament_participations")

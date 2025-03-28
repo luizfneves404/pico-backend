@@ -1,6 +1,7 @@
-from config import settings
 from fastapi import BackgroundTasks
 from mail import EmailMessage, send_email
+
+from app.config import settings
 
 
 async def test_send_mail_function(dummy_ses_client):
