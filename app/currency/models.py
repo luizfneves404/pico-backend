@@ -1,7 +1,6 @@
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from base import Base
 from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
@@ -13,8 +12,10 @@ from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import Mapped, backref, mapped_column, relationship
 
+from app.base import Base
+
 if TYPE_CHECKING:
-    from users.models import User
+    from app.users.models import User
 
 
 class CurrencyType(StrEnum):

@@ -5,8 +5,6 @@
 import functools
 from typing import Any, TypeVar
 
-import database
-from base import Base
 from factory.alchemy import SQLAlchemyOptions
 from factory.base import Factory
 from factory.declarations import (
@@ -17,8 +15,12 @@ from factory.declarations import (
     SubFactory,
 )
 from factory.faker import Faker
-from files.models import File
-from quiz.models import (
+from sqlalchemy.ext.asyncio import AsyncSession, async_scoped_session
+
+import app.database as database
+from app.base import Base
+from app.files.models import File
+from app.quiz.models import (
     ENEM_AREAS,
     Choice,
     Question,
@@ -26,10 +28,9 @@ from quiz.models import (
     Quiz,
     UserInfo,
 )
-from schools.models import School
-from sqlalchemy.ext.asyncio import AsyncSession, async_scoped_session
-from users.models import College, Course, EducationLevel, User
-from users.service import get_password_hash
+from app.schools.models import School
+from app.users.models import College, Course, EducationLevel, User
+from app.users.service import get_password_hash
 
 T = TypeVar("T", bound=Base)
 
@@ -96,16 +97,20 @@ class AsyncSQLAlchemyFactory(Factory[T]):
         return database.sc_session
 
     @classmethod
-    async def create(cls, **kwargs: Any) -> T:
-        session = cls.get_db_session()
-        async with session.begin():
-            instance = super().create(**kwargs)
-            session.add(instance)
-            return instance
+    async def create(cls, session: AsyncSession | None = None, **kwargs: Any) -> T:
+        instance = super().create(**kwargs)
+        session.add(instance)
+        await session.flush()
+        return instance
 
     @classmethod
-    async def create_batch(cls, size: int, **kwargs: Any) -> list[T]:
-        return [await cls.create(**kwargs) for _ in range(size)]
+    async def create_batch(
+        cls, size: int, session: AsyncSession | None = None, **kwargs: Any
+    ) -> list[T]:
+        instances = [super().create(**kwargs) for _ in range(size)]
+        session.add_all(instances)
+        await session.flush()
+        return instances
 
 
 class SchoolFactory(AsyncSQLAlchemyFactory[School]):

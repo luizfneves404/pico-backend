@@ -1,30 +1,55 @@
+import contextlib
+from typing import AsyncIterator
+
 import redis.asyncio as redis
 
+from app.config import settings
 
-class RedisManager:
-    def __init__(self) -> None:
-        self._redis: redis.Redis | None = None
-
-    def init(self, redis_url: str) -> None:
-        self._redis = redis.from_url(redis_url, decode_responses=True)
-
-    async def close(self) -> None:
-        if self._redis is None:
-            return
-        await self._redis.aclose()
-        self._redis = None
-
-    def get_redis(self) -> redis.Redis:
-        if self._redis is None:
-            raise IOError("RedisManager is not initialized")
-        return self._redis
+_redis: redis.Redis | None = None
 
 
-redis_manager = RedisManager()
+def init() -> None:
+    """Initialize the Redis connection.
 
-
-async def get_redis_client() -> redis.Redis:
+    Args:
+        redis_url: Redis connection URL
     """
-    This function is used to get a redis client.
+    global _redis
+    _redis = redis.from_url(settings.redis_url, decode_responses=True)
+
+
+async def close() -> None:
+    """Close the Redis connection if initialized."""
+    global _redis
+    if _redis is None:
+        return
+    await _redis.aclose()
+    _redis = None
+
+
+@contextlib.asynccontextmanager
+async def use_redis() -> AsyncIterator[None]:
+    """Use the Redis connection.
+
+    Args:
+        redis_url: Redis connection URL
     """
-    return redis_manager.get_redis()
+    try:
+        init()
+        yield
+    finally:
+        await close()
+
+
+def get_redis() -> redis.Redis:
+    """Get the Redis connection.
+
+    Returns:
+        The Redis connection
+
+    Raises:
+        IOError: If the Redis connection is not initialized
+    """
+    if _redis is None:
+        raise IOError("Redis connection is not initialized")
+    return _redis

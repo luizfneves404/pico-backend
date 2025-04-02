@@ -1,10 +1,13 @@
-from fastapi import BackgroundTasks
-from mail import EmailMessage, send_email
+from arq import Worker
 
 from app.config import settings
+from app.mail import EmailMessage, enqueue_email
+from tests.conftest import DummySESClient
 
 
-async def test_send_mail_function(dummy_ses_client):
+async def test_send_mail_function(
+    dummy_ses_client: DummySESClient, arq_worker: Worker
+) -> None:
     # Create a sample email message.
     email = EmailMessage(
         subject="Test Email",
@@ -12,13 +15,11 @@ async def test_send_mail_function(dummy_ses_client):
         body_html="<p>This is a test email.</p>",
         to_emails=["to@example.com"],
     )
-    background_tasks = BackgroundTasks()
 
-    # Schedule the email.
-    send_email(background_tasks, email)
+    # Send the email.
+    await enqueue_email(email)
 
-    # Manually run the background tasks.
-    await background_tasks()
+    await arq_worker.async_run()
 
     # Verify that the dummy SES client recorded the email send.
     assert len(dummy_ses_client.sent_emails) == 1
@@ -28,7 +29,9 @@ async def test_send_mail_function(dummy_ses_client):
     assert sent_email["Message"]["Subject"]["Data"] == "Test Email"
 
 
-async def test_send_mails_function(dummy_ses_client):
+async def test_send_mails_function(
+    dummy_ses_client: DummySESClient, arq_worker: Worker
+) -> None:
     # Create multiple email messages.
     emails = [
         EmailMessage(
@@ -44,11 +47,10 @@ async def test_send_mails_function(dummy_ses_client):
             to_emails=["to2@example.com"],
         ),
     ]
-    background_tasks = BackgroundTasks()
 
-    send_email(background_tasks, emails)
+    await enqueue_email(emails)
 
-    await background_tasks()
+    await arq_worker.async_run()
 
     # Verify that both emails were recorded.
     assert len(dummy_ses_client.sent_emails) == 2

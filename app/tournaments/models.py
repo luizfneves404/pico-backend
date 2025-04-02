@@ -3,8 +3,6 @@ import decimal
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from base import Base, auto_now_update_timestamp
-from shared.code_generation import HasCode
 from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
@@ -14,6 +12,9 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.base import Base, auto_now_update_timestamp
+from app.shared.code_generation import HasCode
 
 if TYPE_CHECKING:
     from app.quiz.models import Duel

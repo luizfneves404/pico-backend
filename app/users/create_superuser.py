@@ -1,12 +1,12 @@
 import asyncio
 
-from database import db_manager
 from pydantic import SecretStr
-from users.models import EducationLevel, User
-from users.schemas import PhoneNumber, UserIn
-from users.service import get_password_hash, get_user
 
 from app.config import settings
+from app.database import db_manager
+from app.users.models import EducationLevel, User
+from app.users.schemas import PhoneNumber, UserIn
+from app.users.service import get_password_hash, get_user
 
 
 async def create_superuser(
@@ -26,8 +26,8 @@ async def create_superuser(
     Returns:
         The created User object if successful, None if user already exists
     """
-    async with db_manager.connect_db(settings.database_url):
-        async with db_manager.session() as session, session.begin():
+    async with db_manager.use_db(settings.database_url):
+        async with db_manager.session_with_transaction() as session:
             # Check if user already exists
             existing_user = await get_user(session, username=username)
             if existing_user:

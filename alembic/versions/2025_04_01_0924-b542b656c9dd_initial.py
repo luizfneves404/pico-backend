@@ -1,18 +1,19 @@
 """initial
 
-Revision ID: 5cb9fc1ea1a7
+Revision ID: b542b656c9dd
 Revises:
-Create Date: 2025-03-27 10:53:16.043929
+Create Date: 2025-04-01 09:24:48.462678
 
 """
 
 from typing import Sequence, Union
 
 import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "5cb9fc1ea1a7"
+revision: str = "b542b656c9dd"
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -323,7 +324,7 @@ def upgrade() -> None:
         sa.Column("email", sa.String(length=255), nullable=False),
         sa.Column("phone_number", sa.String(length=25), nullable=False),
         sa.Column("hashed_password", sa.String(length=255), nullable=False),
-        sa.Column("is_superuser", sa.Boolean(), server_default="false", nullable=False),
+        sa.Column("is_superuser", sa.Boolean(), nullable=False),
         sa.Column(
             "education_level",
             sa.Enum(
@@ -895,6 +896,23 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk__turn")),
     )
     # ### end Alembic commands ###
+
+    op.execute(
+        """
+        INSERT INTO "user" (username, email, phone_number, hashed_password, is_superuser, 
+                           education_level, is_premium, commitment, balance, is_bot, 
+                           bot_difficulty, signup_source)
+        VALUES ('system', 'system@example.com', '21999202122', '', 
+                false, 'UNKNOWN', false, 0, 0, false,
+                NULL, 'OTHER'),
+                ('pico', 'pico@example.com', '21999202123', '', 
+                false, 'UNKNOWN', false, 0, 0, false,
+                NULL, 'OTHER'),
+                ('deleted', 'deleted@example.com', '21999202124', '', 
+                false, 'UNKNOWN', false, 0, 0, false,
+                NULL, 'OTHER');
+        """
+    )
 
 
 def downgrade() -> None:

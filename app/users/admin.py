@@ -1,11 +1,12 @@
 from typing import Any, ClassVar, Sequence, Union
 
 from fastapi import Request
-from shared.admin import Admin
 from sqlalchemy import Select, select
 from sqlalchemy.orm import InstrumentedAttribute, selectinload
-from users import service as user_service
-from users.models import College, Course, User
+
+from app.shared.admin import Admin
+from app.users import service as user_service
+from app.users.models import College, Course, User
 
 
 def format_string(value: Any) -> Any:

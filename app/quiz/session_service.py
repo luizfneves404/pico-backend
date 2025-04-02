@@ -1,13 +1,14 @@
 import logging
 
-from arq_client import enqueue_job
-from quiz import stats_service
-from quiz.models import (
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.arq_client import enqueue_job
+from app.quiz import stats_service
+from app.quiz.models import (
     Question,
     SessionQuestion,
 )
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 FAST_QUESTION_TIMEOUT = 60
 SLOW_QUESTION_TIMEOUT = 130

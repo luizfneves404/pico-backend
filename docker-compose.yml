@@ -1,13 +1,14 @@
 services:
   app:
     build:
-      context: ./app
-      dockerfile: Dockerfile.app
+      context: .
+      dockerfile: docker/Dockerfile.app
       args:
         - INSTALL_TEST=false
     volumes:
       - ./poetry_cache:/tmp/poetry_cache
-    command: ./docker-entrypoint.sh
+      - ./app:/app
+    command: docker/docker-entrypoint.sh
     ports:
       - "80:8000"
     depends_on:
@@ -29,9 +30,11 @@ services:
   
   worker:
     build: 
-      context: ./app
-      dockerfile: Dockerfile.worker
-    command: ./docker-worker-entrypoint.sh
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    volumes:
+      - ./app:/app
+    command: docker/docker-worker-entrypoint.sh
     depends_on:
       redis:
         condition: service_healthy
@@ -64,7 +67,7 @@ services:
       POSTGRES_PASSWORD: REDACTED_DB_PASSWORD
       DB_NAME: picodb
     volumes:
-      - ./docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/
+      - ./docker/docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s

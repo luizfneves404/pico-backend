@@ -1,9 +1,6 @@
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from base import Base
-from currency.models import HasCurrencyTransactions
-from quiz.models import Session
 from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
@@ -17,12 +14,17 @@ from sqlalchemy import (
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, aliased, mapped_column, relationship
 
+from app.base import Base
+from app.currency.models import HasCurrencyTransactions
+from app.quiz.models import Session
+
 if TYPE_CHECKING:
-    from chat.models import UserWebSocketInfo
     from essays.models import Essay
-    from quiz.models import JoinableSession, UserInfo
-    from schools.models import School
     from tournaments.models import Tournament, TournamentParticipation
+
+    from app.chat.models import UserWebSocketInfo
+    from app.quiz.models import JoinableSession, UserInfo
+    from app.schools.models import School
 
 
 class EducationLevel(StrEnum):
@@ -50,7 +52,7 @@ class User(Base, HasCurrencyTransactions):
     email: Mapped[str] = mapped_column(String(255), unique=True)
     phone_number: Mapped[str] = mapped_column(String(25), unique=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
-    is_superuser: Mapped[bool] = mapped_column(default=False, server_default="false")
+    is_superuser: Mapped[bool] = mapped_column(default=False)
 
     education_level: Mapped[EducationLevel] = mapped_column(
         default=EducationLevel.UNKNOWN

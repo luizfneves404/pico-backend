@@ -7,13 +7,16 @@ import string
 from collections import defaultdict
 from typing import Any, AsyncGenerator, Literal, overload
 
-from currency.currency_service import handle_currency_transaction
-from currency.decorators import currency_transaction
-from currency.models import CurrencyAction, CurrencyType
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pylatexenc.latex2text import LatexNodes2Text
-from quiz.models import (
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.currency.currency_service import handle_currency_transaction
+from app.currency.decorators import currency_transaction
+from app.currency.models import CurrencyAction, CurrencyType
+from app.quiz.models import (
     CUSTOM_SOURCE,
     ENEM_AREAS,
     Choice,
@@ -25,15 +28,13 @@ from quiz.models import (
     SessionQuestionUser,
     UserInfo,
 )
-from quiz.utils import (
+from app.quiz.utils import (
     CATEGORIES,
     SUBCATEGORIES,
     SUBCATEGORIES_TO_PARENT_CATEGORIES,
 )
-from shared import openai_utils
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-from users.models import User
+from app.shared import openai_utils
+from app.users.models import User
 
 from .constants import (
     AVERAGE_SCORES_BY_CORRECT_QUESTIONS,

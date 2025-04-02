@@ -4,6 +4,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.shared.validation import LowercaseEmailStr
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="forbid")
@@ -16,6 +18,7 @@ class Settings(BaseSettings):
     jwt_access_expiration_delta: timedelta = Field(default=timedelta(minutes=5))
     jwt_refresh_expiration_delta: timedelta = Field(default=timedelta(days=180))
     local_timezone: str = Field(default="America/Sao_Paulo")
+    admins: list[LowercaseEmailStr] = Field(default=...)
 
     database_url: str = Field(default=...)
 
@@ -35,6 +38,10 @@ class Settings(BaseSettings):
     amplitude_track_events: bool = Field(default=True)
     amplitude_api_key: str = Field(default=...)
     amplitude_secret_key: str = Field(default=...)
+
+    pagination_per_page: int = Field(
+        default=20, ge=1, description="Number of items per page"
+    )
 
 
 settings = Settings()

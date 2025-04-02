@@ -9,7 +9,7 @@ WORKDIR /app
 
 RUN pip install poetry
 
-COPY pyproject.toml poetry.lock ./
+COPY ../pyproject.toml ../poetry.lock ./
 
 RUN poetry install --only=main --no-interaction --no-root && rm -rf $POETRY_CACHE_DIR
 

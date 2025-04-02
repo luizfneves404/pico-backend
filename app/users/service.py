@@ -2,21 +2,27 @@ import datetime
 import logging
 from typing import Any, Literal
 
-import amp
 import bcrypt
-import mail
-import timezone
-from fastapi import BackgroundTasks
 from pydantic import TypeAdapter, ValidationError
-from quiz import quiz_service
-from quiz.models import SessionQuestionUser, UserInfo
-from schools.models import School
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from users.models import College, Course, EducationLevel, SignupSource, User
-from users.schemas import PhoneNumber
+
+import app.amp as amp
+import app.mail as mail
+import app.timezone as timezone
+from app.quiz import quiz_service
+from app.quiz.models import (
+    Choice,
+    Question,
+    SessionQuestion,
+    SessionQuestionUser,
+    UserInfo,
+)
+from app.schools.models import School
+from app.users.models import College, Course, EducationLevel, SignupSource, User
+from app.users.schemas import PhoneNumber
 
 from .constants import (
     WELCOME_EMAIL_MESSAGE,
@@ -183,8 +189,8 @@ async def _get_or_create_school(db_session: AsyncSession, name: str) -> School:
 
 
 async def create_user(
-    background_tasks: BackgroundTasks,
     db_session: AsyncSession,
+    *,
     username: str,
     password: str,
     phone_number: str,
@@ -271,8 +277,7 @@ async def create_user(
 
     db_session.add(UserInfo(user=db_user))
 
-    mail.send_email(
-        background_tasks,
+    await mail.enqueue_email(
         mail.EmailMessage(
             subject=WELCOME_EMAIL_SUBJECT,
             body_html=WELCOME_EMAIL_MESSAGE.format(username=db_user.username),
@@ -526,37 +531,14 @@ async def search_username(db_session: AsyncSession, username: str) -> list[User]
     )
 
 
-def send_bulk_email(
-    background_tasks: BackgroundTasks,
-    users: list[User],
-    subject: str,
-    html_string: str,
-    id_zero_padding: int = 0,
-) -> None:
-    messages: list[mail.EmailMessage] = []
-    for user in users:
-        # Replace template markers with user data
-        personalized_html = (
-            html_string.replace(
-                "%%id%%",
-                (
-                    str(user.id).zfill(id_zero_padding)
-                    if id_zero_padding
-                    else str(user.id)
-                ),
+async def get_sentinel_users(db_session: AsyncSession) -> list[User]:
+    return list(
+        (
+            await db_session.scalars(
+                select(User).where(User.username.in_(SENTINEL_USERNAMES))
             )
-            .replace("%%username%%", user.username)
-            .replace("%%email%%", user.email)
-        )
-        messages.append(
-            mail.EmailMessage(
-                subject=subject,
-                body_html=personalized_html,
-                to_emails=[user.email],
-            )
-        )
-    mail.send_email(background_tasks, messages)
-    logger.info(f"Sent bulk email to {len(users)} users")
+        ).all()
+    )
 
 
 def get_streak_info(answer_timestamps: list[datetime.datetime]) -> tuple[bool, int]:
@@ -641,7 +623,9 @@ async def get_user_stats(
 
     user_stats = await quiz_service.calc_user_stats(db_session, found_user.id)
 
-    await db_session.refresh(found_user, ["chosen_course", "chosen_college"])
+    await db_session.refresh(
+        found_user, ["chosen_course", "chosen_college", "user_info"]
+    )
     # Get user answer timestamps
     stmt = (
         select(SessionQuestionUser.timestamp)
@@ -683,9 +667,62 @@ async def get_user_stats(
             "education_level": found_user.education_level,
             "streak": streak,
             "done_today": done_today,
+            "dynamic_score": found_user.user_info.dynamic_score,
+            "percentage_score": await get_user_percentage_score(
+                db_session, found_user.id
+            ),
         }
     )
     return user_stats
+
+
+async def get_user_percentage_score(
+    db_session: AsyncSession, user_id: int, subject: str | None = None
+) -> float:
+    """
+    Calculate percentage score for a single user.
+    Returns the ratio of correct answers to total answers.
+    """
+    # Start with base query counting answers
+    query = select(
+        func.count(SessionQuestionUser.id)
+        .filter(
+            or_(
+                SessionQuestionUser.choice_id.is_not(None),
+                SessionQuestionUser.timed_out.is_(True),
+            )
+        )
+        .label("total_answers"),
+        func.count(SessionQuestionUser.id)
+        .filter(Choice.is_correct.is_(True))
+        .label("correct_answers"),
+    ).select_from(SessionQuestionUser)
+
+    # Always join with Choice for correct answer counting
+    query = query.outerjoin(Choice, SessionQuestionUser.choice_id == Choice.id)
+
+    # Apply user filter
+    query = query.where(SessionQuestionUser.user_id == user_id)
+
+    # Only join with Question tables if we need to filter by subject
+    if subject:
+        query = (
+            query.join(
+                SessionQuestion,
+                SessionQuestionUser.session_question_id == SessionQuestion.id,
+            )
+            .join(Question, SessionQuestion.question_id == Question.id)
+            .where(Question.subject == subject)
+        )
+
+    # Execute query
+    result = await db_session.execute(query)
+    row = result.one()
+
+    total_answers = row.total_answers
+    correct_answers = row.correct_answers
+
+    return correct_answers / total_answers if total_answers else 0.0
 
 
 async def get_ranking(
@@ -765,3 +802,28 @@ async def get_balance(user_id: int) -> int:
     if not user:
         raise UserNotFoundError
     return user["balance"]
+
+
+async def to_other_user_out(
+    db_session: AsyncSession,
+    user_ids: list[int],
+) -> list[User]:
+    """Convert user IDs to OtherUserOut objects.
+
+    Args:
+        db_session: The database session
+        user_ids: List of user IDs to convert
+
+    Returns:
+        List of OtherUserOut objects
+    """
+    result = await db_session.scalars(
+        select(User)
+        .where(User.id.in_(user_ids))
+        .options(
+            selectinload(User.chosen_college),
+            selectinload(User.chosen_course),
+        )
+    )
+    users = list(result.all())
+    return users

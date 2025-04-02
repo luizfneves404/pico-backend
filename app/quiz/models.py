@@ -7,10 +7,6 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Iterator, Protocol
 
-from base import Base, auto_now_insert_timestamp
-from currency.models import HasCurrencyTransactions
-from files.models import File
-from shared.code_generation import HasCode
 from sqlalchemy import (
     CheckConstraint,
     Computed,
@@ -21,9 +17,15 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.base import Base, auto_now_insert_timestamp
+from app.currency.models import HasCurrencyTransactions
+from app.files.models import File
+from app.shared.code_generation import HasCode
+
 if TYPE_CHECKING:
     from tournaments.models import Tournament
-    from users.models import User
+
+    from app.users.models import User
 
 logger = logging.getLogger(__name__)
 

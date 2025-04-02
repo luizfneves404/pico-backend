@@ -5,9 +5,10 @@ import logging
 import re
 from typing import Any
 
-import shared.openai_utils as openai_utils
 from openai import BadRequestError, RateLimitError
-from quiz.models import ENEM_AREAS, Question, SessionQuestion
+
+import app.shared.openai_utils as openai_utils
+from app.quiz.models import ENEM_AREAS, Question, SessionQuestion
 
 # API_KEY = settings.MARITACA_API_KEY
 # client = OpenAI(

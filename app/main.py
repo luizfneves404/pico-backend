@@ -4,18 +4,18 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator, Awaitable, Callable
 
 import uvicorn
-from fastapi import FastAPI, Request, Response
+from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from sqladmin import Admin
 
+import app.arq_client as arq_client
 from app.admin_registry import admin_views, authentication_backend
 from app.amp import track_amplitude_endpoint_event
-from app.arq_client import arq_client_manager
 from app.chat.websockets import router as websockets_router
 from app.config import settings
 from app.database import db_manager
 from app.deps import CurrentUserDep
-from app.redis_client import redis_manager
+from app.redis_client import use_redis
 from app.schools.routers import router as schools_router
 from app.users.routers import token_router, user_router
 
@@ -25,30 +25,29 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    async with db_manager.connect_db(settings.database_url):
-        redis_manager.init(settings.redis_url)
-        await arq_client_manager.init(settings.redis_url)
+    async with db_manager.use_db(settings.database_url):
+        async with use_redis():
+            async with arq_client.arq_redis():
+                admin = Admin(
+                    app,
+                    db_manager.engine,
+                    authentication_backend=authentication_backend,
+                )
 
-        admin = Admin(
-            app, db_manager.engine, authentication_backend=authentication_backend
-        )
+                for view in admin_views:
+                    admin.add_view(view)
 
-        for view in admin_views:
-            admin.add_view(view)
-
-        yield
-
-        await redis_manager.close()
-        await arq_client_manager.close()
+                yield
 
 
-app = FastAPI(lifespan=lifespan, dependencies=[CurrentUserDep])
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=settings.allowed_hosts,
 )
-
+authenticated_routers = APIRouter(dependencies=[CurrentUserDep])
+app.include_router(authenticated_routers)
 app.include_router(token_router)
 app.include_router(user_router)
 app.include_router(websockets_router)
@@ -101,7 +100,7 @@ async def analytics_middleware(
 
 if __name__ == "__main__":
     uvicorn.run(
-        "main:app",
+        "app.main:app",
         host=settings.uvicorn_host,
         port=settings.uvicorn_port,
         reload=settings.uvicorn_reload,

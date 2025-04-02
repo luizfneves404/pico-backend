@@ -7,7 +7,6 @@ from typing import Any, AsyncIterator, Optional, Union
 from urllib.parse import urlparse, urlunparse
 
 import sqlalchemy as sa
-from alembic.config import Config as AlembicConfig
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy_utils.functions.database import (
     _set_url_database,
@@ -15,11 +14,12 @@ from sqlalchemy_utils.functions.database import (
 )
 from sqlalchemy_utils.functions.orm import quote
 
+from alembic.config import Config as AlembicConfig
 from app.config import settings
 
 
 def make_alembic_config(
-    cmd_opts: Namespace, base_path: Union[str, Path] = settings.app_root
+    cmd_opts: Namespace, base_path: Union[str, Path] = settings.app_root.parent
 ) -> AlembicConfig:
     # Replace path to alembic.ini file to absolute
     base_path = Path(base_path)

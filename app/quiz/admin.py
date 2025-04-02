@@ -1,4 +1,4 @@
-from quiz.models import (
+from app.quiz.models import (
     Challenge,
     Choice,
     Duel,
@@ -10,7 +10,7 @@ from quiz.models import (
     Turn,
     UserInfo,
 )
-from shared.admin import Admin
+from app.shared.admin import Admin
 
 
 class QuizAdmin(Admin, model=Quiz):

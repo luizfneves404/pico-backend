@@ -11,7 +11,7 @@ WORKDIR /app
 
 RUN pip install poetry
 
-COPY pyproject.toml poetry.lock ./
+COPY ../pyproject.toml ../poetry.lock ./
 
 # Conditionally install test dependencies if INSTALL_TEST is true
 RUN if [ "$INSTALL_TEST" = "true" ]; then \

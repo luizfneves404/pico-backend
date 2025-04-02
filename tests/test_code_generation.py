@@ -1,13 +1,14 @@
 import random
 
 import pytest
-from shared.code_generation import (
-    CouldNotGenerateUniqueCodeError,
-    HasCode,
-)
 from sqlalchemy import Integer, String, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from app.shared.code_generation import (
+    CouldNotGenerateUniqueCodeError,
+    HasCode,
+)
 
 
 # Create a separate base class for test-only models

@@ -1,10 +1,16 @@
 import logging
 from typing import Any
 
-from currency.models import Currency, CurrencyAction, CurrencyTransaction, CurrencyType
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from users.models import User
+
+from app.currency.models import (
+    Currency,
+    CurrencyAction,
+    CurrencyTransaction,
+    CurrencyType,
+)
+from app.users.models import User
 
 logger = logging.getLogger(__name__)
 

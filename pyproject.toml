@@ -26,6 +26,7 @@ dependencies = [
     "pylatexenc (>=2.10,<3.0)",
     "amplitude-analytics (>=1.1.5,<2.0.0)",
     "factory-boy (>=3.3.3,<4.0.0)",
+    "pytest (>=8.3.5,<9.0.0)",
 ]
 
 [tool.poetry]

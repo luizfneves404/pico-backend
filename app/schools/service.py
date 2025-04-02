@@ -1,6 +1,7 @@
-from schools.models import School
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.schools.models import School
 
 
 class SchoolNotFoundError(Exception):

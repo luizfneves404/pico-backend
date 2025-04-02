@@ -1,10 +1,11 @@
 import jwt
+from httpx import AsyncClient
 
 from app.config import settings
+from app.users.models import User
 
 
-async def test_token_obtain_pair(client, user_factory):
-    user = await user_factory()
+async def test_token_obtain_pair(client: AsyncClient, user: User):
     response = await client.post(
         "/token/pair",
         data={
@@ -24,8 +25,7 @@ async def test_token_obtain_pair(client, user_factory):
     assert decoded_token["user_id"] == user.id
 
 
-async def test_token_obtain_pair_whitespace(client, user_factory):
-    user = await user_factory()
+async def test_token_obtain_pair_whitespace(client: AsyncClient, user: User):
     response = await client.post(
         "/token/pair",
         data={
@@ -43,8 +43,7 @@ async def test_token_obtain_pair_whitespace(client, user_factory):
     assert decoded_token["user_id"] == user.id
 
 
-async def test_token_verify(client, user_factory):
-    user = await user_factory()
+async def test_token_verify(client: AsyncClient, user: User):
     token_response = await client.post(
         "/token/pair",
         data={
@@ -61,8 +60,7 @@ async def test_token_verify(client, user_factory):
     assert response.status_code == 200
 
 
-async def test_token_refresh(client, user_factory):
-    user = await user_factory()
+async def test_token_refresh(client: AsyncClient, user: User):
     token_response = await client.post(
         "/token/pair",
         data={
@@ -86,8 +84,7 @@ async def test_token_refresh(client, user_factory):
     assert decoded_token["user_id"] == user.id
 
 
-async def test_user_me_endpoint(client, user_factory):
-    user = await user_factory()
+async def test_user_me_endpoint(client: AsyncClient, user: User):
     token_response = await client.post(
         "/token/pair",
         data={

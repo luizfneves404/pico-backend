@@ -3,14 +3,14 @@ from contextvars import ContextVar
 from logging.config import fileConfig
 from typing import Any
 
-import database  # noqa: F401
 from alembic import context
 from alembic.environment import EnvironmentContext
-from base import Base
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import app.database  # noqa: F401 # type: ignore
+from app.base import Base
 from app.config import settings
 
 # this is the Alembic Config object, which provides
@@ -110,7 +110,7 @@ def run_migrations_online() -> None:
         asyncio.run(run_async_migrations())
         return
 
-    from migration_state import set_migration_task
+    from app.migration_state import set_migration_task
 
     ctx_var.set(
         {

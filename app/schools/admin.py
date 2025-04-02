@@ -1,5 +1,5 @@
-from schools.models import School
-from shared.admin import Admin
+from app.schools.models import School
+from app.shared.admin import Admin
 
 
 class SchoolAdmin(Admin, model=School):

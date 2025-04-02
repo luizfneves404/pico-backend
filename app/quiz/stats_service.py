@@ -1,6 +1,7 @@
-from quiz.models import UserInfo
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.quiz.models import UserInfo
 
 
 async def update_dynamic_score(db_session: AsyncSession, user_id: int, n_answers: int):

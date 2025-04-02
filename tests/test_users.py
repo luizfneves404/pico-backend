@@ -1,8 +1,14 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from tests.factories import CollegeFactory, CourseFactory, SchoolFactory, UserFactory
-from users.models import User
+
+from app.users.models import User
+from tests.factories import (
+    CollegeFactory,
+    CourseFactory,
+    SchoolFactory,
+    UserFactory,
+)
 
 
 async def test_create_user_followed_by_jwt_and_user_me(client: AsyncClient):
@@ -15,8 +21,8 @@ async def test_create_user_followed_by_jwt_and_user_me(client: AsyncClient):
             "phone_number": user.phone_number,
             "email": user.email,
             "school_id": user.school_id,
-            "chosen_college": user.chosen_college.name,
-            "chosen_course": user.chosen_course.name,
+            "chosen_college": user.chosen_college.name if user.chosen_college else None,
+            "chosen_course": user.chosen_course.name if user.chosen_course else None,
             "education_level": user.education_level.value,
             "referred_by_username": "",
             "commitment": user.commitment,
@@ -33,8 +39,12 @@ async def test_create_user_followed_by_jwt_and_user_me(client: AsyncClient):
     assert response_data["school_id"] == user.school_id
     assert response_data["commitment"] == user.commitment
     assert response_data["education_level"] == user.education_level.value
-    assert response_data["chosen_college"] == user.chosen_college.name
-    assert response_data["chosen_course"] == user.chosen_course.name
+    assert response_data["chosen_college"] == (
+        user.chosen_college.name if user.chosen_college else None
+    )
+    assert response_data["chosen_course"] == (
+        user.chosen_course.name if user.chosen_course else None
+    )
     assert response_data["referral_count"] == 0
 
     # Login with new user
@@ -60,8 +70,12 @@ async def test_create_user_followed_by_jwt_and_user_me(client: AsyncClient):
     assert me_data["school_id"] == user.school_id
     assert me_data["commitment"] == user.commitment
     assert me_data["education_level"] == user.education_level.value
-    assert me_data["chosen_college"] == user.chosen_college.name
-    assert me_data["chosen_course"] == user.chosen_course.name
+    assert me_data["chosen_college"] == (
+        user.chosen_college.name if user.chosen_college else None
+    )
+    assert me_data["chosen_course"] == (
+        user.chosen_course.name if user.chosen_course else None
+    )
 
 
 async def test_create_user_whitespace(client: AsyncClient):
@@ -74,8 +88,8 @@ async def test_create_user_whitespace(client: AsyncClient):
             "phone_number": user.phone_number,
             "email": user.email,
             "school_id": user.school_id,
-            "chosen_college": user.chosen_college.name,
-            "chosen_course": user.chosen_course.name,
+            "chosen_college": user.chosen_college.name if user.chosen_college else None,
+            "chosen_course": user.chosen_course.name if user.chosen_course else None,
             "education_level": user.education_level.value,
         },
     )
@@ -154,9 +168,10 @@ async def test_update_username(auth_client: AsyncClient, user: User):
 
 
 async def test_update_username_already_exists(
-    auth_client: AsyncClient,
+    auth_client: AsyncClient, session: AsyncSession
 ):
-    existing_user = await UserFactory.create()
+    async with session.begin():
+        existing_user = await UserFactory.create(session=session)
     data = {
         "new_username": existing_user.username,
         "current_password": "defaultpassword",
@@ -170,9 +185,10 @@ async def test_update_username_already_exists(
 
 
 async def test_update_username_already_exists_case_insensitive_and_whitespace(
-    auth_client: AsyncClient,
+    auth_client: AsyncClient, session: AsyncSession
 ):
-    existing_user = await UserFactory.create()
+    async with session.begin():
+        existing_user = await UserFactory.create(session=session)
     data = {
         "new_username": f"  {existing_user.username.upper()}  ",
         "current_password": "defaultpassword",
@@ -213,9 +229,10 @@ async def test_update_phone_number(auth_client: AsyncClient, user: User):
 
 
 async def test_update_phone_number_already_exists(
-    auth_client: AsyncClient,
+    auth_client: AsyncClient, session: AsyncSession
 ):
-    existing_user = await UserFactory.create()
+    async with session.begin():
+        existing_user = await UserFactory.create(session=session)
     data = {
         "new_phone_number": existing_user.phone_number,
         "current_password": "defaultpassword",
@@ -255,9 +272,10 @@ async def test_update_email(auth_client: AsyncClient, user: User):
 
 
 async def test_update_email_already_exists(
-    auth_client: AsyncClient,
+    auth_client: AsyncClient, session: AsyncSession
 ):
-    existing_user = await UserFactory.create()
+    async with session.begin():
+        existing_user = await UserFactory.create(session=session)
     data = {
         "new_email": existing_user.email,
         "current_password": "defaultpassword",
@@ -283,10 +301,9 @@ async def test_update_email_invalid(auth_client: AsyncClient, user: User):
     assert response_data["email"] != "invalid"
 
 
-async def test_update_school(
-    auth_client: AsyncClient,
-):
-    school = await SchoolFactory.create()
+async def test_update_school(auth_client: AsyncClient, session: AsyncSession):
+    async with session.begin():
+        school = await SchoolFactory.create(session=session)
     data = {
         "new_school_id": school.id,
     }
@@ -311,10 +328,9 @@ async def test_update_school_to_blank(auth_client: AsyncClient):
     assert response_data["school_id"] is None
 
 
-async def test_update_chosen_college(
-    auth_client: AsyncClient,
-):
-    college = await CollegeFactory.create()
+async def test_update_chosen_college(auth_client: AsyncClient, session: AsyncSession):
+    async with session.begin():
+        college = await CollegeFactory.create(session=session)
     data = {
         "new_chosen_college": college.name,
     }
@@ -340,10 +356,9 @@ async def test_update_chosen_college_to_blank(auth_client: AsyncClient):
     assert response_data["chosen_college"] == ""
 
 
-async def test_update_chosen_course(
-    auth_client: AsyncClient,
-):
-    course = await CourseFactory.create()
+async def test_update_chosen_course(auth_client: AsyncClient, session: AsyncSession):
+    async with session.begin():
+        course = await CourseFactory.create(session=session)
     data = {
         "new_chosen_course": course.name,
     }
@@ -476,15 +491,14 @@ async def test_retrieve_user_stats(auth_client: AsyncClient, user: User):
 
 async def test_check_contacts(
     auth_client: AsyncClient,
+    session: AsyncSession,
 ):
-    users: list[User] = []
-    for _ in range(7):
-        user = await UserFactory.create()
-        users.append(user)
-    search_users: list[User] = []
-    for i in range(1, 8):
-        user = await UserFactory.create(username=f"searchuser{i}")
-        search_users.append(user)
+    async with session.begin():
+        users = await UserFactory.create_batch(7, session=session)
+        search_users: list[User] = []
+        for i in range(1, 8):
+            user = await UserFactory.create(username=f"searchuser{i}", session=session)
+            search_users.append(user)
 
     url = "/users/check-contacts?page=1&page_size=4"
     phone_numbers = [str(user.phone_number) for user in users] + ["+551123111111"]
@@ -515,29 +529,25 @@ async def test_check_contacts(
     for user in users:
         assert user.phone_number in response_phone_numbers
 
-    assert "+551123111111" not in response_phone_numbers
+    assert "tel:+55-11-2311-1111" not in response_phone_numbers
 
 
-async def test_search_username(
-    auth_client: AsyncClient,
-):
-    users: list[User] = []
-    for _ in range(7):
-        user = await UserFactory.create()
-        users.append(user)
-    search_users: list[User] = []
-    for i in range(1, 8):
-        user = await UserFactory.create(username=f"searchuser{i}")
-        search_users.append(user)
+async def test_search_username(auth_client: AsyncClient, session: AsyncSession):
+    async with session.begin():
+        users = await UserFactory.create_batch(7, session=session)
+        search_users: list[User] = []
+        for i in range(1, 8):
+            user = await UserFactory.create(username=f"searchuser{i}", session=session)
+            search_users.append(user)
 
-    url = "/users/search?username=searchuser&page=1&page_size=4"
+    url = "/users/search-username?username=searchuser&page=1&page_size=4"
     response = await auth_client.get(url)
     assert response.status_code == 200
     results = response.json()["results"]
     response_ids = [user["id"] for user in results]
     assert len(response_ids) == 4
 
-    new_url = "/users/search?username=searchuser&page=2&page_size=4"
+    new_url = "/users/search-username?username=searchuser&page=2&page_size=4"
     new_response = await auth_client.get(new_url)
     assert new_response.status_code == 200
     new_results = new_response.json()["results"]
@@ -558,9 +568,7 @@ async def test_search_username(
     assert current_user_data["id"] not in response_ids
 
 
-async def test_retrieve_sentinel_users(
-    db_session: AsyncSession, auth_client: AsyncClient
-):
+async def test_retrieve_sentinel_users(session: AsyncSession, auth_client: AsyncClient):
     # Get sentinel users
     url = "/users/sentinel"
     response = await auth_client.get(url)
@@ -570,16 +578,16 @@ async def test_retrieve_sentinel_users(
     response_usernames = [user["username"] for user in response_data]
 
     assert len(response_ids) == 3
-
-    deleted_user = (
-        await db_session.execute(select(User).where(User.username == "deleted_user"))
-    ).scalar_one()
-    system_user = (
-        await db_session.execute(select(User).where(User.username == "system_user"))
-    ).scalar_one()
-    pico_user = (
-        await db_session.execute(select(User).where(User.username == "pico_user"))
-    ).scalar_one()
+    async with session.begin():
+        deleted_user = (
+            await session.execute(select(User).where(User.username == "deleted"))
+        ).scalar_one()
+        system_user = (
+            await session.execute(select(User).where(User.username == "system"))
+        ).scalar_one()
+        pico_user = (
+            await session.execute(select(User).where(User.username == "pico"))
+        ).scalar_one()
 
     assert deleted_user.id in response_ids
     assert deleted_user.username in response_usernames
@@ -587,3 +595,10 @@ async def test_retrieve_sentinel_users(
     assert system_user.username in response_usernames
     assert pico_user.id in response_ids
     assert pico_user.username in response_usernames
+
+
+async def test_get_balance(auth_client: AsyncClient):
+    url = "/users/balance"
+    response = await auth_client.get(url)
+    assert response.status_code == 200
+    assert response.json()["balance"] == 1000

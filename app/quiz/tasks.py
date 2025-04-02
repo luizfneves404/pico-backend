@@ -6,7 +6,7 @@ Instead, this module depends on other stuff in this directory.
 
 from typing import Any
 
-from quiz.session_service import mark_question_timed_out
+from app.quiz.session_service import mark_question_timed_out
 
 
 async def task_mark_question_timed_out(

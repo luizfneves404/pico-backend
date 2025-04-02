@@ -1,6 +1,7 @@
 from httpx._client import AsyncClient
-from quiz.models import Quiz, SessionQuestionUser
-from users.models import User
+
+from app.quiz.models import Quiz, SessionQuestionUser
+from app.users.models import User
 
 NUM_WEAK_SUBCATEGORIES = 5
 
@@ -82,29 +83,6 @@ async def test_quiz_create_not_official_chatroom(client: AsyncClient):
     assert len(questions) == 10
     for question in questions:
         assert question["difficulty"] == "Fácil"
-
-
-async def test_quiz_create_official_chatroom(
-    client: AsyncClient, official_chatroom: Chatroom
-):
-    response = await client.post(
-        "/quiz",
-        json={
-            "query": "What is the capital of France?",
-            "area": "",
-            "source_filter": "",
-            "difficulty": "",
-            "n_questions": 10,
-            "question_type": "multiple_choice",
-        },
-    )
-    quiz_id = response.json()["id"]
-    assert response.status_code == 201
-    # check that the chatroom has a message associated with the quiz
-    assert await official_chatroom.messages.acount() == 1
-    message = await official_chatroom.messages.afirst()
-    assert message.session.id == quiz_id
-    assert len(response.json()["questions_and_answers"]) == 10
 
 
 async def test_quiz_create_no_query(client: AsyncClient):

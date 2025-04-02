@@ -1,16 +1,30 @@
 from typing import Annotated
 
-from database import get_db_session
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from users import jwt_token as token_service
-from users.models import User
+
+from app.database import db_manager
+from app.users import jwt_token as token_service
+from app.users.models import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token/pair")
 
-DBSessionDep = Annotated[AsyncSession, Depends(get_db_session)]
+
+async def get_db_session():
+    """
+    This function is used to get a database session.
+    It will begin a transaction and yield the session.
+    The transaction will be committed if the session is used.
+    If an exception is raised, the transaction will be rolled back.
+    If you wish to keep the session useful after an error, use nested transactions.
+    """
+    async with db_manager.session_with_transaction() as session:
+        yield session
+
+
+DBSessionAnnotated = Annotated[AsyncSession, Depends(get_db_session)]
 
 
 class TokenData(BaseModel):
@@ -18,7 +32,7 @@ class TokenData(BaseModel):
 
 
 async def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)], db_session: DBSessionDep
+    token: Annotated[str, Depends(oauth2_scheme)], db_session: DBSessionAnnotated
 ) -> User:
     try:
         return await token_service.process_token(db_session, token, "access")
@@ -30,4 +44,5 @@ async def get_current_user(
         ) from e
 
 
-CurrentUserDep = Annotated[User, Depends(get_current_user)]
+CurrentUserDep = Depends(get_current_user)
+CurrentUserAnnotated = Annotated[User, CurrentUserDep]

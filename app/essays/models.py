@@ -1,8 +1,6 @@
 import decimal
 from typing import TYPE_CHECKING
 
-from base import Base
-from currency.models import HasCurrencyTransactions
 from sqlalchemy import (
     Double,
     ForeignKey,
@@ -12,6 +10,9 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.base import Base
+from app.currency.models import HasCurrencyTransactions
 
 if TYPE_CHECKING:
     from app.users.models import User

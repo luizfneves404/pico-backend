@@ -1,31 +1,75 @@
-from typing import Any
+import contextlib
+from typing import Any, AsyncIterator
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
 
+from app.config import settings
 
-class ArqClientManager:
-    def __init__(self) -> None:
-        self._redis: ArqRedis | None = None
-
-    async def init(self, redis_url: str) -> None:
-        self._redis = await create_pool(RedisSettings.from_dsn(redis_url))
-
-    async def close(self) -> None:
-        if self._redis is None:
-            return
-        await self._redis.aclose()
-        self._redis = None
-
-    def get_redis(self) -> ArqRedis:
-        if self._redis is None:
-            raise IOError("ArqClientManager is not initialized")
-        return self._redis
+_redis: ArqRedis | None = None
 
 
-arq_client_manager = ArqClientManager()
+async def init() -> None:
+    """Initialize the ARQ Redis connection pool.
+
+    Args:
+        redis_url: Redis connection URL
+    """
+    global _redis
+    _redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+
+
+async def close() -> None:
+    """Close the ARQ Redis connection pool if initialized."""
+    global _redis
+    if _redis is None:
+        return
+    await _redis.aclose()
+    _redis = None
+
+
+@contextlib.asynccontextmanager
+async def arq_redis() -> AsyncIterator[None]:
+    """Use the ARQ Redis connection pool.
+
+    Args:
+        redis_url: Redis connection URL
+    """
+    global _redis
+    try:
+        await init()
+        yield
+    finally:
+        await close()
+
+
+def _get_redis() -> ArqRedis:
+    """Get the ARQ Redis connection.
+
+    Returns:
+        The ARQ Redis connection
+
+    Raises:
+        IOError: If the ARQ Redis connection is not initialized
+    """
+    if _redis is None:
+        raise IOError("ARQ Redis connection is not initialized")
+    return _redis
 
 
 async def enqueue_job(function: str, *args: Any, **kwargs: Any) -> None:
-    client = await arq_client_manager.get_redis()
+    """Enqueue a job to be processed by the ARQ worker.
+
+    Args:
+        function: The name of the function to execute
+        *args: Positional arguments to pass to the function
+        **kwargs: Keyword arguments to pass to the function
+    """
+    client = _get_redis()
     await client.enqueue_job(function, *args, **kwargs)
+
+
+async def clear_redis() -> None:
+    """Clear the Redis connection pool."""
+    client = _get_redis()
+    await client.flushall()

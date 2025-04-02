@@ -1,13 +1,15 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from users.service import verify_password
+
+from app.users.models import User
+from app.users.service import verify_password
 
 
-async def test_create_user(session: AsyncSession, user) -> None:
+async def test_create_user(session: AsyncSession, user: User) -> None:
     """Test creating a user with the factory."""
     # Verify the user was created with default values
     assert user.username.startswith("user")
     assert user.email == f"{user.username}@example.com"
-    assert user.phone_number.startswith("+5511999999")
+    assert user.phone_number.startswith("tel:+55-11-99999-9")
     assert verify_password("defaultpassword", user.hashed_password)
     assert user.is_superuser is False
     assert user.education_level == "TYHS"

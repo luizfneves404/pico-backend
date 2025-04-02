@@ -3,11 +3,12 @@ import logging
 from functools import wraps
 from typing import Any, Callable, TypeVar, cast
 
-from currency.currency_service import handle_currency_transaction
-from currency.models import CurrencyAction, CurrencyType
-from essays.models import Essay
-from quiz.models import Challenge, Duel, Quiz
 from sqlalchemy import select
+
+from app.currency.currency_service import handle_currency_transaction
+from app.currency.models import CurrencyAction, CurrencyType
+from app.essays.models import Essay
+from app.quiz.models import Challenge, Duel, Quiz
 
 logger = logging.getLogger(__name__)
 

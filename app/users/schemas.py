@@ -10,10 +10,10 @@ from pydantic import (
     StringConstraints,
 )
 from pydantic_extra_types.phone_numbers import PhoneNumber
-from shared.validation import LowercaseEmailStr, StripWhitespaceStr
-from users.models import EducationLevel, SignupSource
 
 from app.config import settings
+from app.shared.validation import LowercaseEmailStr, StripWhitespaceStr
+from app.users.models import EducationLevel, SignupSource
 
 PhoneNumber.default_region_code = settings.default_phone_number_country
 
@@ -98,6 +98,14 @@ class UserOut(UserBase):
     )
 
 
+class OtherUserOut(BaseModel):
+    id: int
+    username: StripWhitespaceStr
+    email: LowercaseEmailStr
+    phone_number: PhoneNumber
+    school_id: int | None
+
+
 class PasswordRequest(BaseModel):
     current_password: PasswordStr
 
@@ -176,3 +184,7 @@ class UserStatsMeResponse(UserStatsResponse):
         ],
         dict[str, dict[str, dict[str, SubcategoryPerformance]]],
     ]
+
+
+class RawPhoneNumbersIn(BaseModel):
+    phone_numbers: list[str]

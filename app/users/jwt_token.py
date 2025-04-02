@@ -6,10 +6,10 @@ from typing import Literal
 import jwt
 from fastapi import APIRouter
 from sqlalchemy.ext.asyncio import AsyncSession
-from users import service
-from users.models import User as UserDB
 
 from app.config import settings
+from app.users import service
+from app.users.models import User as UserDB
 
 JWT_ALGORITHM = "HS256"
 router = APIRouter(prefix="/token", tags=["token"])
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class TokenError(Exception):
     """Base class for token-related errors"""
 
-    def __init__(self, message):
+    def __init__(self, message: str):
         self.message = message
 
 

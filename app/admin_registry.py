@@ -1,5 +1,10 @@
 from fastapi import Request
-from quiz.admin import (
+from sqladmin import ModelView
+from sqladmin.authentication import AuthenticationBackend
+
+from app.config import settings
+from app.database import db_manager
+from app.quiz.admin import (
     ChallengeAdmin,
     ChoiceAdmin,
     DuelAdmin,
@@ -11,15 +16,10 @@ from quiz.admin import (
     TurnAdmin,
     UserInfoAdmin,
 )
-from schools.admin import SchoolAdmin
-from sqladmin import ModelView
-from sqladmin.authentication import AuthenticationBackend
-from users import service as user_service
-from users.admin import CollegeAdmin, CourseAdmin, UserAdmin
-from users.jwt_token import TokenError, generate_tokens, process_token
-
-from app.config import settings
-from app.database import get_db_session
+from app.schools.admin import SchoolAdmin
+from app.users import service as user_service
+from app.users.admin import CollegeAdmin, CourseAdmin, UserAdmin
+from app.users.jwt_token import TokenError, generate_tokens, process_token
 
 admin_views: list[type[ModelView]] = []
 
@@ -45,7 +45,7 @@ class AdminAuth(AuthenticationBackend):
         username, password = form["username"], form["password"]
 
         # Create a database session
-        async for db_session in get_db_session():
+        async with db_manager.session_with_transaction() as db_session:
             # Authenticate the user using the existing authentication system
             user = await user_service.authenticate_user(
                 db_session, str(username), str(password)
@@ -63,7 +63,6 @@ class AdminAuth(AuthenticationBackend):
             request.session.update({"token": access_token, "user_id": user.id})
 
             return True
-        return False
 
     async def logout(self, request: Request) -> bool:
         # Clear the session
@@ -78,12 +77,11 @@ class AdminAuth(AuthenticationBackend):
 
         try:
             # Verify the token and check if the user is a superuser
-            async for db_session in get_db_session():
+            async with db_manager.session_with_transaction() as db_session:
                 user = await process_token(db_session, token, "access")
                 return bool(user and user.is_superuser)
         except TokenError:
             return False
-        return False
 
 
 authentication_backend = AdminAuth(secret_key=settings.secret_key)
