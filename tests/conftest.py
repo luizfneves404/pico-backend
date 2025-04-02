@@ -23,6 +23,7 @@ from app.arq_worker import WorkerSettings
 from app.config import settings
 from app.database import DatabaseSessionManager, db_manager
 from app.deps import get_db_session
+from app.fcm_service import init_firebase
 from app.redis_client import get_redis, use_redis
 from app.users.models import User
 from tests.db_utils import alembic_config_from_url, tmp_database
@@ -75,6 +76,11 @@ def anyio_backend() -> tuple[Literal["asyncio"], dict[str, bool]]:
 
 
 @pytest.fixture(scope="session")
+def firebase_for_tests():
+    init_firebase()
+
+
+@pytest.fixture(scope="session")
 def pg_url() -> str:
     """Provides base PostgreSQL URL for creating temporary databases."""
     return settings.database_url
@@ -106,7 +112,7 @@ async def sessionmanager_for_tests(
         yield db_manager
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture()
 async def session_factory(
     sessionmanager_for_tests: DatabaseSessionManager,
 ) -> AsyncGenerator[Callable[[], AsyncContextManager[AsyncSession]], None]:
@@ -143,6 +149,9 @@ async def arq_worker() -> AsyncGenerator[Worker, None]:
 @pytest.fixture()
 def app(
     session_factory: Callable[[], AsyncContextManager[AsyncSession]],
+    arq_worker: Worker,
+    redis_for_tests: redis.Redis,
+    firebase_for_tests: None,
 ) -> Generator[FastAPI, None, None]:
     from app.main import app
 
@@ -160,9 +169,6 @@ def app(
 
 @pytest.fixture
 async def client(
-    session: AsyncSession,
-    arq_worker: Worker,
-    redis_for_tests: redis.Redis,
     app: FastAPI,
 ) -> AsyncIterator[AsyncClient]:
     async with AsyncClient(

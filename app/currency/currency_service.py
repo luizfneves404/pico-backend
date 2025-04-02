@@ -114,7 +114,7 @@ async def handle_currency_transaction(
         select(Currency).where(
             Currency.action == action,
             Currency.currency_type == transaction_type,
-            Currency.is_default == True,
+            Currency.is_default.is_(True),
         )
     )
     currency = result.scalar_one_or_none()
@@ -175,7 +175,7 @@ async def fetch_default_currency(
         select(Currency).where(
             Currency.action == action,
             Currency.currency_type == currency_type,
-            Currency.is_default == True,
+            Currency.is_default.is_(True),
         )
     )
     currency = result.scalar_one()

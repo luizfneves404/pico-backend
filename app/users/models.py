@@ -22,9 +22,12 @@ if TYPE_CHECKING:
     from essays.models import Essay
     from tournaments.models import Tournament, TournamentParticipation
 
-    from app.chat.models import UserWebSocketInfo
+    from app.chat.models import UserWebsocketInfo
+    from app.fcm.models import FCMDevice
     from app.quiz.models import JoinableSession, UserInfo
     from app.schools.models import School
+
+STARTING_BALANCE = 1000
 
 
 class EducationLevel(StrEnum):
@@ -62,7 +65,8 @@ class User(Base, HasCurrencyTransactions):
     commitment: Mapped[int] = mapped_column(default=20)
 
     balance: Mapped[int] = mapped_column(
-        CheckConstraint("balance >= 0", name="user_balance_check"), default=0
+        CheckConstraint("balance >= 0", name="user_balance_check"),
+        default=STARTING_BALANCE,
     )
 
     is_bot: Mapped[bool] = mapped_column(default=False)
@@ -129,7 +133,7 @@ class User(Base, HasCurrencyTransactions):
         passive_deletes=True,
     )
 
-    user_websocket_info: Mapped["UserWebSocketInfo"] = relationship(
+    user_websocket_info: Mapped["UserWebsocketInfo"] = relationship(
         back_populates="user",
         lazy="raise_on_sql",
         cascade="save-update, merge, expunge, delete, delete-orphan",
@@ -144,6 +148,13 @@ class User(Base, HasCurrencyTransactions):
     )
 
     tournament_participations: Mapped[list["TournamentParticipation"]] = relationship(
+        back_populates="user",
+        lazy="raise_on_sql",
+        cascade="save-update, merge, expunge, delete, delete-orphan",
+        passive_deletes=True,
+    )
+
+    fcm_device: Mapped["FCMDevice"] = relationship(
         back_populates="user",
         lazy="raise_on_sql",
         cascade="save-update, merge, expunge, delete, delete-orphan",

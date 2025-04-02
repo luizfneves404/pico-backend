@@ -15,6 +15,7 @@ from app.chat.websockets import router as websockets_router
 from app.config import settings
 from app.database import db_manager
 from app.deps import CurrentUserDep
+from app.fcm_service import init_firebase
 from app.redis_client import use_redis
 from app.schools.routers import router as schools_router
 from app.users.routers import token_router, user_router
@@ -25,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    init_firebase()
+
     async with db_manager.use_db(settings.database_url):
         async with use_redis():
             async with arq_client.arq_redis():

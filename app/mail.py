@@ -12,7 +12,8 @@ from app.arq_client import enqueue_job
 from app.config import settings
 from app.shared.validation import LowercaseEmailStr
 from app.users.models import User
-from app.users.service import logger
+
+logger = logging.getLogger(__name__)
 
 HTML_TEMPLATE = Template("""
     <!DOCTYPE html>
@@ -63,8 +64,6 @@ HTML_TEMPLATE = Template("""
     </body>
     </html>
     """)
-
-logger = logging.getLogger(__name__)
 
 
 class EmailMessage(BaseModel):

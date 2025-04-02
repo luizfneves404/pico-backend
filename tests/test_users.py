@@ -598,7 +598,7 @@ async def test_retrieve_sentinel_users(session: AsyncSession, auth_client: Async
 
 
 async def test_get_balance(auth_client: AsyncClient):
-    url = "/users/balance"
+    url = "/users/me/balance"
     response = await auth_client.get(url)
     assert response.status_code == 200
     assert response.json()["balance"] == 1000

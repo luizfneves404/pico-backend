@@ -2,6 +2,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import (
     AfterValidator,
+    AwareDatetime,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -188,3 +189,27 @@ class UserStatsMeResponse(UserStatsResponse):
 
 class RawPhoneNumbersIn(BaseModel):
     phone_numbers: list[str]
+
+
+class UserInRanking(BaseModel):
+    id: int
+    username: str
+    rank: int
+    school_id: int | None = Field(default=None)
+    score: RoundedFloat
+    total_answers: int
+    correct_answers: int
+
+
+class UserIdsIn(BaseModel):
+    user_ids: list[int]
+
+
+class OnlineInfo(BaseModel):
+    id: int
+    is_online: bool
+    last_online: AwareDatetime | None
+
+
+class BalanceOut(BaseModel):
+    balance: int

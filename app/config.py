@@ -1,10 +1,24 @@
 from datetime import timedelta
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.shared.validation import LowercaseEmailStr
+
+
+class FirebaseJsonServiceKey(BaseModel):
+    type: str
+    project_id: str
+    private_key_id: str
+    private_key: str
+    client_email: str
+    client_id: str
+    auth_uri: str
+    token_uri: str
+    auth_provider_x509_cert_url: str
+    client_x509_cert_url: str
+    universe_domain: str
 
 
 class Settings(BaseSettings):
@@ -38,6 +52,9 @@ class Settings(BaseSettings):
     amplitude_track_events: bool = Field(default=True)
     amplitude_api_key: str = Field(default=...)
     amplitude_secret_key: str = Field(default=...)
+
+    firebase_json_service_key: FirebaseJsonServiceKey = Field(default=...)
+    fcm_dry_run: bool = Field(default=False)
 
     pagination_per_page: int = Field(
         default=20, ge=1, description="Number of items per page"

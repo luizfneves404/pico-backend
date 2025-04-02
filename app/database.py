@@ -130,6 +130,7 @@ class DatabaseSessionManager:
                     yield session
 
             yield get_session
+
             # Roll back the transaction when we're done
             await connection.rollback()
 

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from app.users.models import User
 
 
-class UserWebSocketInfo(Base):
+class UserWebsocketInfo(Base):
     last_websocket_connection: Mapped[datetime.datetime] = mapped_column()
     last_websocket_disconnection: Mapped[datetime.datetime | None]
 

@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import app.amp as amp
+import app.chat.service as chat_service
 import app.mail as mail
+import app.notifications as notifications_service
 import app.timezone as timezone
 from app.quiz import quiz_service
 from app.quiz.models import (
@@ -42,6 +44,8 @@ SYSTEM_PHONE_NUMBER = "1122111111"
 SYSTEM_EMAIL = "system@pico.fyi"
 
 SENTINEL_USERNAMES = [DELETED_USERNAME, PICO_USERNAME, SYSTEM_USERNAME]
+
+NUM_RANKED_USERS = 10
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +131,8 @@ async def get_user(
         stmt = select(User).where(User.phone_number == phone_number)
     elif email is not None:
         stmt = select(User).where(User.email == email)
+    else:
+        raise ValueError("Must provide either username or user_id")
 
     if exclude_sentinel:
         stmt = stmt.where(~User.username.in_(SENTINEL_USERNAMES))
@@ -728,40 +734,58 @@ async def get_user_percentage_score(
 async def get_ranking(
     db_session: AsyncSession,
     asking_user_id: int,
-    school_id_filter: int | None,
+    score_type: Literal["dynamic", "percentage"],
+    school_filter: int | None,
     course_filter: str | None,
-) -> list[dict]:
+    education_level_filter: EducationLevel | None,
+    subject: str | None = None,
+) -> list[dict[str, Any]]:
     stmt = select(User.id)
-    if school_id_filter:
-        stmt = stmt.where(User.school_id == school_id_filter)
+    if school_filter:
+        stmt = stmt.where(User.school_id == school_filter)
     if course_filter:
         stmt = stmt.join(User.chosen_course).where(Course.name == course_filter)
+    if education_level_filter:
+        stmt = stmt.where(User.education_level == education_level_filter)
 
     users_ids = await db_session.scalars(stmt)
-    return await quiz_service.get_top_users_stats(
-        users_ids, NUM_RANKED_USERS, asking_user_id
-    )
+    if score_type == "dynamic":
+        return await quiz_service.get_ranked_users_stats_by_dynamic_score(
+            users_ids, NUM_RANKED_USERS, asking_user_id
+        )
+    elif score_type == "percentage":
+        return await quiz_service.get_ranked_users_stats_by_percentage(
+            users_ids, NUM_RANKED_USERS, asking_user_id, subject
+        )
+    else:
+        raise ValueError(f"Invalid score type: {score_type}")
 
 
-def get_user_infos(users: list[User]) -> list[dict]:
+async def get_user_infos(
+    db_session: AsyncSession, users: list[User]
+) -> list[dict[str, str | int | datetime.datetime]]:
     total_answers = (
-        SessionQuestionUser.objects.filter(user__in=users)
-        .values("user")
-        .annotate(total_answers=Count("id"))
+        select(SessionQuestionUser.user_id, func.count(SessionQuestionUser.id))
+        .where(SessionQuestionUser.user_id.in_(users))
+        .group_by(SessionQuestionUser.user_id)
     )
-    answer_dict = {item["user"]: item["total_answers"] for item in total_answers}
+    result = await db_session.execute(total_answers)
+    answer_dict: dict[int, int] = {row[0]: row[1] for row in result.all()}
 
     return [
         {
             "username": user.username,
             "total_answers": answer_dict.get(user.id, 0),
-            "date_joined": user.date_joined,
+            "date_joined": user.created_at,
         }
         for user in users
     ]
 
 
-async def get_online_info(user_ids: list[int]) -> list[dict]:
+async def get_online_info(
+    db_session: AsyncSession,
+    user_ids: list[int],
+) -> list[dict[str, int | bool | datetime.datetime | None]]:
     """Get online status and last online time for a list of users.
 
     Args:
@@ -774,14 +798,14 @@ async def get_online_info(user_ids: list[int]) -> list[dict]:
             - last_online: last online time for offline users, None for online users
     """
     # Get current online/offline status for all users
-    statuses = await notification_utils.aget_user_statuses(user_ids)
+    statuses = await notifications_service.get_user_statuses(user_ids)
 
     # Get last online time for offline users
     offline_user_ids = [
         user_id for user_id, status in zip(user_ids, statuses) if status != "online"
     ]
-    last_online_users = await sync_to_async(chat_service.get_last_online_users)(
-        offline_user_ids
+    last_online_users = await chat_service.get_last_online_users(
+        db_session, offline_user_ids
     )
 
     # Build response combining status and last online time
@@ -797,11 +821,11 @@ async def get_online_info(user_ids: list[int]) -> list[dict]:
     ]
 
 
-async def get_balance(user_id: int) -> int:
-    user = await User.objects.filter(id=user_id).values("balance").afirst()
+async def get_balance(db_session: AsyncSession, user_id: int) -> int:
+    user = await get_user(db_session, id=user_id)
     if not user:
         raise UserNotFoundError
-    return user["balance"]
+    return user.balance
 
 
 async def to_other_user_out(

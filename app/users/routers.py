@@ -17,6 +17,7 @@ from app.users import service
 from app.users.jwt_token import TokenError
 from app.users.models import EducationLevel
 from app.users.schemas import (
+    BalanceOut,
     CollegeUpdateRequest,
     CommitmentUpdateRequest,
     CourseUpdateRequest,
@@ -31,6 +32,7 @@ from app.users.schemas import (
     RefreshRequest,
     SchoolUpdateRequest,
     TokenResponse,
+    UserIdsIn,
     UserIn,
     UserInRanking,
     UsernameUpdateRequest,
@@ -424,25 +426,32 @@ async def user_ranking(
     )
 
 
-@router.post(
+@user_authenticated_router.post(
     "/online-info",
-    response={200: list[OnlineInfo]},
-    url_name="user_online_info",
+    response_model=list[OnlineInfo],
 )
-async def get_online_info(request, user_ids_in: UserIdsIn):
-    return await user_service.get_online_info(user_ids_in.user_ids)
+async def get_online_info(
+    user_ids_in: UserIdsIn,
+    db_session: DBSessionAnnotated,
+):
+    return await service.get_online_info(db_session, user_ids_in.user_ids)
 
 
-@router.get(
+@user_authenticated_router.get(
     "/me/balance",
-    response={200: BalanceOut},
-    url_name="get_balance",
+    response_model=BalanceOut,
 )
-async def get_balance(request):
+async def get_balance(
+    current_user: CurrentUserAnnotated,
+    db_session: DBSessionAnnotated,
+):
     try:
-        return {"balance": await user_service.get_balance(request.auth.id)}
-    except user_service.UserNotFoundError:
-        raise HttpError(404, "User not found")
+        return {"balance": await service.get_balance(db_session, current_user.id)}
+    except service.UserNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
 
 
 user_router.include_router(user_authenticated_router)

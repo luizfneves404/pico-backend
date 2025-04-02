@@ -159,7 +159,6 @@ class UserFactory(AsyncSQLAlchemyFactory[User]):
     education_level = EducationLevel.THIRD_YEAR_HIGH_SCHOOL
     is_premium = False
     commitment = 20
-    balance = 0
     is_bot = False
     bot_difficulty = None
     signup_source = "social"
@@ -167,11 +166,6 @@ class UserFactory(AsyncSQLAlchemyFactory[User]):
     chosen_college = SubFactory(CollegeFactory)
     chosen_course = SubFactory(CourseFactory)
     user_info = SubFactory(UserInfoFactory)
-
-    @classmethod
-    def build(cls, **kwargs: Any) -> User:
-        instance = super().build(**kwargs)
-        return instance
 
 
 class FileFactory(AsyncSQLAlchemyFactory[File]):
