@@ -1,7 +1,10 @@
 import asyncio
+import json
 import logging
 import traceback
-from typing import Any, Sequence
+from datetime import datetime
+from io import BytesIO
+from typing import Any, Protocol, Sequence
 
 import boto3
 from jinja2 import Template
@@ -9,7 +12,8 @@ from pydantic import BaseModel
 
 import app.mail as mail
 from app.arq_client import enqueue_job
-from app.config import settings
+from app.config import Environment, settings
+from app.files.storage import storage
 from app.shared.validation import LowercaseEmailStr
 from app.users.models import User
 
@@ -75,7 +79,51 @@ class EmailMessage(BaseModel):
     bcc_emails: list[LowercaseEmailStr] | None = None
 
 
-async def task_send_email(ctx: dict[Any, Any], email: EmailMessage) -> bool:
+class FileBasedEmailClient:
+    """Email client that stores emails as files using the configured storage backend."""
+
+    def send_email(
+        self,
+        Source: str,
+        Destination: dict[str, Sequence[str]],
+        Message: dict[str, dict[str, str | dict[str, str]]],
+    ) -> dict[str, str]:
+        email_data = {"Source": Source, "Destination": Destination, "Message": Message}
+
+        email_json = json.dumps(email_data, indent=2)
+        file_obj = BytesIO(email_json.encode("utf-8"))
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_name = f"email_{timestamp}.json"
+
+        # Upload to storage
+        file_id = storage.upload(file_obj, file_name)
+
+        return {"MessageId": file_id}
+
+
+class SESClient(Protocol):
+    def send_email(
+        self,
+        Source: str,
+        Destination: dict[str, Sequence[str]],
+        Message: dict[str, dict[str, str | dict[str, str]]],
+    ) -> dict[str, str]: ...
+
+
+client: SESClient = (
+    boto3.client("ses", region_name=settings.aws_ses_region_name)
+    if settings.environment == Environment.PROD
+    else FileBasedEmailClient()
+)
+
+
+def inject_client(ses_client: SESClient) -> None:
+    global client
+    client = ses_client
+
+
+async def task_send_email(ctx: dict[Any, Any], email: EmailMessage) -> None:
     """
     Task function to write an email to a file instead of sending it.
     This function is meant to be called by Arq workers.
@@ -87,41 +135,49 @@ async def task_send_email(ctx: dict[Any, Any], email: EmailMessage) -> bool:
     Returns:
         bool: True if the email was written successfully
     """
-    client = boto3.client("ses", region_name=settings.aws_ses_region_name)
+    try:
+        destination: dict[str, Sequence[str]] = {"ToAddresses": email.to_emails}
+        if email.cc_emails:
+            destination["CcAddresses"] = email.cc_emails
+        if email.bcc_emails:
+            destination["BccAddresses"] = email.bcc_emails
 
-    destination: dict[str, Sequence[str]] = {"ToAddresses": email.to_emails}
-    if email.cc_emails:
-        destination["CcAddresses"] = email.cc_emails
-    if email.bcc_emails:
-        destination["BccAddresses"] = email.bcc_emails
+        message: dict[str, dict[str, str | dict[str, str]]] = {
+            "Subject": {"Data": email.subject},
+            "Body": {},
+        }
+        if email.body_text:
+            message["Body"]["Text"] = {"Data": email.body_text}
+        if email.body_html:
+            message["Body"]["Html"] = {"Data": email.body_html}
 
-    message: dict[str, dict[str, str | dict[str, str]]] = {
-        "Subject": {"Data": email.subject},
-        "Body": {},
-    }
-    if email.body_text:
-        message["Body"]["Text"] = {"Data": email.body_text}
-    if email.body_html:
-        message["Body"]["Html"] = {"Data": email.body_html}
-
-    response = client.send_email(
-        Source=settings.aws_ses_from_email, Destination=destination, Message=message
-    )
-    logger.info(f"Email sent: MessageId {response.get('MessageId')}")
-    return True
+        response = client.send_email(
+            Source=settings.aws_ses_from_email, Destination=destination, Message=message
+        )
+        logger.info(f"Email sent: MessageId {response.get('MessageId')}")
+    except Exception as e:
+        logger.warning(
+            f"Not sending error email to avoid infinite recursion. Error inside task_send_email was: {e}",
+            exc_info=True,
+        )
 
 
 async def enqueue_email(email: EmailMessage | list[EmailMessage]) -> None:
     """
     Enqueue one or more emails to be sent asynchronously using Arq.
     """
-    if isinstance(email, list):
-        for single_email in email:
-            await enqueue_job("task_send_email", single_email)
-        logger.info(f"Enqueued {len(email)} emails to be sent")
-    else:
-        await enqueue_job("task_send_email", email)
-        logger.info("Enqueued email to be sent")
+    try:
+        if isinstance(email, list):
+            for single_email in email:
+                await enqueue_job("task_send_email", single_email)
+            logger.info(f"Enqueued {len(email)} emails to be sent")
+        else:
+            await enqueue_job("task_send_email", email)
+            logger.info("Enqueued email to be sent")
+    except Exception as e:
+        logger.warning(
+            f"Error when trying to enqueue email. Startup has probably not finished yet. Error was: {e}",
+        )
 
 
 async def send_bulk_email(
@@ -158,70 +214,59 @@ async def send_bulk_email(
 
 class AdminEmailHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
-        # Prevent infinite recursion by checking if the error is from this module
-        # or if the error is from the task_send_email function
-        if (
-            record.name == __name__
-            or record.pathname.endswith("mail.py")
-            or (
-                hasattr(record, "exc_info")
-                and record.exc_info
-                and any(
-                    "task_send_email" in part.strip()
-                    for part in traceback.format_exception(*record.exc_info)
-                )
+        try:
+            # Prepare the plain text version (as fallback)
+            text_parts: list[str] = [
+                "ERROR DETAILS",
+                "═══════════════",
+                "",
+                "Metadata:",
+                f"  • Severity: {record.levelname}",
+                f"  • Logger: {record.name}",
+                f"  • Location: {record.pathname}:{record.lineno}",
+                f"  • Function: {record.funcName}",
+            ]
+
+            if hasattr(record, "asctime"):
+                text_parts.append(f"  • Timestamp: {record.asctime}")
+
+            text_parts.extend(
+                ["", "Error Message:", "─────────────────", record.getMessage(), ""]
             )
-        ):
-            logger.info("Skipping email for this record to avoid infinite recursion")
-            return
 
-        # Prepare the plain text version (as fallback)
-        text_parts: list[str] = [
-            "ERROR DETAILS",
-            "═══════════════",
-            "",
-            "Metadata:",
-            f"  • Severity: {record.levelname}",
-            f"  • Logger: {record.name}",
-            f"  • Location: {record.pathname}:{record.lineno}",
-            f"  • Function: {record.funcName}",
-        ]
+            traceback_text = None
+            if record.exc_info:
+                traceback_text = "".join(traceback.format_exception(*record.exc_info))
+                text_parts.extend(["Traceback:", "────────────", traceback_text])
 
-        if hasattr(record, "asctime"):
-            text_parts.append(f"  • Timestamp: {record.asctime}")
+            # Generate HTML version
+            html_content = HTML_TEMPLATE.render(
+                level=record.levelname,
+                logger=record.name,
+                location=f"{record.pathname}:{record.lineno}",
+                function=record.funcName,
+                timestamp=getattr(record, "asctime", None),
+                message=record.getMessage(),
+                traceback=traceback_text,
+            )
 
-        text_parts.extend(
-            ["", "Error Message:", "─────────────────", record.getMessage(), ""]
-        )
+            subject = f"[{record.levelname}] Error in {record.name}: {record.getMessage()[:50]}..."
 
-        traceback_text = None
-        if record.exc_info:
-            traceback_text = "".join(traceback.format_exception(*record.exc_info))
-            text_parts.extend(["Traceback:", "────────────", traceback_text])
+            email_message = EmailMessage(
+                subject=subject,
+                body_text="\n".join(text_parts),  # Fallback plain text version
+                body_html=html_content,  # HTML version
+                to_emails=settings.admin_emails,
+            )
 
-        # Generate HTML version
-        html_content = HTML_TEMPLATE.render(
-            level=record.levelname,
-            logger=record.name,
-            location=f"{record.pathname}:{record.lineno}",
-            function=record.funcName,
-            timestamp=getattr(record, "asctime", None),
-            message=record.getMessage(),
-            traceback=traceback_text,
-        )
-
-        subject = f"[{record.levelname}] Error in {record.name}: {record.getMessage()[:50]}..."
-
-        email_message = EmailMessage(
-            subject=subject,
-            body_text="\n".join(text_parts),  # Fallback plain text version
-            body_html=html_content,  # HTML version
-            to_emails=settings.admins,
-        )
-
-        # Schedule the email directly using the task function to avoid asyncio issues
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(enqueue_email(email_message))
-        else:
-            asyncio.run(enqueue_email(email_message))
+            # Schedule the email directly using the task function to avoid asyncio issues
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(enqueue_email(email_message))
+            else:
+                asyncio.run(enqueue_email(email_message))
+        except Exception as e:
+            logger.warning(
+                f"Not sending error email to avoid infinite recursion. Error inside AdminEmailHandler.emit was: {e}",
+                exc_info=True,
+            )

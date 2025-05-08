@@ -9,7 +9,7 @@ from app.database import db_manager
 from app.users import jwt_token as token_service
 from app.users.models import User
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token/pair")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/token/pair")
 
 
 async def get_db_session():

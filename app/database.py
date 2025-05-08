@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import (
 import app.chat.models  # noqa: F401
 import app.currency.models  # noqa: F401
 import app.essays.models  # noqa: F401
+import app.fcm.models  # noqa: F401
 import app.files.models  # noqa: F401
 import app.quiz.models  # noqa: F401
 import app.schools.models  # noqa: F401

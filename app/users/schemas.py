@@ -9,6 +9,7 @@ from pydantic import (
     Field,
     SecretStr,
     StringConstraints,
+    computed_field,
 )
 from pydantic_extra_types.phone_numbers import PhoneNumber
 
@@ -48,6 +49,13 @@ class TokenRequest(BaseModel):
 class TokenResponse(BaseModel):
     access: str
     refresh: str
+    # oauth2 scheme expects these:
+    token_type: Literal["bearer"] = "bearer"
+
+    @computed_field
+    @property
+    def access_token(self) -> str:
+        return self.access
 
 
 class RefreshRequest(BaseModel):

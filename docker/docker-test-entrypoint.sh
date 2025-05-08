@@ -2,6 +2,6 @@
 
 set -e
 
-. /app/.venv/bin/activate
+. /code/.venv/bin/activate
 
-exec pytest
+PYTHONPATH=./pico_django exec python -m pico_django.manage test --noinput

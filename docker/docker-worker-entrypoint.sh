@@ -2,6 +2,6 @@
 
 set -e
 
-. /app/.venv/bin/activate
+. /code/.venv/bin/activate
 
 exec arq arq_worker.WorkerSettings

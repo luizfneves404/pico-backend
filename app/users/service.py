@@ -10,9 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import app.amp as amp
+import app.chat.notifications as notifications_service
 import app.chat.service as chat_service
 import app.mail as mail
-import app.notifications as notifications_service
 import app.timezone as timezone
 from app.quiz import quiz_service
 from app.quiz.models import (

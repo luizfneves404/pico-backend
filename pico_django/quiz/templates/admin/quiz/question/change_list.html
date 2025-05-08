@@ -1,0 +1,21 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls %}
+
+{% block object-tools-items %}
+    <li>
+        <a href="{% url 'admin:import_student_questions' %}" class="addlink">
+            Import Student
+        </a>
+    </li>
+    <li>
+        <a href="{% url 'admin:upload_images' %}" class="addlink">
+            Upload Images
+        </a>
+    </li>
+    <li>
+        <a href="{% url 'admin:import_discursive_questions' %}" class="addlink">
+            Import Disc.
+        </a>
+    </li>
+    {{ block.super }}
+{% endblock %}

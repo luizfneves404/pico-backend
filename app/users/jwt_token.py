@@ -97,7 +97,9 @@ async def process_token(
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[JWT_ALGORITHM])
         if expected_type and payload.get("token_type") != expected_type:
-            raise InvalidTokenError(f"Invalid {expected_type} token")
+            raise InvalidTokenError(
+                f"Token type {payload.get('token_type')} is not {expected_type}"
+            )
         user = await service.get_user(db_session, id=payload.get("user_id"))
         if not user:
             raise UserNotFoundError("User not found")

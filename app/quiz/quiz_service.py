@@ -1906,7 +1906,7 @@ async def generate_question_set_from_description(
             user_message += f"\nInstruções extras: {extra_instructions}"
 
         return (
-            await openai_utils.aget_completion_parsed(
+            await openai_utils.get_completion_parsed(
                 model="gpt-4o",
                 temperature=0.5,
                 messages=[
@@ -1930,7 +1930,7 @@ async def generate_question_set_from_description(
         if extra_instructions:
             user_message += f"\nInstruções extras: {extra_instructions}"
 
-        response = await openai_utils.aget_completion_parsed(
+        response = await openai_utils.get_completion_parsed(
             model="o3-mini",
             messages=[
                 {
@@ -1978,7 +1978,7 @@ async def generate_questions_from_topic(
         if extra_instructions:
             user_message += f"\nInstruções extras: {extra_instructions}"
 
-        response = await openai_utils.aget_completion_parsed(
+        response = await openai_utils.get_completion_parsed(
             model="gpt-4o",
             temperature=0.5,
             messages=[
@@ -1996,7 +1996,7 @@ async def generate_questions_from_topic(
             f"Tema:\n{topic}"
         )
 
-        response = await openai_utils.aget_completion_parsed(
+        response = await openai_utils.get_completion_parsed(
             model="o3-mini",
             messages=[
                 {

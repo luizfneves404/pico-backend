@@ -2151,7 +2151,7 @@ async def process_question_classify_subject(
                 extra_text, question_text, "\n".join(choices)
             )
         )
-        response = await openai_utils.aget_completion(
+        response = await openai_utils.get_completion(
             "gpt-4o-mini",
             0,
             [

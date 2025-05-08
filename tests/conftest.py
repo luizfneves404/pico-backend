@@ -6,10 +6,10 @@ from typing import (
     Callable,
     Generator,
     Literal,
+    Sequence,
     TypeVar,
 )
 
-import boto3
 import pytest
 import redis
 from arq.worker import Worker, create_worker
@@ -23,7 +23,7 @@ from app.arq_worker import WorkerSettings
 from app.config import settings
 from app.database import DatabaseSessionManager, db_manager
 from app.deps import get_db_session
-from app.fcm_service import init_firebase
+from app.fcm.fcm_service import init_firebase
 from app.redis_client import get_redis, use_redis
 from app.users.models import User
 from tests.db_utils import alembic_config_from_url, tmp_database
@@ -37,10 +37,20 @@ logger = logging.getLogger(__name__)
 
 class DummySESClient:
     def __init__(self) -> None:
-        self.sent_emails: list[dict[str, str | dict[str, str]]] = []
+        self.sent_emails: list[
+            dict[
+                str,
+                str
+                | dict[str, Sequence[str]]
+                | dict[str, dict[str, str | dict[str, str]]],
+            ]
+        ] = []
 
     def send_email(
-        self, Source: str, Destination: dict[str, str], Message: dict[str, str]
+        self,
+        Source: str,
+        Destination: dict[str, Sequence[str]],
+        Message: dict[str, dict[str, str | dict[str, str]]],
     ) -> dict[str, str]:
         self.sent_emails.append(
             {"Source": Source, "Destination": Destination, "Message": Message}
@@ -48,26 +58,14 @@ class DummySESClient:
         return {"MessageId": "dummy-id"}
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def dummy_ses_client() -> DummySESClient:
     """Returns a new dummy SES client instance for each test."""
-    return DummySESClient()
+    import app.mail as mail
 
-
-@pytest.fixture(autouse=True)
-def patch_boto3_client(
-    monkeypatch: pytest.MonkeyPatch, dummy_ses_client: DummySESClient
-):
-    """Monkeypatch boto3.client so that SES clients are our dummy instance."""
-
-    def dummy_boto3_client(
-        service_name: str, region_name: str | None = None
-    ) -> DummySESClient:
-        if service_name == "ses":
-            return dummy_ses_client
-        raise ValueError("Unexpected service: " + service_name)
-
-    monkeypatch.setattr(boto3, "client", dummy_boto3_client)
+    dummy_ses_client = DummySESClient()
+    mail.inject_client(dummy_ses_client)
+    return dummy_ses_client
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -153,7 +151,7 @@ def app(
     redis_for_tests: redis.Redis,
     firebase_for_tests: None,
 ) -> Generator[FastAPI, None, None]:
-    from app.main import app
+    from app.main import fastapi_app
 
     async def get_db_session_override():
         # Create a new session for each request
@@ -161,10 +159,9 @@ def app(
             async with session.begin():
                 yield session
 
-    app.dependency_overrides[get_db_session] = get_db_session_override
-    yield app
-    app.dependency_overrides.clear()
-    app.dependency_overrides.clear()
+    fastapi_app.dependency_overrides[get_db_session] = get_db_session_override
+    yield fastapi_app
+    fastapi_app.dependency_overrides.clear()
 
 
 @pytest.fixture

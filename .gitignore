@@ -1,9 +1,24 @@
-# Created by https://www.toptal.com/developers/gitignore/api/python,visualstudiocode,venv
-# Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode,venv
+# Created by https://www.toptal.com/developers/gitignore/api/visualstudiocode,django,venv
+# Edit at https://www.toptal.com/developers/gitignore?templates=visualstudiocode,django,venv
 
-### Python ###
-# Byte-compiled / optimized / DLL files
+### Django ###
+*.log
+*.pot
+*.pyc
 __pycache__/
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media
+media/answers
+pico_django/sent_emails
+
+# If your build process includes running collectstatic, then you probably don't need or want to include staticfiles/
+# in your Git repository. Update and uncomment the following line accordingly.
+# <django-project-name>/staticfiles/
+
+### Django.Python Stack ###
+# Byte-compiled / optimized / DLL files
 *.py[cod]
 *$py.class
 
@@ -57,13 +72,6 @@ cover/
 
 # Translations
 *.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
 
 # Flask stuff:
 instance/
@@ -163,7 +171,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-### Python Patch ###
 # Poetry local configuration file - https://python-poetry.org/docs/configuration/#local-configuration
 poetry.toml
 
@@ -187,11 +194,7 @@ pip-selfcheck.json
 
 ### VisualStudioCode ###
 .vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-!.vscode/*.code-snippets
+.vscode/
 
 # Local History for Visual Studio Code
 .history/
@@ -204,4 +207,14 @@ pip-selfcheck.json
 .history
 .ionide
 
-# End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode,venv
+# End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,django,venv
+
+# postgresql extension stuff, i think
+Command.handle
+pico backend db local.session.sql
+
+# fastapi storage
+storage/
+
+# poetry cache
+poetry_cache/

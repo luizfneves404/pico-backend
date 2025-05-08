@@ -9,12 +9,13 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, selectinload
 
 from app.base import Base
 from app.currency.models import HasCurrencyTransactions
 
 if TYPE_CHECKING:
+    from app.files.models import File
     from app.users.models import User
 
 
@@ -40,9 +41,10 @@ class EssayType(Base):
 
 class Essay(Base, HasCurrencyTransactions):
     __table_args__ = (UniqueConstraint("author_id", "essay_topic_id"),)
-    original_file: Mapped[str] = mapped_column(String(100))
-    cleaned_text: Mapped[str] = mapped_column(Text)
-    user_corrected_text: Mapped[str] = mapped_column(Text)
+    original_file_id: Mapped[int] = mapped_column(ForeignKey("file.id"))
+    original_file: Mapped["File"] = relationship()
+    cleaned_text: Mapped[str] = mapped_column(Text, default="")
+    user_corrected_text: Mapped[str] = mapped_column(Text, default="")
 
     essay_topic_id: Mapped[int] = mapped_column(ForeignKey("essay_topic.id"))
     essay_topic: Mapped["EssayTopic"] = relationship(back_populates="essays")
@@ -98,3 +100,18 @@ class FeedbackCategory(Base):
     feedbacks: Mapped[list["Feedback"]] = relationship(
         back_populates="feedback_category"
     )
+
+
+def get_essay_topic_loader(user_id: int):
+    return [
+        selectinload(EssayTopic.essays.and_(Essay.author_id == user_id)).options(
+            *get_essay_loader()
+        )
+    ]
+
+
+def get_essay_loader():
+    return [
+        selectinload(Essay.essay_type),
+        selectinload(Essay.feedbacks).selectinload(Feedback.feedback_category),
+    ]

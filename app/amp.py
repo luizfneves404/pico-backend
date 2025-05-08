@@ -69,9 +69,7 @@ async def _delete_user_from_amplitude(
                 logger.info(
                     f"Retrying deletion from Amplitude for user {user_id} in 60 seconds, because there were too many requests"
                 )
-                # In a real implementation, you'd use something like asyncio.sleep(60)
-                # and then retry, but for simplicity we'll just log it
-                logger.info(f"Would retry deletion for user {user_id}")
+                await _delete_user_from_amplitude(user_id, retry_count + 1, max_retries)
             elif e.response.status_code == 400:
                 logger.error(
                     f"Bad Request to Amplitude user deletion, User {user_id} probably doesn't exist in Amplitude, response: {e.response.text}"
@@ -95,8 +93,19 @@ class AmplitudeClientSingleton:
         return cls._instance
 
 
+class MockAmplitudeClient:
+    def track(self, event: BaseEvent) -> None:
+        logger.debug(
+            "Did not track event {event.event_type} for user {event.user_id} because tracking is disabled"
+        )
+
+
 def get_amplitude_client():
-    return AmplitudeClientSingleton()
+    return (
+        AmplitudeClientSingleton()
+        if settings.amplitude_track_events
+        else MockAmplitudeClient()
+    )
 
 
 async def track_amplitude_event(
@@ -105,14 +114,9 @@ async def track_amplitude_event(
     event_properties: Properties | None = None,
     user_properties: Properties | None = None,
 ) -> None:
-    if settings.amplitude_track_events:
-        await _track_event_in_amplitude(
-            user_id, event_type, event_properties, user_properties
-        )
-    else:
-        logger.debug(
-            f"Would track Amplitude event for user {user_id}: {event_type} with event properties {event_properties} and user properties {user_properties}, if tracking was on"
-        )
+    await _track_event_in_amplitude(
+        user_id, event_type, event_properties, user_properties
+    )
 
 
 async def _track_event_in_amplitude(

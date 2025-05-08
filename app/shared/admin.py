@@ -16,3 +16,8 @@ class Admin(ModelView):
         type(None): lambda value: "[NONE]",
         str: lambda value: value if value else "[EMPTY STRING]",
     }
+
+    form_excluded_columns = [
+        "created_at",
+        "updated_at",
+    ]

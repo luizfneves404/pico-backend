@@ -4,6 +4,14 @@ from sqladmin.authentication import AuthenticationBackend
 
 from app.config import settings
 from app.database import db_manager
+from app.essays.admin import (
+    EssayAdmin,
+    EssayTopicAdmin,
+    EssayTypeAdmin,
+    FeedbackAdmin,
+    FeedbackCategoryAdmin,
+)
+from app.files.admin import FileAdmin
 from app.quiz.admin import (
     ChallengeAdmin,
     ChoiceAdmin,
@@ -37,6 +45,12 @@ admin_views.append(UserInfoAdmin)
 admin_views.append(RoundAdmin)
 admin_views.append(TurnAdmin)
 admin_views.append(SessionParticipationAdmin)
+admin_views.append(EssayTopicAdmin)
+admin_views.append(EssayAdmin)
+admin_views.append(EssayTypeAdmin)
+admin_views.append(FeedbackCategoryAdmin)
+admin_views.append(FeedbackAdmin)
+admin_views.append(FileAdmin)
 
 
 class AdminAuth(AuthenticationBackend):
