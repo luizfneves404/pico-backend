@@ -205,6 +205,7 @@ class AddQuestionsToQuizIn(Schema):
 
 class PersonalizedQuizIn(Schema):
     question_type: QuestionType = QuestionType.MULTIPLE_CHOICE
+    parent_quiz_id: int | None = Field(default=None)
 
 
 class WhatsAppQuizIn(Schema):

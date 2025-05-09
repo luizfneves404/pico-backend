@@ -191,15 +191,19 @@ class QuizCoreTestCase(PatchingAndRedisTestCase):
             content_type="application/json",
             data={
                 "question_type": "multiple_choice",
-                "parent_quiz_id": None,
+                "parent_quiz_id": self.quiz1.id,
             },
         )
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json()["parent_quiz_id"], None)
+        self.assertEqual(response.json()["parent_quiz_id"], self.quiz1.id)
         self.assertEqual(response.json()["quiz_type"], "personalized")
         self.assertEqual(
             len(response.json()["questions_and_answers"]), self.user.commitment
         )
+        # assert that the questions are not on the parent quiz
+        parent_quiz_questions = self.quiz1.questions.values_list("id", flat=True)
+        for question in response.json()["questions_and_answers"]:
+            self.assertNotIn(question["id"], parent_quiz_questions)
 
     def test_quiz_detail(self):
         url = reverse("api:quiz_detail", args=[self.quiz1.id])

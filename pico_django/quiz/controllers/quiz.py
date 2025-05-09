@@ -132,6 +132,7 @@ async def create_personalized_quiz(request: HttpRequest, quiz_in: PersonalizedQu
         quiz = await quiz_service.acreate_personalized_quiz(
             user=user,
             question_type=quiz_in.question_type,
+            parent_quiz_id=quiz_in.parent_quiz_id,
         )
     except InsufficientFundsError as e:
         raise HttpError(400, str(e))
