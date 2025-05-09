@@ -104,16 +104,10 @@ PYTHONPATH=./pico_django python -m pico_django.manage migrate
 
 ## Docker
 
-To build the docker image:
-
-```bash
-sudo docker compose -f docker-compose-test.yml build
-```
-
 To run tests in docker compose:
 
 ```bash
-sudo docker compose -f docker-compose-test.yml up
+sudo docker compose -f docker-compose-test.yml up --build
 ```
 
 
