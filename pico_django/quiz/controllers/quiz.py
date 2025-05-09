@@ -56,6 +56,7 @@ async def create_quiz(request: HttpRequest, quiz_in: QuizIn):
             quiz_in.source_filter,
             quiz_in.difficulty,
             quiz_in.question_type,
+            quiz_in.parent_quiz_id,
         )
     except InsufficientFundsError as e:
         raise HttpError(400, str(e))

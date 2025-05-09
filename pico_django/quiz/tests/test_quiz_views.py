@@ -161,7 +161,7 @@ class QuizCoreTestCase(PatchingAndRedisTestCase):
         for question in response.json()["questions_and_answers"]:
             self.assertEqual(question["difficulty"], "Difícil")
 
-    """ def test_create_quiz_with_parent_quiz(self):
+    def test_create_quiz_with_parent_quiz(self):
         url = reverse("api:quiz_list")
         response = self.client.post(
             url,
@@ -182,7 +182,7 @@ class QuizCoreTestCase(PatchingAndRedisTestCase):
         self.assertEqual(len(response.json()["questions_and_answers"]), 10)
         parent_quiz_questions = self.quiz1.questions.values_list("id", flat=True)
         for question in response.json()["questions_and_answers"]:
-            self.assertNotIn(question["id"], parent_quiz_questions) """
+            self.assertNotIn(question["id"], parent_quiz_questions)
 
     def test_create_personalized_quiz(self):
         url = reverse("api:create_personalized_quiz")

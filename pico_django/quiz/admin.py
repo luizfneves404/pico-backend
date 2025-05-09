@@ -5,6 +5,7 @@ import logging
 import re
 
 import numpy as np
+import quiz.tasks as quiz_tasks
 import shared.openai_utils as openai_utils
 from celery.result import AsyncResult
 from django.contrib import admin, messages
@@ -17,8 +18,6 @@ from django.urls import path, reverse
 from django.utils.safestring import mark_safe
 from import_export import resources
 from import_export.admin import ImportExportMixin
-
-import quiz.tasks as quiz_tasks
 from quiz import session_pdf
 from quiz.forms import (
     CSVUploadForm,
@@ -1153,12 +1152,15 @@ class QuizAdmin(BaseSessionAdmin):
     ]
     fields = [
         "query",
+        "title",
         "created_at",
         "area",
         "source_filter",
         "difficulty",
         "question_type",
         "quiz_type",
+        "selection_method",
+        "selection_source",
         "created_by",
         "parent_session",
         "code",
@@ -1167,12 +1169,15 @@ class QuizAdmin(BaseSessionAdmin):
     list_display = [
         "id",
         "created_at",
+        "title",
         "query",
         "area",
         "source_filter",
         "difficulty",
         "question_type",
         "quiz_type",
+        "selection_method",
+        "selection_source",
         "session_type",
         "created_by",
         "parent_session",
@@ -1198,6 +1203,7 @@ class DuelAdmin(BaseSessionAdmin):
         "code",
         "tournament",
         "selection_method",
+        "selection_source",
         "n_questions_per_round",
         "is_fast",
         "winner",
@@ -1219,6 +1225,7 @@ class DuelAdmin(BaseSessionAdmin):
         "id",
         "created_at",
         "selection_method",
+        "selection_source",
         "query",
         "created_by",
         "is_fast",
@@ -1300,6 +1307,7 @@ class ChallengeAdmin(BaseSessionAdmin):
         "start_time",
         "end_time",
         "selection_method",
+        "selection_source",
         "is_fast",
     ]
     readonly_fields = ["created_at"]
@@ -1311,6 +1319,7 @@ class ChallengeAdmin(BaseSessionAdmin):
         "start_time",
         "end_time",
         "selection_method",
+        "selection_source",
         "is_fast",
     ]
     actions = ["generate_pdf"]

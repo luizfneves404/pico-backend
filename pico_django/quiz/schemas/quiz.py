@@ -190,6 +190,7 @@ class QuizIn(Schema):
     source_filter: str = Field(max_length=255, default="")
     difficulty: Difficulty = Field(default=Difficulty.ALL)
     question_type: QuestionType = QuestionType.MULTIPLE_CHOICE
+    parent_quiz_id: int | None = Field(default=None)
 
 
 class AddQuestionsToQuizIn(Schema):
