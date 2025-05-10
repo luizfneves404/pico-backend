@@ -2,4 +2,4 @@
 
 echo "Starting celery flower..."
 
-exec celery -A pico_backend flower
+PYTHONPATH=./pico_django exec celery -A pico_backend flower

@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     aws_ses_region_name: str | None = None
     aws_ses_from_email: str = Field(default=...)
 
-    textract_profile_name: str = Field(default=...)
+    textract_profile_name: str = Field(default="")
     textract_region_name: str = Field(default=...)
 
     aws_s3_region_name: str | None = None

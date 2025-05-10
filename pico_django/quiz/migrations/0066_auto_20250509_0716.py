@@ -6,7 +6,8 @@ from django.db.models import F
 
 def add_titles(apps, schema_editor):
     Session = apps.get_model("quiz", "Session")
-    Session.objects.filter(title="").update(title=F("query"))
+    # Truncate query to fit title field (max_length=255)
+    Session.objects.filter(title="").update(title=F("query")[:254])
 
 
 class Migration(migrations.Migration):

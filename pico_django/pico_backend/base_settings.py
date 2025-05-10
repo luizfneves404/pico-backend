@@ -120,7 +120,7 @@ AUTH_USER_MODEL = "api.User"
 
 LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = "America/Sao_Paulo"
+TIME_ZONE = settings.local_timezone
 
 USE_I18N = True
 
