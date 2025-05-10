@@ -26,6 +26,7 @@ from app.deps import CurrentUserDep
 from app.essays.routers import router as essay_topics_router
 from app.fcm.fcm_service import init_firebase
 from app.files.routers import router as files_router
+from app.log_filters import add_log_filters
 from app.redis_client import use_redis
 from app.schools.routers import router as schools_router
 from app.users.routers import token_router, user_router
@@ -33,6 +34,8 @@ from pico_django.pico_backend.asgi import application as django_application
 
 logging.config.fileConfig("logging.ini", disable_existing_loggers=False)
 logger = logging.getLogger(__name__)
+
+add_log_filters()
 
 
 @asynccontextmanager
@@ -89,12 +92,21 @@ fastapi_app.add_middleware(
 
 
 @fastapi_app.middleware("http")
-async def health_check_middleware(
+async def analytics_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ):
-    if request.url.path == "/health":
-        return Response(content="Healthy")
-    return await call_next(request)
+    response = await call_next(request)
+    try:
+        if (
+            response.status_code >= 200
+            and response.status_code < 300
+            and request.url.path.startswith("/api/")
+        ):
+            await track_amplitude_endpoint_event(request, response)
+    except Exception as e:
+        logger.error(f"Error tracking amplitude event: {e}")
+    finally:
+        return response
 
 
 @fastapi_app.middleware("http")
@@ -115,21 +127,12 @@ async def logging_middleware(
 
 
 @fastapi_app.middleware("http")
-async def analytics_middleware(
+async def health_check_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ):
-    response = await call_next(request)
-    try:
-        if (
-            response.status_code >= 200
-            and response.status_code < 300
-            and request.url.path.startswith("/api/")
-        ):
-            await track_amplitude_endpoint_event(request, response)
-    except Exception as e:
-        logger.error(f"Error tracking amplitude event: {e}")
-    finally:
-        return response
+    if request.url.path == "/health":
+        return Response(content="Healthy")
+    return await call_next(request)
 
 
 class HostRouter:
