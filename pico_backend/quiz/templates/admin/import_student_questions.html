@@ -1,0 +1,12 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block content %}
+    <div>
+        <form action="." method="POST" enctype="multipart/form-data">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <input type="submit" value="Upload CSV">
+        </form>
+    </div>
+{% endblock %}

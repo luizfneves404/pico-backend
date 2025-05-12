@@ -1,0 +1,7 @@
+{% extends "admin/change_list.html" %}
+{% block object-tools-items %}
+<li>
+    <a href="{% url 'admin:add_chunks_to_embed_csv' %}" class="btn btn-primary">Upload text chunks CSV</a>
+</li>
+{{ block.super }}
+{% endblock %}

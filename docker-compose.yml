@@ -1,0 +1,79 @@
+services:
+  daphne:
+    build: ./pico_backend
+    command: ./docker-entrypoint.sh
+    ports:
+      - "80:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      celery:
+        condition: service_healthy
+
+    environment:
+      - DAPHNE_HOST=0.0.0.0
+      - DB_NAME=picodb
+      - DB_USER=postgres
+      - DB_PASSWORD=REDACTED_DB_PASSWORD
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DJANGO_SETTINGS_MODULE=pico_backend.test_settings
+      - OPENAI_API_KEY
+      - BRANCH_KEY
+      - GEMINI_API_KEY
+      - SECRET_KEY=REDACTED_SECRET_KEY
+
+  celery:
+    build: ./pico_backend
+    command: ./docker-celery-entrypoint.sh
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
+    environment:
+      - DB_NAME=picodb
+      - DB_USER=postgres
+      - DB_PASSWORD=REDACTED_DB_PASSWORD
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DJANGO_SETTINGS_MODULE=pico_backend.test_settings
+      - OPENAI_API_KEY
+      - BRANCH_KEY
+      - GEMINI_API_KEY
+      - SECRET_KEY=REDACTED_SECRET_KEY
+
+    healthcheck:
+      test: [ "CMD-SHELL", "celery -A pico_backend status" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  db:
+    image: ankane/pgvector
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: REDACTED_DB_PASSWORD
+      DB_NAME: picodb
+    volumes:
+      - ./docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:latest
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5

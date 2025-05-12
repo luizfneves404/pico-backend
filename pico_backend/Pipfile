@@ -1,0 +1,54 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+channels = "==4.1.0"
+channels-redis = "*"
+daphne = "*"
+django = "*"
+factory-boy = "*"
+openai = "*"
+pyjwt = "*"
+python-decouple = "*"
+django-storages = {extras = ["s3"], version = "==1.14.3"}
+django-redis = "*"
+python-magic = "*"
+pydantic-extra-types = "*"
+pgvector = "*"
+redis = {extras = ["hiredis"], version = "*"}
+pypdf = "*"
+tiktoken = "*"
+semchunk = "*"
+celery = {extras = ["redis"], version = "*"}
+pymupdf = "*"
+fcm-django = "*"
+reportlab = "*"
+amazon-textract-textractor = "*"
+django-sortedm2m = "*"
+django-ses = "*"
+amplitude-analytics = "*"
+babel = "*"
+flower = "*"
+psycopg = {extras = ["pool", "binary"], version = "*"}
+django-import-export = "*"
+pandas = "*"
+phonenumbers = "*"
+pydantic = {extras = ["email"], version = "*"}
+django-ninja = "*"
+pytesseract = "*"
+python-docx = "*"
+tinify = "*"
+pylatexenc = "*"
+django-cors-headers = "*"
+google-genai = "*"
+
+[dev-packages]
+django-extensions = "*"
+django-debug-toolbar = "*"
+coverage = "*"
+pydeps = "*"
+
+[requires]
+python_version = "3.11"

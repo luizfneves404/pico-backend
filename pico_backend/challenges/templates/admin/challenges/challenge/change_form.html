@@ -1,0 +1,13 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% block object-tools-items %}
+{{ block.super }}
+{% if show_bulk_add %}
+<li>
+    <a href="{% url 'admin:bulk-add-participants' original.pk %}" class="addlink">
+        {% trans "Bulk Add Participants" %}
+    </a>
+</li>
+{% endif %}
+{% endblock %}

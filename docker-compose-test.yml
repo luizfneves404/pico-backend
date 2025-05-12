@@ -1,0 +1,50 @@
+services:
+  daphne:
+    build: ./pico_backend
+    command: ./docker-test-entrypoint.sh
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+    environment:
+      - OPENAI_API_KEY
+      - FIREBASE_JSON_SERVICE_KEY
+      - PEN_TO_PRINT_RAPIDAPI_KEY
+      - AMPLITUDE_API_KEY
+      - AMPLITUDE_SECRET_KEY
+      - TINIFY_API_KEY
+      - BRANCH_KEY
+      - GEMINI_API_KEY
+      - SECRET_KEY=redacted
+      - DB_NAME=redacted
+      - DB_USER=postgres
+      - DB_PASSWORD=redacted
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DJANGO_SETTINGS_MODULE=pico_backend.test_settings
+
+  postgres:
+    image: ankane/pgvector
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: redacted
+      DB_NAME: redacted
+    volumes:
+      - ./docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:latest
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
