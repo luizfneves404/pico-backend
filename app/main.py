@@ -154,9 +154,6 @@ async def docs() -> HTMLResponse:
     include_in_schema=False,
 )
 async def openapi(request: Request) -> dict[str, Any]:
-    print("--------------------------------")
-    print(dict(request.headers))
-    print(request.scope["scheme"])
     return get_openapi(title="FastAPI", version="0.1.0", routes=fastapi_app.routes)
 
 
