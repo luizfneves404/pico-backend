@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import traceback
 from datetime import datetime
 from io import BytesIO
@@ -123,6 +124,11 @@ def inject_client(ses_client: SESClient) -> None:
     client = ses_client
 
 
+def sanitize_subject(subject: str) -> str:
+    # Remove control characters (except TAB if desired)
+    return re.sub(r"[\x00-\x1F\x7F]", "", subject)
+
+
 async def task_send_email(ctx: dict[Any, Any], email: EmailMessage) -> None:
     """
     Task function to write an email to a file instead of sending it.
@@ -142,8 +148,9 @@ async def task_send_email(ctx: dict[Any, Any], email: EmailMessage) -> None:
         if email.bcc_emails:
             destination["BccAddresses"] = email.bcc_emails
 
+        subject = sanitize_subject(email.subject)
         message: dict[str, dict[str, str | dict[str, str]]] = {
-            "Subject": {"Data": email.subject},
+            "Subject": {"Data": subject},
             "Body": {},
         }
         if email.body_text:
