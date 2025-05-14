@@ -72,57 +72,17 @@ fastapi_app = FastAPI(
 )
 
 
-@fastapi_app.get(
-    settings.docs_url,
-    tags=["documentation"],
-    include_in_schema=False,
-    dependencies=[Depends(require_admin_login)],
-)
-async def docs() -> HTMLResponse:
-    return get_swagger_ui_html(
-        openapi_url=f"{settings.openapi_url}?openapi_api_key={settings.openapi_api_key}",
-        title="docs",
-    )
-
-
-@fastapi_app.get(
-    settings.openapi_url,
-    tags=["documentation"],
-    include_in_schema=False,
-)
-async def openapi() -> dict[str, Any]:
-    return get_openapi(title="FastAPI", version="0.1.0", routes=fastapi_app.routes)
-
-
-# have to do this weird thing instead of using /api as base_url of FastAPI() because sqladmin hardcoded admin urls without /api
-base_api_router = APIRouter(prefix="/api")
-
-# not authenticated (unless some authentication is required inside the router)
-base_api_router.include_router(token_router)
-base_api_router.include_router(user_router)
-base_api_router.include_router(websockets_router)
-base_api_router.include_router(schools_router)
-
-# authenticated
-authenticated_routers = APIRouter(dependencies=[CurrentUserDep])
-
-authenticated_routers.include_router(essay_topics_router)
-authenticated_routers.include_router(files_router)
-
-# including base routers
-base_api_router.include_router(authenticated_routers)
-fastapi_app.include_router(base_api_router)
-
 # middlewares
+
 
 fastapi_app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=settings.allowed_hosts,
 )
 
-fastapi_app.add_middleware(
-    ProxyHeadersMiddleware,
-)
+
+fastapi_app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
 
 fastapi_app.add_middleware(
     SessionMiddleware,
@@ -173,6 +133,51 @@ async def health_check_middleware(
     if request.url.path == "/health":
         return Response(content="Healthy")
     return await call_next(request)
+
+
+@fastapi_app.get(
+    settings.docs_url,
+    tags=["documentation"],
+    include_in_schema=False,
+    dependencies=[Depends(require_admin_login)],
+)
+async def docs() -> HTMLResponse:
+    return get_swagger_ui_html(
+        openapi_url=f"{settings.openapi_url}?openapi_api_key={settings.openapi_api_key}",
+        title="docs",
+    )
+
+
+@fastapi_app.get(
+    settings.openapi_url,
+    tags=["documentation"],
+    include_in_schema=False,
+)
+async def openapi(request: Request) -> dict[str, Any]:
+    print("--------------------------------")
+    print(dict(request.headers))
+    print(request.scope["scheme"])
+    return get_openapi(title="FastAPI", version="0.1.0", routes=fastapi_app.routes)
+
+
+# have to do this weird thing instead of using /api as base_url of FastAPI() because sqladmin hardcoded admin urls without /api
+base_api_router = APIRouter(prefix="/api")
+
+# not authenticated (unless some authentication is required inside the router)
+base_api_router.include_router(token_router)
+base_api_router.include_router(user_router)
+base_api_router.include_router(websockets_router)
+base_api_router.include_router(schools_router)
+
+# authenticated
+authenticated_routers = APIRouter(dependencies=[CurrentUserDep])
+
+authenticated_routers.include_router(essay_topics_router)
+authenticated_routers.include_router(files_router)
+
+# including base routers
+base_api_router.include_router(authenticated_routers)
+fastapi_app.include_router(base_api_router)
 
 
 class HostRouter:
