@@ -18,7 +18,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpRequest, HttpResponse
 from django.urls import reverse
 from essays.controllers.essays import router as essay_topics_router
-from ninja import NinjaAPI
+from ninja import NinjaAPI, Router
 from ninja.openapi.docs import Swagger
 from ninja.throttling import AnonRateThrottle, AuthRateThrottle
 from pico_backend.auth import AsyncJWTBearer
@@ -63,25 +63,29 @@ api = NinjaAPI(
     ],
 )
 
+base_router = Router()
+
 # Add all routers
-api.add_router("/token", token_router, tags=["token"])
-api.add_router("/users", users_router, tags=["users"])
-api.add_router("/schools", schools_router, tags=["schools"])
-api.add_router("/chatrooms", chatrooms_router, tags=["chatrooms"])
-api.add_router(
+base_router.add_router("/token", token_router, tags=["token"])
+base_router.add_router("/users", users_router, tags=["users"])
+base_router.add_router("/schools", schools_router, tags=["schools"])
+base_router.add_router("/chatrooms", chatrooms_router, tags=["chatrooms"])
+base_router.add_router(
     "/chatrooms-with-icon", chatrooms_with_icon_router, tags=["chatrooms-with-icon"]
 )
-api.add_router("/dm-chatrooms", dm_chatrooms_router, tags=["dm-chatrooms"])
-api.add_router("", messages_router, tags=["messages"])
-api.add_router("", misc_router, tags=["misc"])
-api.add_router("/devices", fcm_devices_router, tags=["devices"])
-api.add_router("", files_groups_router, tags=["files-groups"])
-api.add_router("/essay-topics", essay_topics_router, tags=["essay-topics"])
-api.add_router("/quiz", quiz_router, tags=["quiz"])
-api.add_router("/answers", answers_router, tags=["answers"])
-api.add_router("/questions", questions_router, tags=["questions"])
-api.add_router("/study-plan", study_plan_router, tags=["study-plan"])
-api.add_router("/duels", duel_router, tags=["duels"])
-api.add_router("/currency", currency_router, tags=["currency"])
-api.add_router("/new-challenges", challenge_router, tags=["new-challenges"])
-api.add_router("/tournaments", tournaments_router, tags=["tournaments"])
+base_router.add_router("/dm-chatrooms", dm_chatrooms_router, tags=["dm-chatrooms"])
+base_router.add_router("", messages_router, tags=["messages"])
+base_router.add_router("", misc_router, tags=["misc"])
+base_router.add_router("/devices", fcm_devices_router, tags=["devices"])
+base_router.add_router("", files_groups_router, tags=["files-groups"])
+base_router.add_router("/essay-topics", essay_topics_router, tags=["essay-topics"])
+base_router.add_router("/quiz", quiz_router, tags=["quiz"])
+base_router.add_router("/answers", answers_router, tags=["answers"])
+base_router.add_router("/questions", questions_router, tags=["questions"])
+base_router.add_router("/study-plan", study_plan_router, tags=["study-plan"])
+base_router.add_router("/duels", duel_router, tags=["duels"])
+base_router.add_router("/currency", currency_router, tags=["currency"])
+base_router.add_router("/new-challenges", challenge_router, tags=["new-challenges"])
+base_router.add_router("/tournaments", tournaments_router, tags=["tournaments"])
+
+api.add_router("/api", base_router)
