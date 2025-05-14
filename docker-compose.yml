@@ -56,29 +56,56 @@ services:
       - ADMIN_EMAILS
       - ADMIN_NAMES
   
-  # worker:
-  #   build: 
-  #     context: .
-  #     dockerfile: docker/Dockerfile
-  #   volumes:
-  #     - ./app:/code/app
-  #   command: docker/docker-worker-entrypoint.sh
-  #   depends_on:
-  #     redis:
-  #       condition: service_healthy
-  #     postgres:
-  #       condition: service_healthy
+  worker:
+    build: 
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ./app:/code/app
+    command: docker/docker-worker-entrypoint.sh
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
       
-  #   environment:
-  #     UVICORN_HOST: 0.0.0.0
-  #     UVICORN_PORT: 8000
-  #     UVICORN_RELOAD: false
+    environment:
+      - ADMIN_URL=admin
+      - AMPLITUDE_TRACK_EVENTS=false
+      - AWS_SES_FROM_EMAIL=pico@example.com
+      - DATABASE_URL=postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@postgres:5432/picodb
+      - DJANGO_DATABASE_URL=postgresql://postgres:REDACTED_DB_PASSWORD@postgres:5432/picodb
+      - DJANGO_HOST=django.localtest.me
+      - DOCS_URL=/docs
+      - ENVIRONMENT=test
+      - FASTAPI_HOST=fastapi.localtest.me
+      - FCM_DRY_RUN=true
+      - OPENAPI_API_KEY=123456
+      - OPENAPI_URL=/openapi.json
+      - REDIS_URL=redis://redis:6379
+      - SECRET_KEY=REDACTED_SECRET_KEY
+      - STORAGE__BACKEND=local
+      - STORAGE__BASE_PATH=storage
+      - TEXTRACT_PROFILE_NAME=eonfweogfnw-2385545
+      - TEXTRACT_REGION_NAME=us-east-1
+      - UVICORN_HOST=0.0.0.0
+      - UVICORN_PORT=8000
+      - UVICORN_RELOAD=false
 
-  #     DATABASE_URL: postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@postgres:5432/picodb
-  #     REDIS_URL: redis://redis:6379
-  #     SECRET_KEY: =REDACTED_SECRET_KEY
-
-  #     AWS_SES_FROM_EMAIL: pico@example.com
+      # API Keys
+      - AMPLITUDE_API_KEY
+      - AMPLITUDE_SECRET_KEY
+      - BRANCH_API_KEY
+      - BRANCH_API_KEY_TEST
+      - FIREBASE_JSON_SERVICE_KEY
+      - GEMINI_API_KEY
+      - OPENAI_API_KEY
+      - PEN_TO_PRINT_RAPIDAPI_KEY
+      - TINIFY_API_KEY
+      
+      # Other configuration
+      - ADMIN_EMAILS
+      - ADMIN_NAMES
 
   celery:
     build:
@@ -94,47 +121,42 @@ services:
         condition: service_healthy
       
     environment:
+      - ADMIN_URL=admin
+      - AMPLITUDE_TRACK_EVENTS=false
+      - AWS_SES_FROM_EMAIL=pico@example.com
+      - DATABASE_URL=postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@postgres:5432/picodb
+      - DJANGO_DATABASE_URL=postgresql://postgres:REDACTED_DB_PASSWORD@postgres:5432/picodb
+      - DJANGO_HOST=django.localtest.me
+      - DOCS_URL=/docs
       - ENVIRONMENT=test
+      - FASTAPI_HOST=fastapi.localtest.me
+      - FCM_DRY_RUN=true
+      - OPENAPI_API_KEY=123456
+      - OPENAPI_URL=/openapi.json
+      - REDIS_URL=redis://redis:6379
+      - SECRET_KEY=REDACTED_SECRET_KEY
+      - STORAGE__BACKEND=local
+      - STORAGE__BASE_PATH=storage
+      - TEXTRACT_PROFILE_NAME=eonfweogfnw-2385545
+      - TEXTRACT_REGION_NAME=us-east-1
       - UVICORN_HOST=0.0.0.0
       - UVICORN_PORT=8000
       - UVICORN_RELOAD=false
 
-      - DJANGO_DATABASE_URL=postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@postgres:5432/picodb
-      - DATABASE_URL=postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@postgres:5432/picodb
-      - REDIS_URL=redis://redis:6379
-      - SECRET_KEY=REDACTED_SECRET_KEY
-
-      - AWS_SES_FROM_EMAIL=pico@example.com
-
-      - ADMIN_URL=admin
-      - OPENAPI_URL=/openapi.json
-      - DOCS_URL=/docs
-      - OPENAPI_API_KEY=123456
-
-      - DJANGO_HOST=django.localtest.me
-      - FASTAPI_HOST=fastapi.localtest.me
-
-      - TEXTRACT_REGION_NAME=us-east-1
-      - TEXTRACT_PROFILE_NAME=eonfweogfnw-2385545
-
-      - STORAGE__BACKEND=local
-      - STORAGE__BASE_PATH=storage
-
-      - AMPLITUDE_TRACK_EVENTS=false
-
-      - FCM_DRY_RUN=true
-
-      - ADMIN_NAMES
-      - ADMIN_EMAILS
-      - FIREBASE_JSON_SERVICE_KEY
+      # API Keys
       - AMPLITUDE_API_KEY
       - AMPLITUDE_SECRET_KEY
-      - OPENAI_API_KEY
-      - GEMINI_API_KEY
       - BRANCH_API_KEY
       - BRANCH_API_KEY_TEST
+      - FIREBASE_JSON_SERVICE_KEY
+      - GEMINI_API_KEY
+      - OPENAI_API_KEY
       - PEN_TO_PRINT_RAPIDAPI_KEY
       - TINIFY_API_KEY
+      
+      # Other configuration
+      - ADMIN_EMAILS
+      - ADMIN_NAMES
     
     healthcheck:
       test: [ "CMD-SHELL", "PYTHONPATH=./pico_django celery -A pico_backend status" ]

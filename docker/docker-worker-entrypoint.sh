@@ -4,4 +4,4 @@ set -e
 
 . /code/.venv/bin/activate
 
-exec arq arq_worker.WorkerSettings
+exec arq app.arq_worker.WorkerSettings
