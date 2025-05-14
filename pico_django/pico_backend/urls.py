@@ -13,7 +13,6 @@ admin_url = settings.admin_url
 
 urlpatterns = [
     path(str(admin_url), admin.site.urls),
-    path("api/", api.urls),
     path(
         "reset/<uidb64>/<token>/",
         auth_views.PasswordResetConfirmView.as_view(
@@ -39,3 +38,5 @@ if settings.environment in [Environment.DEV, Environment.TEST]:
         import debug_toolbar
 
         urlpatterns += [path("__debug__/", include(debug_toolbar.urls))]
+
+urlpatterns += [path("", api.urls)]

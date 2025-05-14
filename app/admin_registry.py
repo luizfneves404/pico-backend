@@ -1,6 +1,8 @@
-from fastapi import Request
+from fastapi import HTTPException, Request
+from fastapi.responses import RedirectResponse
 from sqladmin import ModelView
 from sqladmin.authentication import AuthenticationBackend
+from starlette.status import HTTP_401_UNAUTHORIZED
 
 from app.config import settings
 from app.database import db_manager
@@ -99,3 +101,27 @@ class AdminAuth(AuthenticationBackend):
 
 
 authentication_backend = AdminAuth(secret_key=settings.secret_key)
+
+
+async def require_admin_login(request: Request) -> None | RedirectResponse:
+    """
+    Dependency to require admin authentication for FastAPI route handlers.
+
+    Args:
+        request: The incoming FastAPI request.
+
+    Raises:
+        HTTPException: If not authenticated (API clients).
+    """
+    auth_backend = authentication_backend
+    is_authenticated = await auth_backend.authenticate(request)
+    if not is_authenticated:
+        if request.headers.get("accept", "").startswith("text/html"):
+            raise HTTPException(
+                status_code=302,
+                headers={"Location": str(request.url_for("admin:login"))},
+            )
+        raise HTTPException(
+            status_code=HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )

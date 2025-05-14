@@ -8,19 +8,26 @@ sys.path.insert(
 )
 import time
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Awaitable, Callable
+from typing import Any, AsyncIterator, Awaitable, Callable
 
 import uvicorn
-from fastapi import APIRouter, FastAPI, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.openapi.docs import (
+    get_swagger_ui_html,
+)
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import HTMLResponse
 from sqladmin import Admin
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 import app.arq_client as arq_client
-from app.admin_registry import admin_views, authentication_backend
+from app.admin_registry import admin_views, authentication_backend, require_admin_login
 from app.amp import track_amplitude_endpoint_event
 from app.chat.websockets import router as websockets_router
-from app.config import settings
+from app.config import Environment, settings
 from app.database import db_manager
 from app.deps import CurrentUserDep
 from app.essays.routers import router as essay_topics_router
@@ -60,14 +67,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 fastapi_app = FastAPI(
     lifespan=lifespan,
-    openapi_url=settings.openapi_url,
-    docs_url=settings.docs_url,
+    openapi_url=None,
+    docs_url=None,
 )
+
+
+@fastapi_app.get(
+    settings.docs_url,
+    tags=["documentation"],
+    include_in_schema=False,
+    dependencies=[Depends(require_admin_login)],
+)
+async def docs() -> HTMLResponse:
+    return get_swagger_ui_html(
+        openapi_url=f"{settings.openapi_url}?openapi_api_key={settings.openapi_api_key}",
+        title="docs",
+    )
+
+
+@fastapi_app.get(
+    settings.openapi_url,
+    tags=["documentation"],
+    include_in_schema=False,
+)
+async def openapi() -> dict[str, Any]:
+    return get_openapi(title="FastAPI", version="0.1.0", routes=fastapi_app.routes)
+
 
 # have to do this weird thing instead of using /api as base_url of FastAPI() because sqladmin hardcoded admin urls without /api
 base_api_router = APIRouter(prefix="/api")
-
-authenticated_routers = APIRouter(dependencies=[CurrentUserDep])
 
 # not authenticated (unless some authentication is required inside the router)
 base_api_router.include_router(token_router)
@@ -76,6 +104,8 @@ base_api_router.include_router(websockets_router)
 base_api_router.include_router(schools_router)
 
 # authenticated
+authenticated_routers = APIRouter(dependencies=[CurrentUserDep])
+
 authenticated_routers.include_router(essay_topics_router)
 authenticated_routers.include_router(files_router)
 
@@ -88,6 +118,16 @@ fastapi_app.include_router(base_api_router)
 fastapi_app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=settings.allowed_hosts,
+)
+
+fastapi_app.add_middleware(
+    ProxyHeadersMiddleware,
+)
+
+fastapi_app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.secret_key,
+    https_only=settings.environment == Environment.PROD,
 )
 
 
