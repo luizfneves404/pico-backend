@@ -141,6 +141,11 @@ async def task_send_email(ctx: dict[Any, Any], email: EmailMessage) -> None:
     Returns:
         bool: True if the email was written successfully
     """
+    send_email(email)
+
+
+def send_email(email: EmailMessage) -> None:
+    """Send an email synchronously."""
     try:
         destination: dict[str, Sequence[str]] = {"ToAddresses": email.to_emails}
         if email.cc_emails:

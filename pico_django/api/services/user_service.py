@@ -6,6 +6,7 @@ import api.services.chatroom_service as chatroom_service
 import chat.chat_service as chat_service
 import currency.currency_service as currency_service
 import notifications.utils as notification_utils
+import pico_backend.amp as pico_backend_amp
 import quiz.quiz_service as quiz_service
 from api.models import (
     Chatroom,
@@ -21,7 +22,6 @@ from api.services import fcm_service
 from asgiref.sync import sync_to_async
 from celery import shared_task
 from currency.models import Currency, CurrencyAction, CurrencyType
-from django.core.mail import send_mail
 from django.db.models import Count, Q
 from django.db.utils import IntegrityError
 from django.utils import timezone
@@ -29,7 +29,7 @@ from django.utils.html import strip_tags
 from pydantic import TypeAdapter, ValidationError
 from quiz.models import SessionQuestionUser, UserInfo
 
-import pico_backend.amp as pico_backend_amp
+import app.mail as mail
 
 # Constants
 from .constants import (
@@ -439,11 +439,12 @@ async def create_official_chatroom_for_user(user: User) -> Chatroom:
 
 
 def send_welcome_email(user: User) -> None:
-    send_mail(
-        WELCOME_EMAIL_SUBJECT,
-        WELCOME_EMAIL_MESSAGE.format(username=user.username),
-        None,
-        [user.email],
+    mail.send_email(
+        mail.EmailMessage(
+            subject=WELCOME_EMAIL_SUBJECT,
+            body_text=WELCOME_EMAIL_MESSAGE.format(username=user.username),
+            to_emails=[user.email],
+        )
     )
     logger.info(f"Sent welcome email to '{user.username}'")
 
@@ -470,12 +471,13 @@ def send_bulk_email(
 
 
 def send_html_email(subject: str, html_string: str, email: str):
-    send_mail(
-        subject=subject,
-        message=strip_tags(html_string),
-        from_email=None,
-        recipient_list=[email],
-        html_message=html_string,
+    mail.send_email(
+        mail.EmailMessage(
+            subject=subject,
+            body_text=strip_tags(html_string),
+            to_emails=[email],
+            body_html=html_string,
+        )
     )
 
 

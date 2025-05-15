@@ -64,5 +64,4 @@ if (
 else:
     raise ValueError(f"Unsupported storage backend: {settings.storage}")
 
-EMAIL_BACKEND = "django_ses.SESBackend"
 NINJA_NUM_PROXIES = 1
