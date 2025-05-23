@@ -11,7 +11,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship, selectinload
 
-from app.base import Base
+from app.base import ASYNC_PARENT_FOREIGN_KEY_OPTIONS, Base
 from app.currency.models import HasCurrencyTransactions
 
 if TYPE_CHECKING:
@@ -58,13 +58,13 @@ class Essay(Base, HasCurrencyTransactions):
     extracted_texts: Mapped[list["ExtractedText"]] = relationship(
         back_populates="essay",
         lazy="raise_on_sql",
-        cascade="save-update, merge, expunge, delete, delete-orphan",
+        cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
     )
     feedbacks: Mapped[list["Feedback"]] = relationship(
         back_populates="essay",
         lazy="raise_on_sql",
-        cascade="save-update, merge, expunge, delete, delete-orphan",
+        cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
     )
 

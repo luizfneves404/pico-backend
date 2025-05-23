@@ -12,7 +12,6 @@ from typing import Any, AsyncIterator, Awaitable, Callable
 
 import uvicorn
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.openapi.docs import (
     get_swagger_ui_html,
 )
@@ -30,12 +29,12 @@ from app.chat.websockets import router as websockets_router
 from app.config import Environment, settings
 from app.database import db_manager
 from app.deps import CurrentUserDep
-from app.essays.routers import router as essay_topics_router
+from app.education.routers import router as education_router
 from app.fcm.fcm_service import init_firebase
 from app.files.routers import router as files_router
+from app.flows.routers import router as flows_router
 from app.log_filters import add_log_filters
 from app.redis_client import use_redis
-from app.schools.routers import router as schools_router
 from app.users.routers import token_router, user_router
 from pico_django.pico_backend.asgi import application as django_application
 
@@ -73,12 +72,6 @@ fastapi_app = FastAPI(
 
 
 # middlewares
-
-
-fastapi_app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=settings.allowed_hosts,
-)
 
 
 fastapi_app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
@@ -164,13 +157,13 @@ base_api_router = APIRouter(prefix="/api")
 base_api_router.include_router(token_router)
 base_api_router.include_router(user_router)
 base_api_router.include_router(websockets_router)
-base_api_router.include_router(schools_router)
+base_api_router.include_router(education_router)
 
 # authenticated
 authenticated_routers = APIRouter(dependencies=[CurrentUserDep])
 
-authenticated_routers.include_router(essay_topics_router)
 authenticated_routers.include_router(files_router)
+authenticated_routers.include_router(flows_router)
 
 # including base routers
 base_api_router.include_router(authenticated_routers)

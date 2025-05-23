@@ -14,8 +14,9 @@ from pydantic import (
 from pydantic_extra_types.phone_numbers import PhoneNumber
 
 from app.config import settings
+from app.education.schemas import EducationIn, EducationOut
 from app.shared.validation import LowercaseEmailStr, StripWhitespaceStr
-from app.users.models import EducationLevel, SignupSource
+from app.users.models import SignupSource
 
 PhoneNumber.default_region_code = settings.default_phone_number_country
 
@@ -70,49 +71,32 @@ class UserBase(BaseModel):
     model_config = ConfigDict(coerce_numbers_to_str=True, from_attributes=True)
 
     username: StripWhitespaceStr = Field(min_length=1, max_length=50)
-
     phone_number: PhoneNumber
     email: LowercaseEmailStr
-    school_id: int | None = Field(default=None)
-    commitment: int = Field(default=20)
-    education_level: EducationLevel = Field(
-        default=EducationLevel.UNKNOWN,
-    )
-    signup_source: SignupSource = Field(
-        default=SignupSource.UNKNOWN,
-    )
 
 
 class UserIn(UserBase):
     password: PasswordStr
     referred_by_username: StripWhitespaceStr = Field(max_length=50, default="")
-    chosen_college: StripWhitespaceStr = Field(
-        max_length=120,
-        default="",
-    )
-    chosen_course: StripWhitespaceStr = Field(
-        max_length=120,
-        default="",
-    )
+    current_education: EducationIn | None = Field(default=None)
+    intended_education: EducationIn | None = Field(default=None)
+    signup_source: SignupSource = Field(default=SignupSource.UNKNOWN)
 
 
 class UserOut(UserBase):
     id: int
-    referral_count: int
-    chosen_college: ObjectName = Field(
-        max_length=120,
-    )
-    chosen_course: ObjectName = Field(
-        max_length=120,
-    )
+    social_score: int
+    xp_score: int
+    current_education: EducationOut | None
+    intended_education: EducationOut | None
 
 
-class OtherUserOut(BaseModel):
+class OtherUserOut(UserBase):
     id: int
-    username: StripWhitespaceStr
-    email: LowercaseEmailStr
-    phone_number: PhoneNumber
-    school_id: int | None
+    social_score: int
+    xp_score: int
+    current_education: EducationOut | None
+    intended_education: EducationOut | None
 
 
 class PasswordRequest(BaseModel):
@@ -135,24 +119,8 @@ class EmailUpdateRequest(PasswordRequest):
     new_email: LowercaseEmailStr
 
 
-class SchoolUpdateRequest(BaseModel):
-    new_school_id: int | None
-
-
-class CollegeUpdateRequest(BaseModel):
-    new_chosen_college: StripWhitespaceStr = Field(max_length=120)
-
-
-class CourseUpdateRequest(BaseModel):
-    new_chosen_course: StripWhitespaceStr = Field(max_length=120)
-
-
-class CommitmentUpdateRequest(BaseModel):
-    commitment: int
-
-
-class EducationLevelUpdateRequest(BaseModel):
-    education_level: EducationLevel
+class EducationUpdateRequest(BaseModel):
+    education: EducationIn
 
 
 class UserStatsResponse(BaseModel):
@@ -160,10 +128,8 @@ class UserStatsResponse(BaseModel):
 
     id: int
     username: StripWhitespaceStr
-    school_id: int | None = None
-    chosen_college: ObjectName
-    chosen_course: ObjectName
-    education_level: EducationLevel
+    current_education: EducationOut | None
+    intended_education: EducationOut | None
     streak: int
     done_today: bool
     total_answers: int
@@ -182,7 +148,6 @@ class SubcategoryPerformance(BaseModel):
 
 
 class UserStatsMeResponse(UserStatsResponse):
-    dynamic_score: RoundedFloat
     subject_performance: dict[
         Literal[
             "Matemática",
@@ -203,7 +168,7 @@ class UserInRanking(BaseModel):
     id: int
     username: str
     rank: int
-    school_id: int | None = Field(default=None)
+    current_education: EducationOut | None
     score: RoundedFloat
     total_answers: int
     correct_answers: int
@@ -221,3 +186,40 @@ class OnlineInfo(BaseModel):
 
 class BalanceOut(BaseModel):
     balance: int
+
+
+# New unified update schemas
+class UserUpdate(BaseModel):
+    """Unified user update schema with optional fields."""
+
+    model_config = ConfigDict(coerce_numbers_to_str=True)
+
+    username: StripWhitespaceStr | None = Field(None, min_length=1, max_length=50)
+    phone_number: PhoneNumber | None = None
+    email: LowercaseEmailStr | None = None
+    current_education: EducationIn | None = None
+    intended_education: EducationIn | None = None
+
+
+class UserUpdateRequest(BaseModel):
+    """Request wrapper for user updates with optional password verification."""
+
+    updates: UserUpdate
+    current_password: PasswordStr | None = None
+
+
+class UserPartialUpdateResponse(BaseModel):
+    """Response showing what fields were updated."""
+
+    updated_fields: list[str]
+    user: UserOut
+
+
+class UserUpdatePermissions(BaseModel):
+    """Configuration for which fields require password verification."""
+
+    requires_password: list[str] = ["username", "phone_number", "email"]
+    allows_anonymous: list[str] = [
+        "current_education",
+        "intended_education",
+    ]

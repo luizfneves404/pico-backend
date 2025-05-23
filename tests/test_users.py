@@ -1,3 +1,5 @@
+from typing import Any
+
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -12,20 +14,27 @@ from tests.factories import (
 
 
 async def test_create_user_followed_by_jwt_and_user_me(client: AsyncClient):
+    school = await SchoolFactory.create()
+    college = await CollegeFactory.create()
+    course = await CourseFactory.create()
     user = UserFactory.build()
     response = await client.post(
-        "/users",
+        "/api/users",
         json={
             "username": user.username,
             "password": "defaultpassword",
             "phone_number": user.phone_number,
             "email": user.email,
-            "school_id": user.school_id,
-            "chosen_college": user.chosen_college.name if user.chosen_college else None,
-            "chosen_course": user.chosen_course.name if user.chosen_course else None,
-            "education_level": user.education_level.value,
+            "current_education": {
+                "level": "TYHS",
+                "institution_id": school.id,
+            },
+            "intended_education": {
+                "level": "COL",
+                "institution_id": college.id,
+                "course_id": course.id,
+            },
             "referred_by_username": "",
-            "commitment": user.commitment,
         },
     )
     assert response.status_code == 201
@@ -36,20 +45,12 @@ async def test_create_user_followed_by_jwt_and_user_me(client: AsyncClient):
     assert response_data["username"] == user.username
     assert response_data["phone_number"] == user.phone_number
     assert response_data["email"] == user.email
-    assert response_data["school_id"] == user.school_id
-    assert response_data["commitment"] == user.commitment
-    assert response_data["education_level"] == user.education_level.value
-    assert response_data["chosen_college"] == (
-        user.chosen_college.name if user.chosen_college else None
-    )
-    assert response_data["chosen_course"] == (
-        user.chosen_course.name if user.chosen_course else None
-    )
-    assert response_data["referral_count"] == 0
+    assert response_data["current_education"]["level"] == "TYHS"
+    assert response_data["intended_education"]["level"] == "COL"
 
     # Login with new user
     token_response = await client.post(
-        "/token/pair",
+        "/api/token/pair",
         data={
             "username": user.username,
             "password": "defaultpassword",
@@ -59,7 +60,7 @@ async def test_create_user_followed_by_jwt_and_user_me(client: AsyncClient):
 
     # Get user details
     headers = {"Authorization": f"Bearer {token_response.json()['access']}"}
-    me_response = await client.get("/users/me", headers=headers)
+    me_response = await client.get("/api/users/me", headers=headers)
     assert me_response.status_code == 200
     me_data = me_response.json()
 
@@ -67,30 +68,24 @@ async def test_create_user_followed_by_jwt_and_user_me(client: AsyncClient):
     assert me_data["username"] == user.username
     assert me_data["phone_number"] == user.phone_number
     assert me_data["email"] == user.email
-    assert me_data["school_id"] == user.school_id
-    assert me_data["commitment"] == user.commitment
-    assert me_data["education_level"] == user.education_level.value
-    assert me_data["chosen_college"] == (
-        user.chosen_college.name if user.chosen_college else None
-    )
-    assert me_data["chosen_course"] == (
-        user.chosen_course.name if user.chosen_course else None
-    )
+    assert me_data["current_education"]["level"] == "TYHS"
+    assert me_data["current_education"]["institution_id"] == school.id
+    assert me_data["current_education"]["course_id"] == course.id
+    assert me_data["intended_education"]["level"] == "COL"
+    assert me_data["intended_education"]["institution_id"] == college.id
+    assert me_data["intended_education"]["course_id"] == course.id
 
 
 async def test_create_user_whitespace(client: AsyncClient):
     user = UserFactory.build()
     response = await client.post(
-        "/users",
+        "/api/users",
         json={
             "username": f"  {user.username}  ",
             "password": "defaultpassword",
             "phone_number": user.phone_number,
             "email": user.email,
-            "school_id": user.school_id,
-            "chosen_college": user.chosen_college.name if user.chosen_college else None,
-            "chosen_course": user.chosen_course.name if user.chosen_course else None,
-            "education_level": user.education_level.value,
+            "current_education": {"level": "TYHS", "institution_id": 1, "course_id": 1},
         },
     )
     assert response.status_code == 201
@@ -99,7 +94,7 @@ async def test_create_user_whitespace(client: AsyncClient):
 
     # Login with new user
     token_response = await client.post(
-        "/token/pair",
+        "/api/token/pair",
         data={
             "username": user.username,
             "password": "defaultpassword",
@@ -117,13 +112,9 @@ async def test_create_user_fail_username_case_insensitive_and_whitespace(
         "password": "defaultpassword",
         "phone_number": user2_data.phone_number,
         "email": user2_data.email,
-        "school_id": user2_data.school.id,
-        "chosen_college": user2_data.chosen_college.name,
-        "chosen_course": user2_data.chosen_course.name,
-        "education_level": user2_data.education_level.value,
-        "commitment": user2_data.commitment,
+        "current_education": {"level": "TYHS", "institution_id": 1, "course_id": 1},
     }
-    response = await client.post("/users", json=user_dict)
+    response = await client.post("/api/users", json=user_dict)
     assert response.status_code == 409
 
 
@@ -134,363 +125,263 @@ async def test_create_user_fail_username_empty(client: AsyncClient):
         "password": "defaultpassword",
         "phone_number": user.phone_number,
         "email": user.email,
-        "school_id": user.school.id,
-        "chosen_college": user.chosen_college.name,
-        "chosen_course": user.chosen_course.name,
-        "education_level": user.education_level.value,
-        "commitment": user.commitment,
+        "current_education": {"level": "TYHS", "institution_id": 1, "course_id": 1},
     }
-    response = await client.post("/users", json=user_dict)
+    response = await client.post("/api/users", json=user_dict)
     assert response.status_code == 422
 
 
-async def test_retrieve_user_me(auth_client: AsyncClient, user: User):
-    response = await auth_client.get("/users/me")
+async def test_retrieve_user_me(user_client: AsyncClient, user: User):
+    response = await user_client.get("/api/users/me")
     assert response.status_code == 200
     response_data = response.json()
     assert response_data["id"] == user.id
     assert response_data["username"] == user.username
     assert response_data["phone_number"] == user.phone_number
     assert response_data["email"] == user.email
-    assert response_data["school_id"] == (user.school.id if user.school else None)
-    assert response_data["commitment"] == user.commitment
-    assert response_data["education_level"] == user.education_level.value
+    assert response_data["xp_score"] == 0
+    assert response_data["social_score"] == 0
+    # Check that education data is present
+    if response_data["current_education"]:
+        assert "level" in response_data["current_education"]
+        assert "institution_id" in response_data["current_education"]
+        assert "course_id" in response_data["current_education"]
 
 
-async def test_update_username(auth_client: AsyncClient, user: User):
-    data = {"new_username": "newname", "current_password": "defaultpassword"}
-    response = await auth_client.patch("/users/set-username", json=data)
-    assert response.status_code == 204
-    response = await auth_client.get("/users/me")
+async def test_retrieve_other_user(user_client: AsyncClient, user: User):
+    user2 = await UserFactory.create()
+    response = await user_client.get(f"/api/users/other/{user2.id}")
     assert response.status_code == 200
     response_data = response.json()
-    assert response_data["username"] == "newname"
+    assert response_data["id"] == user2.id
+    assert response_data["username"] == user2.username
+    assert response_data["phone_number"] == user2.phone_number
+    assert response_data["email"] == user2.email
+    assert response_data["current_education"] is None
+    assert response_data["intended_education"] is None
+    assert response_data["xp_score"] == 0
+    assert response_data["social_score"] == 0
+
+
+async def test_update_username(user_client: AsyncClient, user: User):
+    data = {"updates": {"username": "newname"}, "current_password": "defaultpassword"}
+    response = await user_client.patch("/api/users/me", json=data)
+    assert response.status_code == 200
+    response_data = response.json()
+    assert "username" in response_data["updated_fields"]
+    assert response_data["user"]["username"] == "newname"
 
 
 async def test_update_username_already_exists(
-    auth_client: AsyncClient, session: AsyncSession
+    user_client: AsyncClient, session: AsyncSession
 ):
     async with session.begin():
         existing_user = await UserFactory.create(session=session)
     data = {
-        "new_username": existing_user.username,
+        "updates": {"username": existing_user.username},
         "current_password": "defaultpassword",
     }
-    response = await auth_client.patch("/users/set-username", json=data)
+    response = await user_client.patch("/api/users/me", json=data)
     assert response.status_code == 409
-    response = await auth_client.get("/users/me")
+    response = await user_client.get("/api/users/me")
     assert response.status_code == 200
     response_data = response.json()
     assert response_data["username"] != existing_user.username
 
 
 async def test_update_username_already_exists_case_insensitive_and_whitespace(
-    auth_client: AsyncClient, session: AsyncSession
+    user_client: AsyncClient, session: AsyncSession
 ):
     async with session.begin():
         existing_user = await UserFactory.create(session=session)
     data = {
-        "new_username": f"  {existing_user.username.upper()}  ",
+        "updates": {"username": f"  {existing_user.username.upper()}  "},
         "current_password": "defaultpassword",
     }
-    response = await auth_client.patch("/users/set-username", json=data)
+    response = await user_client.patch("/api/users/me", json=data)
     assert response.status_code == 409
-    response = await auth_client.get("/users/me")
+    response = await user_client.get("/api/users/me")
     assert response.status_code == 200
     response_data = response.json()
     assert response_data["username"] != existing_user.username
 
 
-async def test_update_password(auth_client: AsyncClient, user: User):
+async def test_update_password(user_client: AsyncClient, user: User):
     data = {
-        "new_password": "newpassword605",
+        "updates": {"password": "newpassword605"},
         "current_password": "defaultpassword",
     }
-    response = await auth_client.patch("/users/set-password", json=data)
-    assert response.status_code == 204
-    token_response = await auth_client.post(
-        "/token/pair",
+    response = await user_client.patch("/api/users/me", json=data)
+    assert response.status_code == 200
+    response_data = response.json()
+    assert "password" in response_data["updated_fields"]
+    token_response = await user_client.post(
+        "/api/token/pair",
         data={"username": user.username, "password": "newpassword605"},
     )
     assert token_response.status_code == 200
 
 
-async def test_update_phone_number(auth_client: AsyncClient, user: User):
+async def test_update_phone_number(user_client: AsyncClient, user: User):
     data = {
-        "new_phone_number": "21999202390",
+        "updates": {"phone_number": "21999202390"},
         "current_password": "defaultpassword",
     }
-    response = await auth_client.patch("/users/set-phone-number", json=data)
-    assert response.status_code == 204
-    response = await auth_client.get("/users/me")
+    response = await user_client.patch("/api/users/me", json=data)
     assert response.status_code == 200
     response_data = response.json()
-    assert response_data["phone_number"] == "tel:+55-21-99920-2390"
+    assert "phone_number" in response_data["updated_fields"]
+    assert response_data["user"]["phone_number"] == "tel:+55-21-99920-2390"
 
 
 async def test_update_phone_number_already_exists(
-    auth_client: AsyncClient, session: AsyncSession
+    user_client: AsyncClient, session: AsyncSession
 ):
     async with session.begin():
         existing_user = await UserFactory.create(session=session)
     data = {
-        "new_phone_number": existing_user.phone_number,
+        "updates": {"phone_number": existing_user.phone_number},
         "current_password": "defaultpassword",
     }
-    response = await auth_client.patch("/users/set-phone-number", json=data)
+    response = await user_client.patch("/api/users/me", json=data)
     assert response.status_code == 409
-    response = await auth_client.get("/users/me")
+    response = await user_client.get("/api/users/me")
     assert response.status_code == 200
     response_data = response.json()
     assert response_data["phone_number"] != existing_user.phone_number
 
 
-async def test_update_phone_number_invalid(auth_client: AsyncClient, user: User):
+async def test_update_phone_number_invalid(user_client: AsyncClient, user: User):
     data = {
-        "new_phone_number": "invalid",
+        "updates": {"phone_number": "invalid"},
         "current_password": "defaultpassword",
     }
-    response = await auth_client.patch("/users/set-phone-number", json=data)
+    response = await user_client.patch("/api/users/me", json=data)
     assert response.status_code == 422
-    response = await auth_client.get("/users/me")
+    response = await user_client.get("/api/users/me")
     assert response.status_code == 200
     response_data = response.json()
     assert response_data["phone_number"] != "invalid"
 
 
-async def test_update_email(auth_client: AsyncClient, user: User):
+async def test_update_email(user_client: AsyncClient, user: User):
     data = {
-        "new_email": "test@example.com",
+        "updates": {"email": "test@example.com"},
         "current_password": "defaultpassword",
     }
-    response = await auth_client.patch("/users/set-email", json=data)
-    assert response.status_code == 204
-    response = await auth_client.get("/users/me")
+    response = await user_client.patch("/api/users/me", json=data)
     assert response.status_code == 200
     response_data = response.json()
-    assert response_data["email"] == "test@example.com"
+    assert "email" in response_data["updated_fields"]
+    assert response_data["user"]["email"] == "test@example.com"
 
 
 async def test_update_email_already_exists(
-    auth_client: AsyncClient, session: AsyncSession
+    user_client: AsyncClient, session: AsyncSession
 ):
     async with session.begin():
         existing_user = await UserFactory.create(session=session)
     data = {
-        "new_email": existing_user.email,
+        "updates": {"email": existing_user.email},
         "current_password": "defaultpassword",
     }
-    response = await auth_client.patch("/users/set-email", json=data)
+    response = await user_client.patch("/api/users/me", json=data)
     assert response.status_code == 409
-    response = await auth_client.get("/users/me")
+    response = await user_client.get("/api/users/me")
     assert response.status_code == 200
     response_data = response.json()
     assert response_data["email"] != existing_user.email
 
 
-async def test_update_email_invalid(auth_client: AsyncClient, user: User):
+async def test_update_email_invalid(user_client: AsyncClient, user: User):
     data = {
-        "new_email": "invalid",
+        "updates": {"email": "invalid"},
         "current_password": "defaultpassword",
     }
-    response = await auth_client.patch("/users/set-email", json=data)
+    response = await user_client.patch("/api/users/me", json=data)
     assert response.status_code == 422
-    response = await auth_client.get("/users/me")
+    response = await user_client.get("/api/users/me")
     assert response.status_code == 200
     response_data = response.json()
     assert response_data["email"] != "invalid"
 
 
-async def test_update_school(auth_client: AsyncClient, session: AsyncSession):
+async def test_update_current_education(
+    user_client: AsyncClient, session: AsyncSession
+):
     async with session.begin():
         school = await SchoolFactory.create(session=session)
-    data = {
-        "new_school_id": school.id,
-    }
-    response = await auth_client.patch("/users/set-school", json=data)
-    assert response.status_code == 204
-    response = await auth_client.get("/users/me")
-    assert response.status_code == 200
-    response_data = response.json()
-    assert response_data["school_id"] == school.id
-
-
-async def test_update_school_to_blank(auth_client: AsyncClient):
-    data = {
-        "new_school_id": None,
-    }
-    response = await auth_client.patch("/users/set-school", json=data)
-    assert response.status_code == 204
-    # get the user details
-    response = await auth_client.get("/users/me")
-    assert response.status_code == 200
-    response_data = response.json()
-    assert response_data["school_id"] is None
-
-
-async def test_update_chosen_college(auth_client: AsyncClient, session: AsyncSession):
-    async with session.begin():
-        college = await CollegeFactory.create(session=session)
-    data = {
-        "new_chosen_college": college.name,
-    }
-    response = await auth_client.patch("/users/set-chosen-college", json=data)
-    assert response.status_code == 204
-    # get the user details
-    response = await auth_client.get("/users/me")
-    assert response.status_code == 200
-    response_data = response.json()
-    assert response_data["chosen_college"] == college.name
-
-
-async def test_update_chosen_college_to_blank(auth_client: AsyncClient):
-    data = {
-        "new_chosen_college": "",
-    }
-    response = await auth_client.patch("/users/set-chosen-college", json=data)
-    assert response.status_code == 204
-    # get the user details
-    response = await auth_client.get("/users/me")
-    assert response.status_code == 200
-    response_data = response.json()
-    assert response_data["chosen_college"] == ""
-
-
-async def test_update_chosen_course(auth_client: AsyncClient, session: AsyncSession):
-    async with session.begin():
         course = await CourseFactory.create(session=session)
     data = {
-        "new_chosen_course": course.name,
+        "updates": {
+            "current_education": {
+                "level": "TYHS",
+                "institution_id": school.id,
+                "course_id": course.id,
+            }
+        }
     }
-    response = await auth_client.patch("/users/set-chosen-course", json=data)
-    assert response.status_code == 204
-    # get the user details
-    response = await auth_client.get("/users/me")
+    response = await user_client.patch("/api/users/me", json=data)
     assert response.status_code == 200
     response_data = response.json()
-    assert response_data["chosen_course"] == course.name
+    assert "current_education" in response_data["updated_fields"]
+    assert response_data["user"]["current_education"]["level"] == "TYHS"
+    assert response_data["user"]["current_education"]["institution_id"] == school.id
+    assert response_data["user"]["current_education"]["course_id"] == course.id
 
 
-async def test_update_chosen_course_to_blank(auth_client: AsyncClient):
+async def test_update_intended_education(
+    user_client: AsyncClient, session: AsyncSession
+):
+    async with session.begin():
+        college = await CollegeFactory.create(session=session)
+        course = await CourseFactory.create(session=session)
     data = {
-        "new_chosen_course": "",
+        "updates": {
+            "intended_education": {
+                "level": "COL",
+                "institution_id": college.id,
+                "course_id": course.id,
+            }
+        }
     }
-    response = await auth_client.patch("/users/set-chosen-course", json=data)
-    assert response.status_code == 204
-    # get the user details
-    response = await auth_client.get("/users/me")
+    response = await user_client.patch("/api/users/me", json=data)
     assert response.status_code == 200
     response_data = response.json()
-    assert response_data["chosen_course"] == ""
+    assert "intended_education" in response_data["updated_fields"]
+    assert response_data["user"]["intended_education"]["level"] == "COL"
+    assert response_data["user"]["intended_education"]["institution_id"] == college.id
+    assert response_data["user"]["intended_education"]["course_id"] == course.id
 
 
-async def test_update_commitment(auth_client: AsyncClient):
-    data = {
-        "commitment": 10,
-    }
-    response = await auth_client.patch("/users/set-commitment", json=data)
-    assert response.status_code == 204
-    # get the user details
-    response = await auth_client.get("/users/me")
-    assert response.status_code == 200
-    response_data = response.json()
-    assert response_data["commitment"] == 10
-
-
-async def test_update_education_level(auth_client: AsyncClient):
-    data = {
-        "education_level": "COL",
-    }
-    response = await auth_client.patch("/users/set-education-level", json=data)
-    assert response.status_code == 204
-    # get the user details
-    response = await auth_client.get("/users/me")
-    assert response.status_code == 200
-    response_data = response.json()
-    assert response_data["education_level"] == "COL"
-
-
-async def test_destroy_user(auth_client: AsyncClient):
+async def test_destroy_user(user_client: AsyncClient):
     data = {"current_password": "defaultpassword"}
-    response = await auth_client.request(
+    response = await user_client.request(
         "DELETE",
-        "/users/me",
+        "/api/users/me",
         json=data,
     )
     assert response.status_code == 204
     # Check user doesn't exist
-    response = await auth_client.get("/users/me")
+    response = await user_client.get("/api/users/me")
     assert response.status_code == 401
 
 
-async def test_destroy_user_wrong_password(auth_client: AsyncClient):
+async def test_destroy_user_wrong_password(user_client: AsyncClient):
     data = {"current_password": "wrongpassword"}
-    response = await auth_client.request(
+    response = await user_client.request(
         "DELETE",
-        "/users/me",
+        "/api/users/me",
         json=data,
     )
     assert response.status_code == 401
     # Check user still exists
-    response = await auth_client.get("/users/me")
+    response = await user_client.get("/api/users/me")
     assert response.status_code == 200
-
-
-async def test_retrieve_user_stats_me(auth_client: AsyncClient, user: User):
-    response = await auth_client.get("/users/stats")
-    assert response.status_code == 200
-    response_data = response.json()
-    assert response_data["id"] == user.id
-    assert response_data["username"] == user.username
-    assert response_data["streak"] == 0
-    assert response_data["done_today"] is False
-    assert response_data["total_answers"] == 0
-    assert response_data["correct_answers"] == 0
-    assert "area_expected_scores" in response_data
-    assert len(response_data["area_expected_scores"]) == 4
-    for area in [
-        "Matemática",
-        "Linguagem",  # deveria ser Linguagens, mas o front ta esperando errado
-        "Ciências Humanas",
-        "Ciências da Natureza",
-    ]:
-        assert area in response_data["area_expected_scores"]
-        assert isinstance(response_data["area_expected_scores"][area], float)
-    assert "score" in response_data
-    assert isinstance(response_data["score"], float)
-
-
-async def test_retrieve_user_stats(auth_client: AsyncClient, user: User):
-    response = await auth_client.get(f"/users/stats/{user.username}")
-    assert response.status_code == 200
-    response_data = response.json()
-    assert response_data["id"] == user.id
-    assert response_data["username"] == user.username
-    assert response_data["school_id"] == user.school.id
-    assert response_data["chosen_college"] == (
-        "" if user.chosen_college is None else user.chosen_college.name
-    )
-    assert response_data["chosen_course"] == (
-        "" if user.chosen_course is None else user.chosen_course.name
-    )
-    assert response_data["education_level"] == user.education_level
-
-    assert "area_expected_scores" in response_data
-    assert len(response_data["area_expected_scores"]) == 4
-    for area in [
-        "Matemática",
-        "Linguagem",  # deveria ser Linguagens, mas o front ta esperando errado
-        "Ciências Humanas",
-        "Ciências da Natureza",
-    ]:
-        assert area in response_data["area_expected_scores"]
-        assert isinstance(response_data["area_expected_scores"][area], float)
-    assert "score" in response_data
-    assert isinstance(response_data["score"], float)
 
 
 async def test_check_contacts(
-    auth_client: AsyncClient,
+    user_client: AsyncClient,
     session: AsyncSession,
 ):
     async with session.begin():
@@ -500,17 +391,17 @@ async def test_check_contacts(
             user = await UserFactory.create(username=f"searchuser{i}", session=session)
             search_users.append(user)
 
-    url = "/users/check-contacts?page=1&page_size=4"
+    url = "/api/users/check-contacts?page=1&page_size=4"
     phone_numbers = [str(user.phone_number) for user in users] + ["+551123111111"]
     data = {"phone_numbers": phone_numbers}
-    response = await auth_client.post(url, json=data)
+    response = await user_client.post(url, json=data)
     assert response.status_code == 200
     results = response.json()["results"]
     response_ids = [user["id"] for user in results]
     assert len(response_ids) == 4
 
-    new_url = "/users/check-contacts?page=2&page_size=4"
-    new_response = await auth_client.post(new_url, json=data)
+    new_url = "/api/users/check-contacts?page=2&page_size=4"
+    new_response = await user_client.post(new_url, json=data)
     assert new_response.status_code == 200
     new_results = new_response.json()["results"]
     new_response_ids = [user["id"] for user in new_results]
@@ -532,7 +423,7 @@ async def test_check_contacts(
     assert "tel:+55-11-2311-1111" not in response_phone_numbers
 
 
-async def test_search_username(auth_client: AsyncClient, session: AsyncSession):
+async def test_search_username(user_client: AsyncClient, session: AsyncSession):
     async with session.begin():
         users = await UserFactory.create_batch(7, session=session)
         search_users: list[User] = []
@@ -540,15 +431,15 @@ async def test_search_username(auth_client: AsyncClient, session: AsyncSession):
             user = await UserFactory.create(username=f"searchuser{i}", session=session)
             search_users.append(user)
 
-    url = "/users/search-username?username=searchuser&page=1&page_size=4"
-    response = await auth_client.get(url)
+    url = "/api/users/search-username?username=searchuser&page=1&page_size=4"
+    response = await user_client.get(url)
     assert response.status_code == 200
     results = response.json()["results"]
     response_ids = [user["id"] for user in results]
     assert len(response_ids) == 4
 
-    new_url = "/users/search-username?username=searchuser&page=2&page_size=4"
-    new_response = await auth_client.get(new_url)
+    new_url = "/api/users/search-username?username=searchuser&page=2&page_size=4"
+    new_response = await user_client.get(new_url)
     assert new_response.status_code == 200
     new_results = new_response.json()["results"]
     new_response_ids = [user["id"] for user in new_results]
@@ -563,15 +454,15 @@ async def test_search_username(auth_client: AsyncClient, session: AsyncSession):
         assert user.id not in response_ids
 
     # Assuming auth_client is authenticated with a user
-    current_user = await auth_client.get("/users/me")
+    current_user = await user_client.get("/api/users/me")
     current_user_data = current_user.json()
     assert current_user_data["id"] not in response_ids
 
 
-async def test_retrieve_sentinel_users(session: AsyncSession, auth_client: AsyncClient):
+async def test_retrieve_sentinel_users(session: AsyncSession, user_client: AsyncClient):
     # Get sentinel users
-    url = "/users/sentinel"
-    response = await auth_client.get(url)
+    url = "/api/users/sentinel"
+    response = await user_client.get(url)
     assert response.status_code == 200
     response_data = response.json()
     response_ids = [user["id"] for user in response_data]
@@ -597,8 +488,119 @@ async def test_retrieve_sentinel_users(session: AsyncSession, auth_client: Async
     assert pico_user.username in response_usernames
 
 
-async def test_get_balance(auth_client: AsyncClient):
-    url = "/users/me/balance"
-    response = await auth_client.get(url)
+async def test_get_balance(user_client: AsyncClient):
+    url = "/api/users/me/balance"
+    response = await user_client.get(url)
     assert response.status_code == 200
     assert response.json()["balance"] == 1000
+
+
+async def test_unified_update_single_field(user_client: AsyncClient, user: User):
+    data = {
+        "updates": {"username": "newusername"},
+        "current_password": "defaultpassword",
+    }
+    response = await user_client.patch("/api/users/me", json=data)
+    assert response.status_code == 200
+    response_data = response.json()
+    assert "username" in response_data["updated_fields"]
+    assert response_data["user"]["username"] == "newusername"
+
+
+async def test_unified_update_multiple_fields(user_client: AsyncClient, user: User):
+    data = {
+        "updates": {"username": "newusername", "email": "new@example.com"},
+        "current_password": "defaultpassword",
+    }
+    response = await user_client.patch("/api/users/me", json=data)
+    assert response.status_code == 200
+    response_data = response.json()
+    assert "username" in response_data["updated_fields"]
+    assert "email" in response_data["updated_fields"]
+    assert response_data["user"]["username"] == "newusername"
+    assert response_data["user"]["email"] == "new@example.com"
+
+
+async def test_unified_update_sensitive_field_without_password(
+    user_client: AsyncClient,
+):
+    data = {"updates": {"username": "newusername"}}
+    response = await user_client.patch("/api/users/me", json=data)
+    assert response.status_code == 400
+
+
+async def test_unified_update_mixed_fields(user_client: AsyncClient, user: User):
+    data = {
+        "updates": {"username": "mixeduser"},
+        "current_password": "defaultpassword",
+    }
+    response = await user_client.patch("/api/users/me", json=data)
+    assert response.status_code == 200
+    response_data = response.json()
+    assert "username" in response_data["updated_fields"]
+    assert response_data["user"]["username"] == "mixeduser"
+
+
+async def test_unified_update_no_changes(user_client: AsyncClient):
+    data: dict[str, Any] = {"updates": {}}
+    response = await user_client.patch("/api/users/me", json=data)
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["updated_fields"] == []
+
+
+async def test_unified_update_wrong_password(user_client: AsyncClient):
+    data = {"updates": {"username": "wrongpass"}, "password": "wrongpassword"}
+    response = await user_client.patch("/api/users/me", json=data)
+    assert response.status_code == 401
+
+
+async def test_unified_update_duplicate_username(
+    user_client: AsyncClient, session: AsyncSession
+):
+    async with session.begin():
+        existing_user = await UserFactory.create(session=session)
+
+    data = {
+        "updates": {"username": existing_user.username},
+        "password": "defaultpassword",
+    }
+    response = await user_client.patch("/api/users/me", json=data)
+    assert response.status_code == 409
+
+
+async def test_unified_update_education(
+    user_client: AsyncClient, session: AsyncSession
+):
+    async with session.begin():
+        college = await CollegeFactory.create(session=session)
+        course = await CourseFactory.create(session=session)
+
+    data = {
+        "updates": {
+            "intended_education": {
+                "level": "COL",
+                "institution_id": college.id,
+                "course_id": course.id,
+            }
+        }
+    }
+    response = await user_client.patch("/api/users/me", json=data)
+    assert response.status_code == 200
+    response_data = response.json()
+    assert "intended_education" in response_data["updated_fields"]
+    assert response_data["user"]["intended_education"]["level"] == "COL"
+    assert response_data["user"]["intended_education"]["institution_id"] == college.id
+    assert response_data["user"]["intended_education"]["course_id"] == course.id
+
+
+async def test_update_user_fields_mixed_password_required(user_client: AsyncClient):
+    """Test that password is required when updating mixed fields."""
+    data = {
+        "updates": {"username": "mixeduser"},
+    }
+    response = await user_client.patch("/users/me", json=data)
+    assert response.status_code == 400
+
+    response_data = response.json()
+    assert "password is required" in response_data["detail"].lower()

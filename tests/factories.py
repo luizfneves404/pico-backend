@@ -19,17 +19,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_scoped_session
 
 import app.database as database
 from app.base import Base
+from app.education.models import College, Course, Education, School
 from app.files.models import File
-from app.quiz.models import (
+from app.flows.models import (
     ENEM_AREAS,
     Choice,
+    Flow,
+    FlowElement,
+    FlowInputType,
+    FlowQuestion,
     Question,
-    QuestionType,
-    Quiz,
-    UserInfo,
+    QuestionAnswerType,
 )
-from app.schools.models import School
-from app.users.models import College, Course, EducationLevel, User
+from app.users.models import EducationLevel, User, UserProfile
 from app.users.service import get_password_hash
 
 T = TypeVar("T", bound=Base)
@@ -81,6 +83,10 @@ def file_key_sequence(n: int) -> str:
     return f"file{n}"
 
 
+def flow_title_sequence(n: int) -> str:
+    return f"Flow {n}"
+
+
 class AsyncSQLAlchemyFactory(Factory[T]):
     """Factory for creating SQLAlchemy model instances asynchronously.
     To get type hints do not use await Factory(), use await Factory.create()"""
@@ -92,7 +98,7 @@ class AsyncSQLAlchemyFactory(Factory[T]):
 
     @classmethod
     def get_db_session(cls) -> async_scoped_session[AsyncSession]:
-        if database.sc_session is None:
+        if not database.sc_session:
             raise RuntimeError("Database session is not set")
         return database.sc_session
 
@@ -119,6 +125,8 @@ class SchoolFactory(AsyncSQLAlchemyFactory[School]):
         sqlalchemy_get_or_create = ("name",)
 
     name = Sequence(school_name_sequence)
+    institution_type = "school"
+    user_submitted = False
 
 
 class CourseFactory(AsyncSQLAlchemyFactory[Course]):
@@ -135,13 +143,28 @@ class CollegeFactory(AsyncSQLAlchemyFactory[College]):
         model = College
 
     name = Sequence(college_name_sequence)
+    institution_type = "college"
     user_submitted = False
     courses = RelatedFactoryList(CourseFactory, size=3)
 
 
-class UserInfoFactory(AsyncSQLAlchemyFactory[UserInfo]):
+class EducationFactory(AsyncSQLAlchemyFactory[Education]):
+    """Factory for creating Education instances."""
+
     class Meta:
-        model = UserInfo
+        model = Education
+
+    level = EducationLevel.THIRD_YEAR_HIGH_SCHOOL
+    institution = SubFactory(SchoolFactory)
+    course = SubFactory(CourseFactory)
+
+
+class UserProfileFactory(AsyncSQLAlchemyFactory[UserProfile]):
+    class Meta:
+        model = UserProfile
+
+    social_score = 0
+    xp_score = 0
 
 
 class UserFactory(AsyncSQLAlchemyFactory[User]):
@@ -156,16 +179,14 @@ class UserFactory(AsyncSQLAlchemyFactory[User]):
     email = Sequence(email_sequence)
     phone_number = Sequence(phone_number_sequence)
     is_superuser = False
-    education_level = EducationLevel.THIRD_YEAR_HIGH_SCHOOL
     is_premium = False
-    commitment = 20
+    balance = 1000
     is_bot = False
     bot_difficulty = None
     signup_source = "social"
-    school = SubFactory(SchoolFactory)
-    chosen_college = SubFactory(CollegeFactory)
-    chosen_course = SubFactory(CourseFactory)
-    user_info = SubFactory(UserInfoFactory)
+    current_education = SubFactory(EducationFactory)
+    intended_education = SubFactory(EducationFactory)
+    profile = SubFactory(UserProfileFactory)
 
 
 class FileFactory(AsyncSQLAlchemyFactory[File]):
@@ -226,15 +247,51 @@ class ChoiceFactory(AsyncSQLAlchemyFactory[Choice]):
         return questions
 
 
-class QuizFactory(AsyncSQLAlchemyFactory[Quiz]):
-    """Factory for creating Quiz instances."""
+class FlowFactory(AsyncSQLAlchemyFactory[Flow]):
+    """Factory for creating Flow instances."""
 
     class Meta:
-        model = Quiz
-        sqlalchemy_get_or_create = ("id",)
+        model = Flow
 
+    title = Sequence(flow_title_sequence)
     query = Iterator(QUERIES)
     area = Iterator(ENEM_AREAS.keys())
-    question_type = QuestionType.MULTIPLE_CHOICE
     source_filter = ""
     difficulty = ""
+    flow_input_type = FlowInputType.TOPIC
+    input_topic = Faker("paragraph")
+    created_by = SubFactory(UserFactory)
+    question_answer_type = QuestionAnswerType.MULTIPLE_CHOICE
+
+
+class FlowElementFactory(AsyncSQLAlchemyFactory[FlowElement]):
+    """Factory for creating FlowElement instances."""
+
+    class Meta:
+        model = FlowElement
+
+    flow = SubFactory(FlowFactory)
+    order = Sequence(lambda n: n)
+    element_type = "flow_element"
+    is_active = True
+    is_correct = False
+    text = Faker("paragraph")
+    subject = "Matemática"
+    source = "ENEM"
+
+
+class FlowQuestionFactory(AsyncSQLAlchemyFactory[FlowQuestion]):
+    """Factory for creating FlowQuestion instances."""
+
+    class Meta:
+        model = FlowQuestion
+
+    flow = SubFactory(FlowFactory)
+    order = Sequence(lambda n: n)
+    element_type = "question"
+    is_active = True
+    is_correct = False
+    text = Faker("paragraph")
+    subject = "Matemática"
+    source = "ENEM"
+    question = SubFactory(QuestionFactory)

@@ -4,7 +4,8 @@
 
 - If a column needs unique=True, don't add index=True, because PostgreSQL automatically creates an index for unique constraints.
 - As defined in the type_annotation_map in base.py, mapped datetimes always use timezone=True, so no need to specify it.
-- When defining a subclass and using single table inheritance, choose the type as non-nullable as in "Mapped[int]" but set nullable=True in the mapped_column definition. No need to set a default, it will be set to null.
+- As defined in base.py, all tables have tablename defined, an id column and a created_at column.
+- When defining a column for a subclass and using single table inheritance, choose its type as non-nullable as in "Mapped[int]" but set nullable=True in the mapped_column definition of the new column. No need to set a default, it will be set to null. We do it like this because not all subclasses will have the new column, and it's better to have a nullable column than a non-nullable column with a default. Or, if dealing with a relationship, define the relationship attribute in the subclass like "Mapped["ChildClass"]" but define the foreign key attribute in the base class like "child_id: Mapped[int | None]".
 
 ## SQLAlchemy Usage
 

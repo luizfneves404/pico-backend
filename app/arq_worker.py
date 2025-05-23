@@ -15,10 +15,9 @@ import app.arq_client as arq_client
 import app.redis_client as redis_client
 from app.config import settings
 from app.database import db_manager
-from app.essays.tasks import task_extract_and_clean
 from app.fcm.fcm_service import init_firebase, task_send_notifications
+from app.flows.tasks import task_mark_question_timed_out
 from app.mail import task_send_email
-from app.quiz.tasks import task_mark_question_timed_out
 
 REDIS_SETTINGS = RedisSettings.from_dsn(settings.redis_url)
 
@@ -48,7 +47,6 @@ class WorkerSettings:
         task_mark_question_timed_out,
         task_send_email,
         task_send_notifications,
-        task_extract_and_clean,
     ]
     redis_settings: RedisSettings = REDIS_SETTINGS
     on_startup: Optional[StartupShutdown] = startup

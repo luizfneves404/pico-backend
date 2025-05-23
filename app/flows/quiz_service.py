@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.currency.currency_service import handle_currency_transaction
 from app.currency.decorators import currency_transaction
 from app.currency.models import CurrencyAction, CurrencyType
-from app.quiz.models import (
+from app.flows.models import (
     CUSTOM_SOURCE,
     ENEM_AREAS,
     Choice,
@@ -28,7 +28,7 @@ from app.quiz.models import (
     SessionQuestionUser,
     UserInfo,
 )
-from app.quiz.utils import (
+from app.flows.utils import (
     CATEGORIES,
     SUBCATEGORIES,
     SUBCATEGORIES_TO_PARENT_CATEGORIES,
@@ -320,7 +320,7 @@ def create_personalized_quiz(
         return quiz
 
 
-@currency_transaction(
+""" @currency_transaction(
     action=CurrencyAction.QUIZ_CREATION, transaction_type=CurrencyType.PRICE
 )
 async def acreate_personalized_quiz(
@@ -336,7 +336,7 @@ async def acreate_personalized_quiz(
         parent_quiz_id=parent_quiz_id,
     )
 
-    return await aprepare_quiz_out(quiz.id, user.id)
+    return await aprepare_quiz_out(quiz.id, user.id) """
 
 
 def _get_personalized_questions(

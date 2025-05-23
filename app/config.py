@@ -155,7 +155,8 @@ class Settings(BaseSettings):
 
     @property
     def allowed_hosts(self) -> list[str]:
-        return [self.django_host, self.fastapi_host]
+        hosts = [self.django_host, self.fastapi_host]
+        return hosts
 
     @property
     def django_settings_module(self) -> str:

@@ -8,7 +8,7 @@ from typing import Any
 from openai import BadRequestError, RateLimitError
 
 import app.shared.openai_utils as openai_utils
-from app.quiz.models import ENEM_AREAS, Question, SessionQuestion
+from app.flows.models import ENEM_AREAS, Question, SessionQuestion
 
 # API_KEY = settings.MARITACA_API_KEY
 # client = OpenAI(

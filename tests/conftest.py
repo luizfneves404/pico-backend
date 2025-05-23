@@ -3,6 +3,7 @@ from typing import (
     AsyncContextManager,
     AsyncGenerator,
     AsyncIterator,
+    Awaitable,
     Callable,
     Generator,
     Literal,
@@ -181,9 +182,9 @@ async def user(session: AsyncSession) -> User:
 
 
 @pytest.fixture()
-async def auth_client(client: AsyncClient, user: User) -> AsyncIterator[AsyncClient]:
+async def user_client(client: AsyncClient, user: User) -> AsyncIterator[AsyncClient]:
     token_response = await client.post(
-        "/token/pair",
+        "/api/token/pair",
         data={
             "username": user.username,
             "password": DEFAULT_TEST_PASSWORD,
@@ -194,3 +195,54 @@ async def auth_client(client: AsyncClient, user: User) -> AsyncIterator[AsyncCli
     client.headers["Authorization"] = f"Bearer {token_data['access']}"
 
     yield client
+
+
+@pytest.fixture
+async def user2(session: AsyncSession) -> User:
+    async with session.begin():
+        return await UserFactory.create(session=session)
+
+
+@pytest.fixture
+def users_factory(session: AsyncSession) -> Callable[[int], Awaitable[Sequence[User]]]:
+    """
+    Returns a factory that creates a specified number of users.
+    Args:
+        n (int): Number of users to create.
+    Returns:
+        Awaitable[Sequence[User]]: Awaitable that yields the created users.
+    """
+
+    async def factory(n: int) -> Sequence[User]:
+        async with session.begin():
+            return await UserFactory.create_batch(n, session=session)
+
+    return factory
+
+
+@pytest.fixture
+def user_client_factory(client: AsyncClient, session: AsyncSession):
+    async def factory(n: int) -> list[tuple[User, AsyncClient]]:
+        async with session.begin():
+            users = await UserFactory.create_batch(n, session=session)
+        pairs: list[tuple[User, AsyncClient]] = []
+        for user in users:
+            token_response = await client.post(
+                "/api/token/pair",
+                data={
+                    "username": user.username,
+                    "password": DEFAULT_TEST_PASSWORD,
+                },
+            )
+            token_data = token_response.json()
+            user_client = AsyncClient(
+                base_url=client.base_url,
+                headers={
+                    **client.headers,
+                    "Authorization": f"Bearer {token_data['access']}",
+                },
+            )
+            pairs.append((user, user_client))
+        return pairs
+
+    return factory

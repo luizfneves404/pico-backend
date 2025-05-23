@@ -7,7 +7,7 @@ from app.users.models import User
 
 async def test_token_obtain_pair(client: AsyncClient, user: User):
     response = await client.post(
-        "/token/pair",
+        "/api/token/pair",
         data={
             "username": user.username,
             "password": "defaultpassword",
@@ -27,7 +27,7 @@ async def test_token_obtain_pair(client: AsyncClient, user: User):
 
 async def test_token_obtain_pair_whitespace(client: AsyncClient, user: User):
     response = await client.post(
-        "/token/pair",
+        "/api/token/pair",
         data={
             "username": f"  {user.username}  ",
             "password": "defaultpassword",
@@ -45,7 +45,7 @@ async def test_token_obtain_pair_whitespace(client: AsyncClient, user: User):
 
 async def test_token_verify(client: AsyncClient, user: User):
     token_response = await client.post(
-        "/token/pair",
+        "/api/token/pair",
         data={
             "username": user.username,
             "password": "defaultpassword",
@@ -62,7 +62,7 @@ async def test_token_verify(client: AsyncClient, user: User):
 
 async def test_token_refresh(client: AsyncClient, user: User):
     token_response = await client.post(
-        "/token/pair",
+        "/api/token/pair",
         data={
             "username": user.username,
             "password": "defaultpassword",
@@ -86,7 +86,7 @@ async def test_token_refresh(client: AsyncClient, user: User):
 
 async def test_user_me_endpoint(client: AsyncClient, user: User):
     token_response = await client.post(
-        "/token/pair",
+        "/api/token/pair",
         data={
             "username": user.username,
             "password": "defaultpassword",
@@ -95,7 +95,7 @@ async def test_user_me_endpoint(client: AsyncClient, user: User):
     access_token = token_response.json()["access"]
 
     headers = {"Authorization": f"Bearer {access_token}"}
-    response = await client.get("/users/me", headers=headers)
+    response = await client.get("/api/users/me", headers=headers)
     assert response.status_code == 200
     user_data = response.json()
 

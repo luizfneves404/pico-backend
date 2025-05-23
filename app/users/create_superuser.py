@@ -4,8 +4,8 @@ from pydantic import SecretStr
 
 from app.config import settings
 from app.database import db_manager
-from app.users.models import EducationLevel, User
-from app.users.schemas import PhoneNumber, UserIn
+from app.users.models import User
+from app.users.schemas import LowercaseEmailStr, PhoneNumber, SignupSource, UserIn
 from app.users.service import get_password_hash, get_user
 
 
@@ -37,14 +37,11 @@ async def create_superuser(
             # Create new user
             user_data = UserIn(
                 username=username,
-                email=email,
+                email=LowercaseEmailStr(email),
                 phone_number=PhoneNumber(phone_number),
                 password=SecretStr(password),
-                chosen_college="",
-                chosen_course="",
-                education_level=EducationLevel.UNKNOWN,
-                commitment=20,
                 referred_by_username="",
+                signup_source=SignupSource.OTHER,  # Mark as admin-created
             )
 
             hashed_password = get_password_hash(user_data.password.get_secret_value())
@@ -54,8 +51,6 @@ async def create_superuser(
                 phone_number=str(user_data.phone_number),
                 hashed_password=str(hashed_password),
                 is_superuser=True,
-                education_level=EducationLevel.UNKNOWN,
-                commitment=20,
             )
 
             session.add(db_user)

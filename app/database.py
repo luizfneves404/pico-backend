@@ -13,12 +13,12 @@ from sqlalchemy.ext.asyncio import (
 # all of these are needed so that the Base subclasses are registered
 import app.chat.models  # noqa: F401
 import app.currency.models  # noqa: F401
-import app.essays.models  # noqa: F401
+import app.education.models  # noqa: F401
+
+# import app.essays.models  # noqa: F401
 import app.fcm.models  # noqa: F401
 import app.files.models  # noqa: F401
-import app.quiz.models  # noqa: F401
-import app.schools.models  # noqa: F401
-import app.tournaments.models  # noqa: F401
+import app.flows.models  # noqa: F401
 import app.users.models  # noqa: F401
 
 logger = logging.getLogger(__name__)

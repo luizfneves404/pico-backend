@@ -247,7 +247,7 @@ class User(AbstractUser):
     class Meta:
         constraints = [
             models.CheckConstraint(
-                check=models.Q(is_bot=True, bot_difficulty__isnull=False)
+                condition=models.Q(is_bot=True, bot_difficulty__isnull=False)
                 | models.Q(is_bot=False, bot_difficulty__isnull=True),
                 name="bot_difficulty_validation",
             )

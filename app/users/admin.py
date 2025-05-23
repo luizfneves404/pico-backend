@@ -6,7 +6,7 @@ from sqlalchemy.orm import InstrumentedAttribute, selectinload
 
 from app.shared.admin import Admin
 from app.users import service as user_service
-from app.users.models import College, Course, User
+from app.users.models import User, UserProfile
 
 
 def format_string(value: Any) -> Any:
@@ -25,9 +25,7 @@ class UserAdmin(Admin, model=User):
         User.email,
         User.phone_number,
         User.is_superuser,
-        User.education_level,
         User.is_premium,
-        User.commitment,
         User.balance,
         User.is_bot,
         User.signup_source,
@@ -40,13 +38,11 @@ class UserAdmin(Admin, model=User):
         User.email,
         User.is_superuser,
         User.is_premium,
-        User.commitment,
         User.balance,
         User.is_bot,
         User.signup_source,
-        User.school,
-        User.chosen_college,
-        User.chosen_course,
+        User.current_education,
+        User.intended_education,
     ]
     column_details_list: ClassVar[
         Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
@@ -57,13 +53,10 @@ class UserAdmin(Admin, model=User):
         User.email,
         User.phone_number,
         User.is_superuser,
-        User.school_id,
-        User.education_level,
-        User.chosen_college,
-        User.chosen_course,
+        User.current_education_id,
+        User.intended_education_id,
         User.is_premium,
         User.referred_by_id,
-        User.commitment,
         User.balance,
         User.is_bot,
         User.bot_difficulty,
@@ -93,25 +86,21 @@ class UserAdmin(Admin, model=User):
         "phone_number",
         "hashed_password",
         "is_superuser",
-        "education_level",
         "is_premium",
-        "commitment",
         "balance",
         "is_bot",
         "bot_difficulty",
         "signup_source",
-        "school",
-        "chosen_college",
-        "chosen_course",
+        "current_education",
+        "intended_education",
         "referred_by",
     ]
 
     def list_query(self, request: Request) -> Select[tuple[User]]:
         return select(User).options(
             selectinload(User.referrals),
-            selectinload(User.school),
-            selectinload(User.chosen_college),
-            selectinload(User.chosen_course),
+            selectinload(User.current_education),
+            selectinload(User.intended_education),
             selectinload(User.referred_by),
         )
 
@@ -120,9 +109,8 @@ class UserAdmin(Admin, model=User):
             select(User)
             .options(
                 selectinload(User.referrals),
-                selectinload(User.school),
-                selectinload(User.chosen_college),
-                selectinload(User.chosen_course),
+                selectinload(User.current_education),
+                selectinload(User.intended_education),
                 selectinload(User.referred_by),
             )
             .where(User.id == int(value))
@@ -151,21 +139,15 @@ class UserAdmin(Admin, model=User):
                 data["bot_difficulty"] = 0.5  # Default difficulty
 
 
-class CollegeAdmin(Admin, model=College):
-    icon = "fa-solid fa-university"
-
-    column_list = [College.id, College.name, College.user_submitted]
-    column_searchable_list = [College.name]
-    column_sortable_list = [College.id, College.name, College.user_submitted]
-
-    form_columns = ["name", "user_submitted", "courses", "users"]
-
-
-class CourseAdmin(Admin, model=Course):
-    icon = "fa-solid fa-book"
-
-    column_list = [Course.id, Course.name, Course.user_submitted]
-    column_searchable_list = [Course.name]
-    column_sortable_list = [Course.id, Course.name, Course.user_submitted]
-
-    form_columns = ["name", "user_submitted", "colleges", "users"]
+class UserProfileAdmin(Admin, model=UserProfile):
+    column_list = [
+        UserProfile.id,
+        UserProfile.user_id,
+        UserProfile.social_score,
+        UserProfile.xp_score,
+    ]
+    column_sortable_list = [
+        UserProfile.id,
+        UserProfile.social_score,
+        UserProfile.xp_score,
+    ]

@@ -6,29 +6,18 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 
 from app.config import settings
 from app.database import db_manager
-from app.essays.admin import (
-    EssayAdmin,
-    EssayTopicAdmin,
-    EssayTypeAdmin,
-    FeedbackAdmin,
-    FeedbackCategoryAdmin,
-)
+from app.education.admin import CollegeAdmin, CourseAdmin, SchoolAdmin
 from app.files.admin import FileAdmin
-from app.quiz.admin import (
-    ChallengeAdmin,
+from app.flows.admin import (
     ChoiceAdmin,
-    DuelAdmin,
+    FlowAdmin,
+    FlowElementAdmin,
+    FlowQuestionAdmin,
+    FlowQuestionUserAdmin,
     QuestionAdmin,
-    QuizAdmin,
-    RoundAdmin,
-    SessionAdmin,
-    SessionParticipationAdmin,
-    TurnAdmin,
-    UserInfoAdmin,
 )
-from app.schools.admin import SchoolAdmin
 from app.users import service as user_service
-from app.users.admin import CollegeAdmin, CourseAdmin, UserAdmin
+from app.users.admin import UserAdmin, UserProfileAdmin
 from app.users.jwt_token import TokenError, generate_tokens, process_token
 
 admin_views: list[type[ModelView]] = []
@@ -37,21 +26,13 @@ admin_views.append(UserAdmin)
 admin_views.append(CollegeAdmin)
 admin_views.append(CourseAdmin)
 admin_views.append(SchoolAdmin)
-admin_views.append(QuizAdmin)
-admin_views.append(SessionAdmin)
+admin_views.append(FlowAdmin)
+admin_views.append(FlowElementAdmin)
+admin_views.append(FlowQuestionAdmin)
+admin_views.append(FlowQuestionUserAdmin)
 admin_views.append(QuestionAdmin)
 admin_views.append(ChoiceAdmin)
-admin_views.append(DuelAdmin)
-admin_views.append(ChallengeAdmin)
-admin_views.append(UserInfoAdmin)
-admin_views.append(RoundAdmin)
-admin_views.append(TurnAdmin)
-admin_views.append(SessionParticipationAdmin)
-admin_views.append(EssayTopicAdmin)
-admin_views.append(EssayAdmin)
-admin_views.append(EssayTypeAdmin)
-admin_views.append(FeedbackCategoryAdmin)
-admin_views.append(FeedbackAdmin)
+admin_views.append(UserProfileAdmin)
 admin_views.append(FileAdmin)
 
 

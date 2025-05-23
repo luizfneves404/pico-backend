@@ -18,27 +18,21 @@ from app.users.jwt_token import TokenError
 from app.users.models import EducationLevel
 from app.users.schemas import (
     BalanceOut,
-    CollegeUpdateRequest,
-    CommitmentUpdateRequest,
-    CourseUpdateRequest,
-    EducationLevelUpdateRequest,
+    EducationUpdateRequest,
     EmailUpdateRequest,
     OnlineInfo,
     OtherUserOut,
     PasswordRequest,
     PasswordUpdateRequest,
-    PhoneNumberUpdateRequest,
     RawPhoneNumbersIn,
     RefreshRequest,
-    SchoolUpdateRequest,
     TokenResponse,
     UserIdsIn,
     UserIn,
     UserInRanking,
-    UsernameUpdateRequest,
     UserOut,
-    UserStatsMeResponse,
-    UserStatsResponse,
+    UserPartialUpdateResponse,
+    UserUpdateRequest,
     VerifyRequest,
 )
 
@@ -105,19 +99,38 @@ async def create_user(
 ):
     logger.info("Starting create_user")
     try:
+        # Convert EducationIn to dict for the service
+        current_education_dict = None
+        if user_in.current_education:
+            current_education_dict = {
+                "level": user_in.current_education.level,
+                "institution_id": user_in.current_education.institution_id,
+                "course_id": user_in.current_education.course_id,
+            }
+
+        intended_education_dict = None
+        if user_in.intended_education:
+            intended_education_dict = {
+                "level": user_in.intended_education.level,
+                "institution_id": user_in.intended_education.institution_id,
+                "course_id": user_in.intended_education.course_id,
+            }
+
         db_user = await service.create_user(
             db_session,
             username=user_in.username.strip(),
             password=user_in.password.get_secret_value(),
             phone_number=user_in.phone_number,
             email=user_in.email,
-            chosen_college=user_in.chosen_college,
-            chosen_course=user_in.chosen_course,
-            education_level=user_in.education_level,
-            commitment=user_in.commitment,
-            referred_by_username=user_in.referred_by_username,
-            school_id=user_in.school_id,
+            referred_by_username=user_in.referred_by_username.strip() or None,
             signup_source=user_in.signup_source,
+            current_education=current_education_dict,
+            intended_education=intended_education_dict,
+        )
+        # Refresh relationships for UserOut response
+        await db_session.refresh(
+            db_user,
+            ["current_education", "intended_education", "profile"],
         )
     except service.UsernameAlreadyExists:
         raise HTTPException(
@@ -150,35 +163,100 @@ async def read_users_me(
 ):
     await db_session.refresh(
         current_user,
-        ["chosen_college", "chosen_course", "referrals"],
+        ["current_education", "intended_education", "profile"],
     )
     return current_user
 
 
+@user_authenticated_router.get("/other/{user_id}", response_model=UserOut)
+async def read_other_user(
+    user_id: int, current_user: CurrentUserAnnotated, db_session: DBSessionAnnotated
+):
+    user = await service.get_user(db_session, id=user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    await db_session.refresh(
+        user,
+        ["current_education", "intended_education", "profile"],
+    )
+    return user
+
+
 @user_authenticated_router.patch(
-    "/set-username", status_code=status.HTTP_204_NO_CONTENT
+    "/me", response_model=UserPartialUpdateResponse, status_code=status.HTTP_200_OK
 )
-async def update_username(
-    request: UsernameUpdateRequest,
+async def update_user(
+    request: UserUpdateRequest,
     current_user: CurrentUserAnnotated,
     db_session: DBSessionAnnotated,
 ):
+    """Update multiple user fields in a single request.
+
+    This endpoint allows updating multiple user fields atomically.
+    Sensitive fields (username, phone_number, email) require password verification.
+    Non-sensitive fields (education) can be updated without password.
+
+    Only fields included in the request will be updated. Null values are ignored.
+    """
     try:
-        await service.set_username(
+        # Convert Pydantic model to dict, excluding unset fields
+        updates_dict = request.updates.model_dump(exclude_unset=True)
+
+        if not updates_dict:
+            # No fields to update
+            await db_session.refresh(
+                current_user,
+                ["current_education", "intended_education", "profile"],
+            )
+            return UserPartialUpdateResponse(
+                updated_fields=[], user=UserOut.model_validate(current_user)
+            )
+
+        current_password = None
+        if request.current_password:
+            current_password = request.current_password.get_secret_value()
+
+        updated_user, updated_fields = await service.update_user_fields(
             db_session,
             current_user,
-            request.new_username.strip(),
-            request.current_password.get_secret_value(),
+            updates_dict,
+            current_password,
         )
+
+        # Refresh relationships for response
+        await db_session.refresh(
+            updated_user,
+            ["current_education", "intended_education", "referrals", "profile"],
+        )
+
+        print(updated_user.social_score)
+        print(updated_user.xp_score)
+        return UserPartialUpdateResponse(
+            updated_fields=updated_fields, user=UserOut.model_validate(updated_user)
+        )
+
     except service.InvalidCredentialsError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect password",
+            detail="Incorrect password or password required for sensitive fields",
         )
     except service.UsernameAlreadyExists:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Username already exists",
+        )
+    except service.PhoneNumberAlreadyExists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Phone number already exists",
+        )
+    except service.EmailAlreadyExists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already exists",
         )
 
 
@@ -201,33 +279,6 @@ async def update_password(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect password",
-        )
-
-
-@user_authenticated_router.patch(
-    "/set-phone-number", status_code=status.HTTP_204_NO_CONTENT
-)
-async def update_phone_number(
-    request: PhoneNumberUpdateRequest,
-    current_user: CurrentUserAnnotated,
-    db_session: DBSessionAnnotated,
-):
-    try:
-        await service.set_phone_number(
-            db_session,
-            current_user,
-            request.new_phone_number,
-            request.current_password.get_secret_value(),
-        )
-    except service.InvalidCredentialsError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect password",
-        )
-    except service.PhoneNumberAlreadyExists:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Phone number already exists",
         )
 
 
@@ -256,61 +307,36 @@ async def update_email(
         )
 
 
-@user_authenticated_router.patch("/set-school", status_code=status.HTTP_204_NO_CONTENT)
-async def update_school(
-    request: SchoolUpdateRequest,
+@user_authenticated_router.patch(
+    "/set-current-education", status_code=status.HTTP_204_NO_CONTENT
+)
+async def update_current_education(
+    request: EducationUpdateRequest,
     current_user: CurrentUserAnnotated,
     db_session: DBSessionAnnotated,
 ):
-    await service.set_school(
-        db_session, current_user, new_school_id=request.new_school_id
-    )
+    education_dict = {
+        "level": request.education.level,
+        "institution_id": request.education.institution_id,
+        "course_id": request.education.course_id,
+    }
+    await service.set_current_education(db_session, current_user, education_dict)
 
 
 @user_authenticated_router.patch(
-    "/set-chosen-college", status_code=status.HTTP_204_NO_CONTENT
+    "/set-intended-education", status_code=status.HTTP_204_NO_CONTENT
 )
-async def update_chosen_college(
-    request: CollegeUpdateRequest,
+async def update_intended_education(
+    request: EducationUpdateRequest,
     current_user: CurrentUserAnnotated,
     db_session: DBSessionAnnotated,
 ):
-    await service.set_chosen_college(
-        db_session, current_user, request.new_chosen_college
-    )
-
-
-@user_authenticated_router.patch(
-    "/set-chosen-course", status_code=status.HTTP_204_NO_CONTENT
-)
-async def update_chosen_course(
-    request: CourseUpdateRequest,
-    current_user: CurrentUserAnnotated,
-    db_session: DBSessionAnnotated,
-):
-    await service.set_chosen_course(db_session, current_user, request.new_chosen_course)
-
-
-@user_authenticated_router.patch(
-    "/set-commitment", status_code=status.HTTP_204_NO_CONTENT
-)
-async def update_commitment(
-    request: CommitmentUpdateRequest,
-    current_user: CurrentUserAnnotated,
-    db_session: DBSessionAnnotated,
-):
-    await service.set_commitment(db_session, current_user, request.commitment)
-
-
-@user_authenticated_router.patch(
-    "/set-education-level", status_code=status.HTTP_204_NO_CONTENT
-)
-async def update_education_level(
-    request: EducationLevelUpdateRequest,
-    current_user: CurrentUserAnnotated,
-    db_session: DBSessionAnnotated,
-):
-    await service.set_education_level(db_session, current_user, request.education_level)
+    education_dict = {
+        "level": request.education.level,
+        "institution_id": request.education.institution_id,
+        "course_id": request.education.course_id,
+    }
+    await service.set_intended_education(db_session, current_user, education_dict)
 
 
 @user_authenticated_router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
@@ -332,7 +358,7 @@ async def delete_user(
         )
 
 
-@user_authenticated_router.get("/stats", response_model=UserStatsMeResponse)
+""" @user_authenticated_router.get("/stats", response_model=UserStatsMeResponse)
 async def get_user_stats_me(
     current_user: CurrentUserAnnotated,
     db_session: DBSessionAnnotated,
@@ -353,7 +379,7 @@ async def get_stats_by_username(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
-        )
+        ) """
 
 
 @user_authenticated_router.post(
@@ -404,9 +430,10 @@ async def sentinel_users(
 async def user_ranking(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
+    score_type: Literal["dynamic", "percentage"],
     school_filter: int | None = None,
-    course_filter: str | None = None,
-    score_type: Literal["dynamic", "percentage"] = "dynamic",
+    intended_course_filter: str | None = None,
+    intended_college_filter: int | None = None,
     education_level_filter: EducationLevel | None = None,
     subject: str | None = None,
 ):
@@ -420,7 +447,7 @@ async def user_ranking(
         current_user.id,
         score_type=score_type,
         school_filter=school_filter,
-        course_filter=course_filter,
+        course_filter=intended_course_filter,
         education_level_filter=education_level_filter,
         subject=subject,
     )

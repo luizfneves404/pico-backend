@@ -7,8 +7,6 @@ from sqlalchemy import select
 
 from app.currency.currency_service import handle_currency_transaction
 from app.currency.models import CurrencyAction, CurrencyType
-from app.essays.models import Essay
-from app.quiz.models import Challenge, Duel, Quiz
 
 logger = logging.getLogger(__name__)
 

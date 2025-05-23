@@ -82,7 +82,7 @@ class Currency(models.Model):
             ),
             # Ensure action values are valid
             models.CheckConstraint(
-                check=models.Q(action__in=CurrencyAction.values),
+                condition=models.Q(action__in=CurrencyAction.values),
                 name="valid_currency_action",
             ),
         ]

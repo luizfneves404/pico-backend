@@ -6,14 +6,15 @@ Instead, this module depends on other stuff in this directory.
 
 from typing import Any
 
-from app.quiz.session_service import mark_question_timed_out
+# from app.flows.session_service import mark_question_timed_out
 
 
 async def task_mark_question_timed_out(
     ctx: dict[Any, Any], user_id: int, session_id: int, question_id: int
 ) -> None:
-    mark_question_timed_out(
-        user_id,
-        session_id,
-        question_id,
-    )
+    # mark_question_timed_out(
+    #     user_id,
+    #     session_id,
+    #     question_id,
+    # )
+    pass  # Commented out to ignore flow/quiz issues

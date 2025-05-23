@@ -290,18 +290,10 @@ register_endpoint_event(
         "school": response_data.get("school"),
         "chosen_college": response_data.get("chosen_college"),
         "chosen_course": response_data.get("chosen_course"),
-        "commitment": response_data.get("commitment"),
         "education_level": response_data.get("education_level"),
     },
 )
 
-register_endpoint_event(
-    "PATCH",
-    "user_set_commitment",
-    user_props_handler=lambda request, request_data, response_data: {
-        "commitment": request_data.get("commitment"),
-    },
-)
 
 register_endpoint_event(
     "PATCH",

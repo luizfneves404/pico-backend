@@ -276,7 +276,7 @@ class Session(SessionSuper, CodeModel):
             # --------------------------
             # If session_type is 'quiz', question_type must be one of the allowed values.
             models.CheckConstraint(
-                check=(
+                condition=(
                     models.Q(
                         session_type="quiz",
                         question_type__in=(
@@ -291,7 +291,7 @@ class Session(SessionSuper, CodeModel):
             ),
             # If session_type is 'quiz', quiz_type must be one of the allowed values.
             models.CheckConstraint(
-                check=(
+                condition=(
                     models.Q(
                         session_type="quiz",
                         quiz_type__in=(
@@ -309,7 +309,7 @@ class Session(SessionSuper, CodeModel):
             # --------------------------
             # If session_type is 'duel', n_questions_per_round must be set and duel_status must be valid.
             models.CheckConstraint(
-                check=(
+                condition=(
                     models.Q(
                         session_type="duel",
                         n_questions_per_round__isnull=False,
@@ -325,7 +325,7 @@ class Session(SessionSuper, CodeModel):
             ),
             # If session_type is NOT 'duel', ensure duel-specific fields are not set.
             models.CheckConstraint(
-                check=(
+                condition=(
                     models.Q(
                         ~models.Q(session_type="duel"),
                         n_questions_per_round__isnull=True,
@@ -342,7 +342,7 @@ class Session(SessionSuper, CodeModel):
             # Selection Method Constraints
             # --------------------------
             models.CheckConstraint(
-                check=(
+                condition=(
                     models.Q(
                         selection_method__in=(
                             QuestionSelectionMethod.RANDOM_OFFICIAL,
@@ -632,7 +632,7 @@ class Choice(models.Model):
         order_with_respect_to = "question"
         constraints = [
             models.CheckConstraint(
-                check=(
+                condition=(
                     (~models.Q(image="") & models.Q(text=""))
                     | (models.Q(image="") & ~models.Q(text=""))
                 ),
@@ -763,7 +763,7 @@ class SessionQuestionUser(models.Model):
                 name=UNIQUE_CONSTRAINT_SESSION_QUESTION_USER_ANSWER,
             ),
             models.CheckConstraint(
-                check=(
+                condition=(
                     (
                         models.Q(choice__isnull=False)  # there is a choice
                         & models.Q(

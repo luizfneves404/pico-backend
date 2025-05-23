@@ -17,14 +17,13 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.base import Base, auto_now_insert_timestamp
+from app.base import ASYNC_PARENT_FOREIGN_KEY_OPTIONS, Base, auto_now_insert_timestamp
 from app.currency.models import HasCurrencyTransactions
 from app.files.models import File
 from app.shared.code_generation import HasCode
 
 if TYPE_CHECKING:
-    from tournaments.models import Tournament
-
+    from app.tournaments.old_models_sqlalchemy import Tournament
     from app.users.models import User
 
 logger = logging.getLogger(__name__)
@@ -300,7 +299,7 @@ class Question(Base):
         back_populates="question",
         order_by="Choice.order",
         lazy="raise_on_sql",
-        cascade="save-update, merge, expunge, delete, delete-orphan",
+        cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
     )
 
