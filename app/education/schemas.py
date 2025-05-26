@@ -44,7 +44,6 @@ class CourseIn(BaseModel):
 
 
 class EducationOut(BaseModel):
-    id: int
     level: EducationLevel
     institution_id: int | None
     course_id: int | None

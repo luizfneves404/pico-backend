@@ -1,23 +1,22 @@
 from typing import Annotated
 
-from pydantic import EmailStr, StringConstraints
+from pydantic import AfterValidator, EmailStr, StringConstraints
 from pydantic.networks import validate_email
+from pydantic_extra_types.phone_numbers import PhoneNumber, PhoneNumberValidator
+
+from app.config import settings
+
+PhoneNumber.default_region_code = settings.default_phone_number_country
 
 StripWhitespaceStr = Annotated[str, StringConstraints(strip_whitespace=True)]
 
 
-class LowercaseEmailStr(EmailStr):
-    """
-    Validate email addresses and convert them to lowercase. It already strips whitespace because the validate_email does that.
+def validate_lowercase_email(value: EmailStr) -> EmailStr:
+    email = validate_email(value)[1]
+    return email.lower()
 
-    Args:
-        EmailStr (str): The email address to validate.
 
-    Returns:
-        LowercaseEmailStr: The validated and converted email address.
-    """
+LowercaseEmailStr = Annotated[str, AfterValidator(validate_lowercase_email)]
 
-    @classmethod
-    def validate(cls, value: EmailStr) -> EmailStr:
-        email = validate_email(value)[1]
-        return email.lower()
+
+CustomPhoneNumber = Annotated[str | PhoneNumber, PhoneNumberValidator()]

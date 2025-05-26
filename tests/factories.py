@@ -3,12 +3,16 @@
 # Copyright (c) 2022 Kacper Kuźniarski
 
 import functools
+import os
+import tempfile
+import uuid
 from typing import Any, TypeVar
 
 from factory.alchemy import SQLAlchemyOptions
 from factory.base import Factory
 from factory.declarations import (
     Iterator,
+    LazyAttribute,
     LazyFunction,
     RelatedFactoryList,
     Sequence,
@@ -18,18 +22,23 @@ from factory.faker import Faker
 from sqlalchemy.ext.asyncio import AsyncSession, async_scoped_session
 
 import app.database as database
-from app.base import Base
+from app.base import Base, RichText, TextBlock
 from app.education.models import College, Course, Education, School
 from app.files.models import File
+from app.files.storage import storage
 from app.flows.models import (
     ENEM_AREAS,
+    FLOW_QUESTION_POLYMORPHIC_IDENTITY,
     Choice,
     Flow,
+    FlowDifficulty,
     FlowElement,
     FlowInputType,
     FlowQuestion,
     Question,
     QuestionAnswerType,
+    QuestionDifficulty,
+    QuestionSourceType,
 )
 from app.users.models import EducationLevel, User, UserProfile
 from app.users.service import get_password_hash
@@ -48,6 +57,9 @@ QUERIES = [
     "baby don't hurt me",
     "no more",
 ]
+
+# Module-level cache for file data to ensure consistency across fields
+_file_cache: dict[str, dict[str, Any]] = {}
 
 
 def username_sequence(n: int) -> str:
@@ -79,12 +91,60 @@ def college_name_sequence(n: int) -> str:
     return f"College {n}"
 
 
-def file_key_sequence(n: int) -> str:
+def file_id_sequence(n: int) -> str:
     return f"file{n}"
 
 
 def flow_title_sequence(n: int) -> str:
     return f"Flow {n}"
+
+
+def create_file_data() -> dict[str, Any]:
+    """Create a real file in storage and return the file metadata."""
+    # Generate unique content and filename
+    unique_id = uuid.uuid4().hex[:8]
+    content = f"Test file content {unique_id}\nThis is a test file created by FileFactory.\nLine 3 with more content."
+    original_name = f"test_file_{unique_id}.txt"
+
+    # Create temporary file with the content
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
+        f.write(content)
+        temp_path = f.name
+
+    try:
+        # Upload to storage backend
+        file_id = storage.upload(temp_path, original_name)
+        size = len(content.encode("utf-8"))
+        return {"file_id": file_id, "original_name": original_name, "size": size}
+    finally:
+        # Clean up temporary file
+        os.unlink(temp_path)
+
+
+def get_file_id() -> str:
+    """Create file data and return the file_id."""
+    file_data = create_file_data()
+    cache_key = file_data["file_id"]
+    _file_cache[cache_key] = file_data
+    return file_data["file_id"]
+
+
+def get_original_name_for_file_id() -> str:
+    """Return the original_name for the most recently created file."""
+    if not _file_cache:
+        return create_file_data()["original_name"]
+    # Get the most recent file data
+    latest_key = max(_file_cache.keys())
+    return _file_cache[latest_key]["original_name"]
+
+
+def get_size_for_file_id() -> int:
+    """Return the size for the most recently created file."""
+    if not _file_cache:
+        return create_file_data()["size"]
+    # Get the most recent file data
+    latest_key = max(_file_cache.keys())
+    return _file_cache[latest_key]["size"]
 
 
 class AsyncSQLAlchemyFactory(Factory[T]):
@@ -154,7 +214,7 @@ class EducationFactory(AsyncSQLAlchemyFactory[Education]):
     class Meta:
         model = Education
 
-    level = EducationLevel.THIRD_YEAR_HIGH_SCHOOL
+    level = EducationLevel.THIRD_GRADE_HIGH_SCHOOL
     institution = SubFactory(SchoolFactory)
     course = SubFactory(CourseFactory)
 
@@ -190,13 +250,15 @@ class UserFactory(AsyncSQLAlchemyFactory[User]):
 
 
 class FileFactory(AsyncSQLAlchemyFactory[File]):
-    """Factory for creating File instances."""
+    """Factory for creating File instances that point to real files in storage."""
 
     class Meta:
         model = File
-        sqlalchemy_get_or_create = ("key",)
+        sqlalchemy_get_or_create = ("file_id",)
 
-    key = Sequence(file_key_sequence)
+    file_id = LazyFunction(get_file_id)
+    original_name = LazyFunction(get_original_name_for_file_id)
+    size = LazyFunction(get_size_for_file_id)
     updated_at = Faker("date_time_this_year")
 
 
@@ -205,22 +267,50 @@ class QuestionFactory(AsyncSQLAlchemyFactory[Question]):
 
     class Meta:
         model = Question
-        sqlalchemy_get_or_create = ("text",)
+        sqlalchemy_get_or_create = ("content_blocks",)
 
-    text = Faker("sentence")
-    subject = "Matemática"
-    difficulty = "Fácil"
-    source = "ENEM"
+    content_blocks = LazyAttribute(
+        lambda obj: [
+            TextBlock(
+                type="text",
+                style="paragraph",
+                content=[
+                    RichText(
+                        text="This is sample question text for testing purposes.",
+                        bold=False,
+                        italic=False,
+                        underline=False,
+                        strikethrough=False,
+                    ),
+                    RichText(
+                        text="This is additional content for the question.",
+                        bold=True,
+                        italic=False,
+                        underline=False,
+                        strikethrough=False,
+                    ),
+                ],
+            )
+        ]
+    )
+
     is_active = True
-    allow_resubmit = False
+    subject = "Matemática"
+    category = "Álgebra"
+    subcategory = "Equações"
+    caderno = "Azul"
+    caderno_number = 1
+    difficulty = QuestionDifficulty.EASY
+    parameter_a = 1.0
+    parameter_b = 2.0
+    parameter_c = 3.0
     answer_text = "This is the correct answer"
     embedding = Faker("random_elements", elements=[0.0, 1.0], length=1024)
-    source = Faker("sentence")
-    difficulty = Faker("sentence")
-    image = SubFactory(FileFactory)
+    source_type = QuestionSourceType.OFFICIAL
+    official_source = "ENEM"
+    source_user_id = None
+    answer_type = QuestionAnswerType.MULTIPLE_CHOICE
     answer_image = SubFactory(FileFactory)
-    video_url = Faker("sentence")
-    is_fast = Faker("sentence")
 
 
 class ChoiceFactory(AsyncSQLAlchemyFactory[Choice]):
@@ -232,6 +322,7 @@ class ChoiceFactory(AsyncSQLAlchemyFactory[Choice]):
 
     text = Faker("sentence")
     is_correct = Iterator([True, False, True, False, False, True])
+    order = Sequence(lambda n: n)
     question = SubFactory(QuestionFactory)
 
     @classmethod
@@ -257,7 +348,7 @@ class FlowFactory(AsyncSQLAlchemyFactory[Flow]):
     query = Iterator(QUERIES)
     area = Iterator(ENEM_AREAS.keys())
     source_filter = ""
-    difficulty = ""
+    difficulty = FlowDifficulty.ALL
     flow_input_type = FlowInputType.TOPIC
     input_topic = Faker("paragraph")
     created_by = SubFactory(UserFactory)
@@ -288,10 +379,5 @@ class FlowQuestionFactory(AsyncSQLAlchemyFactory[FlowQuestion]):
 
     flow = SubFactory(FlowFactory)
     order = Sequence(lambda n: n)
-    element_type = "question"
-    is_active = True
-    is_correct = False
-    text = Faker("paragraph")
-    subject = "Matemática"
-    source = "ENEM"
+    element_type = FLOW_QUESTION_POLYMORPHIC_IDENTITY
     question = SubFactory(QuestionFactory)

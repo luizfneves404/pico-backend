@@ -22,14 +22,15 @@ if TYPE_CHECKING:
     from app.education.models import Education
     from app.fcm.models import FCMDevice
 
+
 STARTING_BALANCE = 1000
 
 
 class EducationLevel(StrEnum):
     MIDDLE_SCHOOL = "MS"
-    FIRST_YEAR_HIGH_SCHOOL = "FYHS"
-    SECOND_YEAR_HIGH_SCHOOL = "SYHS"
-    THIRD_YEAR_HIGH_SCHOOL = "TYHS"
+    FIRST_GRADE_HIGH_SCHOOL = "FYHS"
+    SECOND_GRADE_HIGH_SCHOOL = "SYHS"
+    THIRD_GRADE_HIGH_SCHOOL = "TYHS"
     HIGH_SCHOOL_COMPLETE = "HSG"
     COLLEGE = "COL"
     UNKNOWN = ""

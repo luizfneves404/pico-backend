@@ -9,10 +9,19 @@
 
 ## SQLAlchemy Usage
 
-- Always use "async with session.begin()" instead of explicit commit() and rollback() blocks. In path operation functions, this should not be needed since the dependency manages the transaction. If you need to have an error and not rollback, use a nested transaction.
-- Remember to do flush after altering objects to send changes to the database, since autoflush is off.
+- Always use "async with session.begin()" instead of explicit commit() and rollback() blocks. In path operation functions, this should not be needed since the dependency manages the transaction. autobegin is off to promote explicit control of transactions. If you need to have an error and not rollback when inside a transaction context (such as in a router function), use a nested transaction.
+- Remember to do flush after altering objects to send changes to the database, since autoflush is off. This was chosen so that we know exactly when we are hitting the database.
 - Don't use column_property with alias, since it will force some early evaluation and break things. Use hybrid_property instead.
 - If you use a third mapped class as a many-to-many table, add viewonly=True to the relationship connecting the two other mapped classes to avoid conflicts.
+- When you want to define a "strong" relationship, where a child should be deleted if the parent is, you probably want to use the following, plus any other kwargs you want to pass to the relationship:
+
+```python
+relationship(
+    lazy="raise_on_sql",
+    cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
+    passive_deletes=True,
+)
+```
 
 ## Enum Handling
 
@@ -21,7 +30,12 @@
 ```python
 op.execute("DROP TYPE enum_name")
 ```
+Add to the script.py.mako file.
 
+## FastAPI Usage
+
+- Prefer to return the pydantic models directly in the router functions, instead of using response_model=... and returning your ORM models. This is better because it allows for better type checking. And don't create those pydantic models using model_validate, because model_validate doesn't give linting errors.
+- To make this more reusable, consider adding a classmethod on the pydantic model that takes in a db model and constructs the pydantic model instance. Or alternatively, create a function inside routers.py that takes an ORM model and returns a pydantic model.
 
 
 # Common Commands

@@ -1,12 +1,17 @@
 from enum import StrEnum
 from typing import Literal
+from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, Field
 
 from app.base import ContentBlock
 from app.flows.models import (
-    FLOW_QUESTION_POLYMORPHIC_IDENTITY,
+    Campaign,
+    Choice,
+    Flow,
     FlowDifficulty,
+    FlowQuestion,
+    FlowQuestionUser,
     QuestionAnswerType,
     QuestionDifficulty,
     QuestionSourceType,
@@ -18,26 +23,47 @@ class SimpleUser(BaseModel):
     username: str
 
 
-class Answer(BaseModel):
+class AnswerInFeed(BaseModel):
     user: SimpleUser
     submitted_text: str
     choice_id: int | None
 
+    @classmethod
+    def from_orm_model(cls, flow_question_user: FlowQuestionUser) -> "AnswerInFeed":
+        return cls(
+            user=SimpleUser(
+                id=flow_question_user.user.id, username=flow_question_user.user.username
+            ),
+            submitted_text=flow_question_user.submitted_text,
+            choice_id=flow_question_user.choice.id
+            if flow_question_user.choice
+            else None,
+        )
 
-class Choice(BaseModel):
+
+class ChoiceInFeed(BaseModel):
     id: int
     text: str
     image: str | None
     is_correct: bool
 
+    @classmethod
+    def from_orm_model(cls, choice: Choice) -> "ChoiceInFeed":
+        return cls(
+            id=choice.id,
+            text=choice.text,
+            image=choice.image.url if choice.image else None,
+            is_correct=choice.is_correct,
+        )
+
 
 class FlowQuestionInFeed(BaseModel):
     id: int
-    element_type: Literal[FLOW_QUESTION_POLYMORPHIC_IDENTITY]
-    json_content: list[ContentBlock]
-    relevant_answers: list[Answer]  # all answers
+    element_type: Literal["flow_question"]
+    content_blocks: list[ContentBlock]
+    relevant_answers: list[AnswerInFeed]  # all answers for now
     num_total_answers: int
-    choices: list[Choice]
+    choices: list[ChoiceInFeed]
 
     subject: str
     category: str
@@ -50,10 +76,40 @@ class FlowQuestionInFeed(BaseModel):
 
     answer_type: QuestionAnswerType
 
+    @classmethod
+    def from_orm_model(cls, flow_question: FlowQuestion) -> "FlowQuestionInFeed":
+        return cls(
+            id=flow_question.id,
+            element_type="flow_question",
+            content_blocks=flow_question.question.content_blocks,
+            relevant_answers=[
+                AnswerInFeed.from_orm_model(answer)
+                for answer in flow_question.flow_question_users
+            ],
+            num_total_answers=flow_question.num_total_answers,
+            choices=[
+                ChoiceInFeed.from_orm_model(choice)
+                for choice in flow_question.question.choices
+            ],
+            subject=flow_question.question.subject,
+            category=flow_question.question.category,
+            subcategory=flow_question.question.subcategory,
+            difficulty=flow_question.question.difficulty,
+            source_type=flow_question.question.source_type,
+            official_source=flow_question.question.official_source,
+            source_user=SimpleUser(
+                id=flow_question.question.source_user.id,
+                username=flow_question.question.source_user.username,
+            )
+            if flow_question.question.source_user
+            else None,
+            answer_type=flow_question.question.answer_type,
+        )
+
 
 class FlowInFeed(BaseModel):
     id: int
-    code: str
+    code: UUID
     created_at: AwareDatetime
     title: str
 
@@ -69,6 +125,31 @@ class FlowInFeed(BaseModel):
 
     elements: list[FlowQuestionInFeed]  # first 5 questions? ask gpt if this is needed
     num_total_elements: int
+
+    @classmethod
+    def from_orm_model(cls, flow: Flow) -> "FlowInFeed":
+        return cls(
+            id=flow.id,
+            code=flow.code,
+            created_at=flow.created_at,
+            title=flow.title,
+            cover_image=flow.cover_image.url if flow.cover_image else None,
+            action_link=flow.action_link,
+            action_text=flow.action_text,
+            created_by=SimpleUser(
+                id=flow.created_by.id, username=flow.created_by.username
+            ),
+            query=flow.query,
+            area=flow.area,
+            source_filter=flow.source_filter,
+            difficulty=flow.difficulty,
+            elements=[
+                FlowQuestionInFeed.from_orm_model(element)
+                for element in flow.elements
+                if isinstance(element, FlowQuestion)
+            ],
+            num_total_elements=flow.num_total_elements,
+        )
 
 
 class FlowDetail(FlowInFeed):
@@ -114,3 +195,23 @@ class AddQuestionsToFlowOfficial(BaseModel):
 class SubmitAnswerMultipleChoice(BaseModel):
     question_id: int
     choice_id: int | None
+
+
+class CampaignInFeed(BaseModel):
+    id: int
+    name: str
+    text: str
+    action_link: str
+    action_text: str
+    cover_image: str | None
+
+    @classmethod
+    def from_orm_model(cls, campaign: Campaign) -> "CampaignInFeed":
+        return cls(
+            id=campaign.id,
+            name=campaign.name,
+            text=campaign.text,
+            action_link=campaign.action_link,
+            action_text=campaign.action_text,
+            cover_image=campaign.cover_image.url if campaign.cover_image else None,
+        )

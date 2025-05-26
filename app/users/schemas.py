@@ -11,14 +11,14 @@ from pydantic import (
     StringConstraints,
     computed_field,
 )
-from pydantic_extra_types.phone_numbers import PhoneNumber
 
-from app.config import settings
 from app.education.schemas import EducationIn, EducationOut
-from app.shared.validation import LowercaseEmailStr, StripWhitespaceStr
-from app.users.models import SignupSource
-
-PhoneNumber.default_region_code = settings.default_phone_number_country
+from app.shared.validation import (
+    CustomPhoneNumber,
+    LowercaseEmailStr,
+    StripWhitespaceStr,
+)
+from app.users.models import SignupSource, User
 
 PasswordStr = Annotated[SecretStr, StringConstraints(max_length=255)]
 
@@ -71,7 +71,7 @@ class UserBase(BaseModel):
     model_config = ConfigDict(coerce_numbers_to_str=True, from_attributes=True)
 
     username: StripWhitespaceStr = Field(min_length=1, max_length=50)
-    phone_number: PhoneNumber
+    phone_number: CustomPhoneNumber
     email: LowercaseEmailStr
 
 
@@ -83,20 +83,53 @@ class UserIn(UserBase):
     signup_source: SignupSource = Field(default=SignupSource.UNKNOWN)
 
 
-class UserOut(UserBase):
-    id: int
-    social_score: int
-    xp_score: int
-    current_education: EducationOut | None
-    intended_education: EducationOut | None
-
-
 class OtherUserOut(UserBase):
     id: int
     social_score: int
     xp_score: int
     current_education: EducationOut | None
     intended_education: EducationOut | None
+
+    @classmethod
+    def from_orm_model(cls, user: User) -> "OtherUserOut":
+        return cls(
+            id=user.id,
+            username=user.username,
+            phone_number=user.phone_number,
+            email=user.email,
+            current_education=EducationOut(
+                level=user.current_education.level,
+                institution_id=user.current_education.institution_id,
+                course_id=user.current_education.course_id,
+            )
+            if user.current_education
+            else None,
+            intended_education=EducationOut(
+                level=user.intended_education.level,
+                institution_id=user.intended_education.institution_id,
+                course_id=user.intended_education.course_id,
+            )
+            if user.intended_education
+            else None,
+            social_score=user.social_score,
+            xp_score=user.xp_score,
+        )
+
+
+class UserOut(OtherUserOut):
+    @classmethod
+    def from_orm_model(cls, user: User) -> "UserOut":
+        other_user = OtherUserOut.from_orm_model(user)
+        return cls(
+            id=other_user.id,
+            username=other_user.username,
+            phone_number=other_user.phone_number,
+            email=other_user.email,
+            current_education=other_user.current_education,
+            intended_education=other_user.intended_education,
+            social_score=other_user.social_score,
+            xp_score=other_user.xp_score,
+        )
 
 
 class PasswordRequest(BaseModel):
@@ -112,7 +145,7 @@ class PasswordUpdateRequest(PasswordRequest):
 
 
 class PhoneNumberUpdateRequest(PasswordRequest):
-    new_phone_number: PhoneNumber
+    new_phone_number: CustomPhoneNumber
 
 
 class EmailUpdateRequest(PasswordRequest):
@@ -195,7 +228,8 @@ class UserUpdate(BaseModel):
     model_config = ConfigDict(coerce_numbers_to_str=True)
 
     username: StripWhitespaceStr | None = Field(None, min_length=1, max_length=50)
-    phone_number: PhoneNumber | None = None
+    password: PasswordStr | None = None
+    phone_number: CustomPhoneNumber | None = None
     email: LowercaseEmailStr | None = None
     current_education: EducationIn | None = None
     intended_education: EducationIn | None = None
@@ -213,13 +247,3 @@ class UserPartialUpdateResponse(BaseModel):
 
     updated_fields: list[str]
     user: UserOut
-
-
-class UserUpdatePermissions(BaseModel):
-    """Configuration for which fields require password verification."""
-
-    requires_password: list[str] = ["username", "phone_number", "email"]
-    allows_anonymous: list[str] = [
-        "current_education",
-        "intended_education",
-    ]

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from fastapi import File as FastAPIFile
 
 import app.flows.flow_service as flow_service
@@ -15,28 +15,44 @@ from app.flows.schemas import (
     FlowInSearch,
     SubmitAnswerMultipleChoice,
 )
+from app.pagination import (
+    PaginatedResponse,
+    PaginationParams,
+    get_pagination_params,
+    paginate,
+)
 
 router = APIRouter(prefix="/flows", tags=["flows"], dependencies=[CurrentUserDep])
 
 
-@router.get("feed", response_model=list[FlowInFeed])  # TODO: paginate!!!
+@router.get("feed", response_model=PaginatedResponse[FlowInFeed])
 async def feed(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
-) -> list[FlowInFeed]:
+    pagination: Annotated[PaginationParams, Depends(get_pagination_params)],
+) -> PaginatedResponse[FlowInFeed]:
     """Always needs to return different flows. needs to know always what i have returned before, never to return again to the same user
     maybe create realtionship between flow and user"""
 
-    return await flow_service.feed(db_session, current_user.id)
+    # start of algorithm
+    flows = await flow_service.feed(db_session, user_id=current_user.id)
+    flows_in_feed = [FlowInFeed.from_orm_model(flow) for flow in flows]
+    # end of algorithm
+
+    return paginate(flows_in_feed, pagination)
 
 
+@router.get("discover", response_model=PaginatedResponse[FlowInFeed])
 async def discover_flows(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
-) -> list[FlowInFeed]:
+    pagination: Annotated[PaginationParams, Depends(get_pagination_params)],
+) -> PaginatedResponse[FlowInFeed]:
     """Discover flows for the current user"""
 
-    return await flow_service.discover_flows(db_session, current_user.id)
+    flows = await flow_service.discover_flows(db_session, user_id=current_user.id)
+    flows_in_feed = [FlowInFeed.from_orm_model(flow) for flow in flows]
+    return paginate(flows_in_feed, pagination)
 
 
 async def search_flows(
@@ -46,7 +62,9 @@ async def search_flows(
 ) -> list[FlowInSearch]:
     """Search flows for the current user"""
 
-    return await flow_service.search_flows(db_session, current_user.id, query)
+    return await flow_service.search_flows(
+        db_session, user_id=current_user.id, query=query
+    )
 
 
 @router.get("/{id}", response_model=FlowDetail)

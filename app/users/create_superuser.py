@@ -5,7 +5,7 @@ from pydantic import SecretStr
 from app.config import settings
 from app.database import db_manager
 from app.users.models import User
-from app.users.schemas import LowercaseEmailStr, PhoneNumber, SignupSource, UserIn
+from app.users.schemas import SignupSource, UserIn
 from app.users.service import get_password_hash, get_user
 
 
@@ -37,8 +37,8 @@ async def create_superuser(
             # Create new user
             user_data = UserIn(
                 username=username,
-                email=LowercaseEmailStr(email),
-                phone_number=PhoneNumber(phone_number),
+                email=email,
+                phone_number=phone_number,
                 password=SecretStr(password),
                 referred_by_username="",
                 signup_source=SignupSource.OTHER,  # Mark as admin-created

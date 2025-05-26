@@ -13,28 +13,111 @@ from tests.factories import (
 )
 
 
-async def test_list_flows(user_client: AsyncClient, session: AsyncSession):
-    # Create test user and flows
+async def test_flow_feed(user_client: AsyncClient, session: AsyncSession):
+    """Test the flow feed endpoint returns flows ordered by answer count and doesn't repeat flows."""
+    # Create test users and flows
     async with session.begin():
         user = await UserFactory.create(session=session)
-        # Create a few flows for the test user
-        await FlowFactory.create_batch(3, created_by=user, session=session)
-        # Create a flow for another user (shouldn't appear in list)
         another_user = await UserFactory.create(session=session)
-        await FlowFactory.create(created_by=another_user, session=session)
 
-    # Get flows list for authenticated user
-    response = await user_client.get("/flows")
+        # Create flows from different users (these should appear in feed)
+        flow1 = await FlowFactory.create(created_by=another_user, session=session)
+        flow2 = await FlowFactory.create(created_by=another_user, session=session)
+        flow3 = await FlowFactory.create(created_by=user, session=session)
+
+        # Add some questions to flows to test answer count ordering
+        question1 = await FlowQuestionFactory.create(flow=flow1, session=session)
+        question2 = await FlowQuestionFactory.create(flow=flow2, session=session)
+        await FlowQuestionFactory.create(flow=flow3, session=session)
+
+        # Add some answers to test ordering by answer count
+        choice1 = await ChoiceFactory.create(
+            question=question1.question, session=session
+        )
+        choice2 = await ChoiceFactory.create(
+            question=question2.question, session=session
+        )
+
+        # Create answers for flow1 (should rank higher)
+        flow_question_user1 = FlowQuestionUser(
+            flow_element_id=question1.id, user_id=another_user.id, choice_id=choice1.id
+        )
+        session.add(flow_question_user1)
+
+        flow_question_user2 = FlowQuestionUser(
+            flow_element_id=question1.id, user_id=user.id, choice_id=choice1.id
+        )
+        session.add(flow_question_user2)
+
+        # Create one answer for flow2
+        flow_question_user3 = FlowQuestionUser(
+            flow_element_id=question2.id, user_id=another_user.id, choice_id=choice2.id
+        )
+        session.add(flow_question_user3)
+
+    # First call to feed - should return all flows
+    response = await user_client.get("/api/flows/feed")
     assert response.status_code == 200
     response_data = response.json()
-    assert len(response_data) == 3  # Should only see own flows
 
-    # Check response data structure
-    for flow in response_data:
+    # Should return paginated response
+    assert "items" in response_data
+    assert "total" in response_data
+    assert "page" in response_data
+    assert "size" in response_data
+
+    flows = response_data["items"]
+    assert len(flows) == 3
+
+    # Check flows are ordered by answer count desc, then created_at desc
+    # flow1 should be first (2 answers), then flow2 (1 answer), then flow3 (0 answers)
+    assert flows[0]["id"] == flow1.id
+    assert flows[1]["id"] == flow2.id
+    assert flows[2]["id"] == flow3.id
+
+    # Check response data structure matches FlowInFeed schema
+    for flow in flows:
         assert "id" in flow
-        assert "title" in flow
-        assert "area" in flow
+        assert "code" in flow
         assert "created_at" in flow
+        assert "title" in flow
+        assert "cover_image" in flow
+        assert "action_link" in flow
+        assert "action_text" in flow
+        assert "created_by" in flow
+        assert "query" in flow
+        assert "area" in flow
+        assert "source_filter" in flow
+        assert "difficulty" in flow
+        assert "elements" in flow
+        assert "num_total_elements" in flow
+
+        # Check created_by structure
+        assert "id" in flow["created_by"]
+        assert "username" in flow["created_by"]
+
+    # Second call to feed - should return empty since all flows are now marked as seen
+    response = await user_client.get("/api/flows/feed")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    flows = response_data["items"]
+    assert len(flows) == 0  # No flows should be returned as they're all seen
+
+    # Verify that FlowUserFeed records were created
+    async with session.begin():
+        from app.flows.models import FlowUserFeed
+
+        feed_records = await session.execute(
+            select(FlowUserFeed).where(FlowUserFeed.user_id == user.id)
+        )
+        feed_records = feed_records.scalars().all()
+        assert len(feed_records) == 3  # Should have 3 feed records for the user
+
+        # Check that all flow IDs are marked as seen
+        seen_flow_ids = {record.flow_id for record in feed_records}
+        expected_flow_ids = {flow1.id, flow2.id, flow3.id}
+        assert seen_flow_ids == expected_flow_ids
 
 
 async def test_get_flow_details(user_client: AsyncClient, session: AsyncSession):
@@ -46,7 +129,7 @@ async def test_get_flow_details(user_client: AsyncClient, session: AsyncSession)
         await FlowQuestionFactory.create_batch(2, flow=flow, session=session)
 
     # Get flow details
-    response = await user_client.get(f"/flows/{flow.id}")
+    response = await user_client.get(f"/api/flows/{flow.id}")
     assert response.status_code == 200
     response_data = response.json()
 
@@ -65,7 +148,7 @@ async def test_get_flow_details(user_client: AsyncClient, session: AsyncSession)
 
 async def test_get_flow_details_not_found(user_client: AsyncClient):
     # Try to get details for a non-existent flow
-    response = await user_client.get("/flows/9999")
+    response = await user_client.get("/api/flows/9999")
     assert response.status_code == 404
 
 
@@ -79,7 +162,7 @@ async def test_create_flow_from_topic(user_client: AsyncClient):
         "source_filter": "ENEM",
         "difficulty": "Médio",
     }
-    response = await user_client.post("/flows", json=flow_data)
+    response = await user_client.post("/api/flows", json=flow_data)
     assert response.status_code == 201
     response_data = response.json()
 
@@ -103,7 +186,7 @@ async def test_create_flow_validation_error(user_client: AsyncClient):
         "source_filter": "ENEM",
         "difficulty": "Médio",
     }
-    response = await user_client.post("/flows", json=flow_data)
+    response = await user_client.post("/api/flows", json=flow_data)
     assert response.status_code == 400
 
 
@@ -126,7 +209,7 @@ async def test_create_flow_with_files(user_client: AsyncClient, tmp_path: Path):
         files = [("files", ("document.pdf", f, "application/pdf"))]
 
         # Post request with multipart/form-data
-        response = await user_client.post("/flows/files", data=data, files=files)
+        response = await user_client.post("/api/flows/files", data=data, files=files)
 
     assert response.status_code == 201
     response_data = response.json()
@@ -164,7 +247,7 @@ async def test_submit_flow_question_answer(
         "choice_id": choice.id,
         "submitted_text": "",
     }
-    response = await user_client.post(f"/flows/{flow.id}/submit", json=answer_data)
+    response = await user_client.post(f"/api/flows/{flow.id}/submit", json=answer_data)
     assert response.status_code == 200
     response_data = response.json()
 
@@ -199,7 +282,7 @@ async def test_submit_flow_question_answer_invalid(
         "submitted_text": "",
     }
     response = await user_client.post(
-        f"/flows/{flow.id}/submit", json=invalid_answer_data
+        f"/api/flows/{flow.id}/submit", json=invalid_answer_data
     )
     assert response.status_code == 400
 
@@ -211,7 +294,7 @@ async def test_generate_flow_pdf(user_client: AsyncClient, session: AsyncSession
         flow = await FlowFactory.create(created_by=user, session=session)
 
     # Generate PDF
-    response = await user_client.post(f"/flows/{flow.id}/generate-pdf")
+    response = await user_client.post(f"/api/flows/{flow.id}/generate-pdf")
     assert response.status_code == 200
     pdf_url = response.json()
 
@@ -238,7 +321,7 @@ async def test_add_elements_to_flow(user_client: AsyncClient, session: AsyncSess
         "n_questions": 3,
     }
     response = await user_client.post(
-        f"/flows/{flow.id}/add-elements", json=add_elements_data
+        f"/api/flows/{flow.id}/add-elements", json=add_elements_data
     )
     assert response.status_code == 200
     response_data = response.json()
@@ -256,12 +339,12 @@ async def test_delete_flow(user_client: AsyncClient, session: AsyncSession):
         flow = await FlowFactory.create(created_by=user, session=session)
 
     # Delete the flow
-    response = await user_client.delete(f"/flows/{flow.id}")
+    response = await user_client.delete(f"/api/flows/{flow.id}")
     assert response.status_code == 204
 
     # Verify flow was deleted
     # Try to get the flow, should return 404
-    response = await user_client.get(f"/flows/{flow.id}")
+    response = await user_client.get(f"/api/flows/{flow.id}")
     assert response.status_code == 404
 
 
@@ -278,7 +361,7 @@ async def test_get_user_flows(user_client: AsyncClient, session: AsyncSession):
         await FlowFactory.create_batch(3, created_by=user2, session=session)
 
     # Get flows for user2
-    response = await user_client.get(f"/flows/user/{user2.id}")
+    response = await user_client.get(f"/api/flows/user/{user2.id}")
     assert response.status_code == 200
     response_data = response.json()
 

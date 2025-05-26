@@ -2,8 +2,7 @@ from typing import Any, ClassVar
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, computed_field
 
-from app.shared.validation import LowercaseEmailStr
-from app.users.schemas import PhoneNumber
+from app.shared.validation import CustomPhoneNumber, LowercaseEmailStr
 
 
 class Notification(BaseModel):
@@ -47,7 +46,7 @@ class MemberOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     username: str
-    phone_number: PhoneNumber
+    phone_number: CustomPhoneNumber
     email: LowercaseEmailStr
 
 

@@ -1,7 +1,5 @@
-from typing import List
-
 from fastapi import UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.files.models import create_file
@@ -11,6 +9,7 @@ from app.flows.models import (
     FlowInputType,
     FlowQuestion,
     FlowQuestionUser,
+    FlowUserFeed,
 )
 from app.users.models import User
 
@@ -45,8 +44,46 @@ class InvalidFileTypeError(Exception):
     pass
 
 
-async def feed(db_session: AsyncSession, user_id: int) -> List[Flow]:
-    """List all flows for a user"""
+async def feed(db_session: AsyncSession, *, user_id: int) -> list[Flow]:
+    """List all flows for a user that they haven't seen in their feed yet.
+    Will use a complex algorithm in the future.
+    For now, it's just a simple query to the database that excludes already seen flows."""
+
+    # Get flows that the user hasn't seen in their feed yet
+    seen_flow_ids_query = select(FlowUserFeed.flow_id).where(
+        FlowUserFeed.user_id == user_id
+    )
+
+    query = (
+        select(Flow, func.count(FlowQuestionUser.id).label("answer_count"))
+        .join(FlowElement, Flow.id == FlowElement.flow_id)
+        .outerjoin(FlowQuestionUser, FlowElement.id == FlowQuestionUser.flow_element_id)
+        .where(Flow.id.not_in(seen_flow_ids_query))  # Exclude already seen flows
+        .group_by(Flow.id)
+        .order_by(func.count(FlowQuestionUser.id).desc(), Flow.created_at.desc())
+    )
+    result = await db_session.execute(query)
+    flows = [row[0] for row in result.all()]
+
+    # Mark these flows as seen by this user
+    for flow in flows:
+        flow_user_feed = FlowUserFeed(user_id=user_id, flow_id=flow.id)
+        db_session.add(flow_user_feed)
+
+    # Commit the seen records
+    await db_session.commit()
+
+    return flows
+
+
+async def discover_flows(db_session: AsyncSession, *, user_id: int) -> list[Flow]:
+    """Discover flows for the current user"""
+    # for now the same algorithm as feed
+    return await feed(db_session, user_id=user_id)
+
+
+async def list_user_flows(db_session: AsyncSession, *, user_id: int) -> list[Flow]:
+    """List all flows that a user has created"""
     query = (
         select(Flow)
         .where(Flow.created_by_id == user_id)
@@ -56,18 +93,7 @@ async def feed(db_session: AsyncSession, user_id: int) -> List[Flow]:
     return list(result.scalars().all())
 
 
-async def list_user_flows(db_session: AsyncSession, user_id: int) -> List[Flow]:
-    """List all flows for a specific user"""
-    query = (
-        select(Flow)
-        .where(Flow.created_by_id == user_id)
-        .order_by(Flow.created_at.desc())
-    )
-    result = await db_session.execute(query)
-    return list(result.scalars().all())
-
-
-async def get_flow(db_session: AsyncSession, user_id: int, flow_id: int) -> Flow:
+async def get_flow(db_session: AsyncSession, *, flow_id: int) -> Flow:
     """Get a specific flow"""
     query = select(Flow).where(Flow.id == flow_id)
     result = await db_session.execute(query)
@@ -90,20 +116,6 @@ async def create_flow(
     flow_input_type: FlowInputType,
 ) -> Flow:
     """Create a new flow from a topic"""
-    # Validate inputs
-    if not input_topic and not input_files:
-        raise FlowValidationError("Title is required")
-
-    if not query:
-        raise FlowValidationError("Query is required")
-
-    if flow_input_type == FlowInputType.TOPIC and not input_topic:
-        raise FlowValidationError("Input topic is required for topic-based flows")
-
-    # Check and deduct credits
-    credit_cost = 10  # Example cost - adjust as needed
-    await check_and_deduct_credits(db_session, user.id, credit_cost, "Flow creation")
-
     # Create flow
     flow = Flow(
         title=title,
@@ -139,7 +151,7 @@ async def create_flow_with_files(
     area: str,
     source_filter: str,
     difficulty: str,
-    files: List[UploadFile],
+    files: list[UploadFile],
 ) -> Flow:
     """Create a new flow from uploaded files"""
     # Validate inputs
@@ -162,12 +174,6 @@ async def create_flow_with_files(
         ) and not content_type.startswith("image/"):
             raise InvalidFileTypeError(f"Unsupported file type: {content_type}")
 
-    # Check and deduct credits
-    credit_cost = 15  # Example cost - adjust as needed
-    await check_and_deduct_credits(
-        db_session, user.id, credit_cost, "Flow creation with files"
-    )
-
     # Create flow
     flow = Flow(
         title=title,
@@ -186,8 +192,7 @@ async def create_flow_with_files(
     for i, upload_file in enumerate(files):
         saved_file = await create_file(
             db_session=db_session,
-            file=upload_file,
-            user_id=user.id,
+            upload_file=upload_file,
         )
 
     # Generate questions based on the files
@@ -226,7 +231,7 @@ async def submit_answer_multiple_choice(
 ) -> dict[str, str]:
     """Submit an answer for a question in a flow"""
     # Check if flow exists
-    flow = await get_flow(db_session, user_id, flow_id)
+    flow = await get_flow(db_session, flow_id=flow_id)
 
     # Check if flow element exists
     query = select(FlowElement).where(
@@ -301,16 +306,10 @@ async def add_elements_to_flow(
 ) -> Flow:
     """Add more elements (questions) to an existing flow"""
     # Check if flow exists and belongs to user
-    flow = await get_flow(db_session, user_id, flow_id)
+    flow = await get_flow(db_session, flow_id=flow_id)
 
     if flow.created_by_id != user_id:
         raise FlowNotFoundError()
-
-    # Check and deduct credits
-    credit_cost = 5  # Example cost - adjust as needed
-    await check_and_deduct_credits(
-        db_session, user_id, credit_cost, "Add elements to flow"
-    )
 
     # Generate additional questions
     await _generate_flow_questions(db_session, flow, n_questions)
@@ -328,7 +327,7 @@ async def delete_flow(
 ) -> None:
     """Delete a flow"""
     # Check if flow exists and belongs to user
-    flow = await get_flow(db_session, user_id, flow_id)
+    flow = await get_flow(db_session, flow_id=flow_id)
 
     if flow.created_by_id != user_id:
         raise FlowNotFoundError()
@@ -344,7 +343,7 @@ async def generate_pdf(
 ) -> str:
     """Generate a PDF for a flow and return the URL"""
     # Check if flow exists
-    flow = await get_flow(db_session, user_id, flow_id)
+    flow = await get_flow(db_session, flow_id=flow_id)
 
     # This would typically call a service to generate a PDF
     # For now, it's a placeholder that returns a fake URL

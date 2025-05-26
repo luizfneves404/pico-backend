@@ -5,10 +5,19 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, BeforeValidator, Field
+from pydantic import AfterValidator, BaseModel, BeforeValidator, EmailStr, Field
+from pydantic.networks import validate_email
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.shared.validation import LowercaseEmailStr
+# Grabbed from app.shared.validation.py, had to replicate here to avoid circular imports.
+
+
+def validate_lowercase_email(value: EmailStr) -> EmailStr:
+    email = validate_email(value)[1]
+    return email.lower()
+
+
+LowercaseEmailStr = Annotated[str, AfterValidator(validate_lowercase_email)]
 
 
 class FirebaseJsonServiceKey(BaseModel):

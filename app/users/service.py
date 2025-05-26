@@ -24,13 +24,13 @@ from app.flows.models import (
     FlowQuestionUser,
     Question,
 )
+from app.shared.validation import CustomPhoneNumber
 from app.users.models import (
     EducationLevel,
     SignupSource,
     User,
     UserProfile,
 )
-from app.users.schemas import PhoneNumber
 
 from .constants import (
     WELCOME_EMAIL_MESSAGE,
@@ -41,13 +41,13 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 DELETED_USERNAME = "deleted"
 DELETED_PHONE_NUMBER = "1121111111"
-DELETED_EMAIL = "deleted@pico.fyi"
+DELETED_EMAIL = "deleted@sophinity.co"
 PICO_USERNAME = "pico"
 PICO_PHONE_NUMBER = "1122211111"
-PICO_EMAIL = "pico@pico.fyi"
+PICO_EMAIL = "pico@sophinity.co"
 SYSTEM_USERNAME = "system"
 SYSTEM_PHONE_NUMBER = "1122111111"
-SYSTEM_EMAIL = "system@pico.fyi"
+SYSTEM_EMAIL = "system@sophinity.co"
 
 SENTINEL_USERNAMES = [DELETED_USERNAME, PICO_USERNAME, SYSTEM_USERNAME]
 
@@ -55,7 +55,7 @@ NUM_RANKED_USERS = 10
 
 logger = logging.getLogger(__name__)
 
-phone_number_adapter = TypeAdapter(PhoneNumber)
+phone_number_adapter: TypeAdapter[CustomPhoneNumber] = TypeAdapter(CustomPhoneNumber)
 
 
 class UserNotFoundError(Exception):
@@ -302,23 +302,6 @@ async def validate_phone_number(db_session: AsyncSession, phone_number: str) -> 
 async def validate_email(db_session: AsyncSession, email: str) -> None:
     if await get_user(db_session, email=email):
         raise EmailAlreadyExists
-
-
-async def set_username(
-    db_session: AsyncSession, user: User, new_username: str, current_password: str
-) -> None:
-    if not verify_password(current_password, user.hashed_password):
-        raise InvalidCredentialsError
-    try:
-        user.username = new_username
-        await db_session.flush()
-    except IntegrityError as e:
-        error_msg = str(e.orig)
-        if "username" in error_msg:
-            raise UsernameAlreadyExists
-        else:
-            raise
-    logger.info(f"User {user.id} changed their username to {new_username}")
 
 
 async def set_password(
@@ -822,7 +805,7 @@ async def update_user_fields(
         EmailAlreadyExists: If email already taken
     """
     # Define which fields require password verification
-    password_required_fields = {"username", "phone_number", "email"}
+    password_required_fields = {"username", "phone_number", "email", "password"}
 
     # Check if any sensitive fields are being updated
     sensitive_updates = password_required_fields.intersection(updates.keys())
@@ -854,6 +837,18 @@ async def update_user_fields(
                     if "username" in str(e.orig):
                         raise UsernameAlreadyExists
                     raise
+
+        elif field_name == "password":
+            # Update password (current_password already verified above)
+            # Extract the actual password string from SecretStr
+            password_value = (
+                new_value.get_secret_value()
+                if hasattr(new_value, "get_secret_value")
+                else str(new_value)
+            )
+            user.hashed_password = get_password_hash(password_value)
+            await db_session.flush()
+            updated_fields.append(field_name)
 
         elif field_name == "phone_number":
             if str(new_value) != user.phone_number:

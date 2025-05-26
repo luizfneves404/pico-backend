@@ -16,7 +16,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    select,
 )
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.base import (
@@ -32,9 +34,6 @@ if TYPE_CHECKING:
 
 
 NUM_QUESTION_EMBEDDING_DIMENSIONS = 1024
-
-FLOW_ELEMENT_POLYMORPHIC_IDENTITY = "flow_element"
-FLOW_QUESTION_POLYMORPHIC_IDENTITY = "question"
 
 ENEM_AREAS = {
     "Ciências Humanas": [
@@ -109,6 +108,9 @@ class Flow(Base):
     created_by_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
     created_by: Mapped["User"] = relationship(lazy="raise_on_sql")
 
+    action_link: Mapped[str] = mapped_column(Text, default="")
+    action_text: Mapped[str] = mapped_column(Text, default="")
+
     query: Mapped[str] = mapped_column(Text)
     area: Mapped[str] = mapped_column(Text)
     source_filter: Mapped[str] = mapped_column(Text)
@@ -131,6 +133,68 @@ class Flow(Base):
         cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
     )
+
+    @hybrid_property
+    def num_total_questions(self) -> int:
+        """Count total questions for this flow."""
+        return len(
+            [element for element in self.elements if isinstance(element, FlowQuestion)]
+        )
+
+    @num_total_questions.inplace.expression
+    @classmethod
+    def _num_total_questions_expression(cls):
+        """SQL expression for counting total questions"""
+        return (
+            select(func.count())
+            .select_from(FlowElement)
+            .where(
+                FlowElement.flow_id == cls.id,
+                FlowElement.element_type == "flow_question",
+            )
+        ).scalar_subquery()
+
+    @hybrid_property
+    def num_total_elements(self) -> int:
+        """Count total elements for this flow."""
+        return len(self.elements)
+
+    @num_total_elements.inplace.expression
+    @classmethod
+    def _num_total_elements_expression(cls):
+        """SQL expression for counting total elements"""
+        return (
+            select(func.count())
+            .select_from(FlowElement)
+            .where(FlowElement.flow_id == cls.id)
+        ).scalar_subquery()
+
+    @hybrid_property
+    def num_total_answers(self) -> int:
+        """Count total questions for this flow."""
+        return sum(
+            element.num_total_answers
+            for element in self.elements
+            if isinstance(element, FlowQuestion)
+        )
+
+    @num_total_answers.inplace.expression
+    @classmethod
+    def _num_total_answers_expression(cls):
+        """SQL expression for counting total answers"""
+        return (
+            select(func.count())
+            .select_from(FlowQuestionUser)
+            .where(
+                FlowQuestionUser.flow_element_id.in_(
+                    select(FlowElement.id)
+                    .select_from(FlowElement)
+                    .where(FlowElement.flow_id == cls.id)
+                ),
+                (FlowQuestionUser.choice_id.is_not(None))
+                | (FlowQuestionUser.submitted_text != ""),
+            )
+        ).scalar_subquery()
 
 
 class FlowElement(Base):
@@ -157,7 +221,7 @@ class FlowElement(Base):
 
     __mapper_args__ = {
         "polymorphic_on": element_type,
-        "polymorphic_identity": FLOW_ELEMENT_POLYMORPHIC_IDENTITY,
+        "polymorphic_identity": "flow_element",
     }
 
 
@@ -246,45 +310,6 @@ class Question(Base):
         return SUBJECT_TO_AREA.get(self.subject, None)
 
     @property
-    def text_with_source_and_subject(self) -> str:
-        parts: list[str] = []
-
-        if self.source:
-            parts.append(self.source)
-
-        if self.subject:
-            parts.append(self.subject)
-
-        prefix = ""
-        if parts:
-            prefix = f"({' - '.join(parts)}) "
-
-        text = self.text if self.text else "No text available"
-
-        return f"{prefix}{text}"
-
-    @property
-    def text_with_source_and_subject_with_extra(self) -> str:
-        parts: list[str] = []
-
-        if self.source:
-            parts.append(self.source)
-
-        if self.subject:
-            parts.append(self.subject)
-
-        prefix = ""
-        if parts:
-            prefix = f"({' - '.join(parts)})"
-
-        if self.extra_embedding_text:
-            prefix = f"{prefix} {self.extra_embedding_text}"
-
-        text = self.text if self.text else "No text available"
-
-        return f"{prefix}\n\n{text}"
-
-    @property
     def choices_text(self) -> str:
         choices_text: list[str] = []
         for j, choice in enumerate(self.choices):
@@ -294,20 +319,21 @@ class Question(Base):
                 return ""
         return "\n".join(choices_text)
 
-    @property
-    def full_text(self) -> str:
-        return f"{self.text_with_source_and_subject}\n\n{self.choices_text}"
 
-    @property
-    def full_text_with_extra(self) -> str:
-        return f"{self.text_with_source_and_subject_with_extra}\n\n{self.choices_text}"
+class Exam(Base):
+    name: Mapped[str] = mapped_column(Text)
+    country: Mapped[str] = mapped_column(Text)
 
-    def __str__(self) -> str:
-        return self.text if self.text else f"id: {self.id}"
+
+class OfficialQuestionSource(Base):
+    exam_id: Mapped[int] = mapped_column(ForeignKey("exam.id", ondelete="CASCADE"))
+    exam: Mapped["Exam"] = relationship(lazy="raise_on_sql")
+
+    year: Mapped[int] = mapped_column()
 
 
 class FlowQuestion(FlowElement):
-    __mapper_args__ = {"polymorphic_identity": FLOW_QUESTION_POLYMORPHIC_IDENTITY}
+    __mapper_args__ = {"polymorphic_identity": "flow_question"}
 
     question: Mapped["Question"] = relationship(lazy="raise_on_sql")
 
@@ -321,6 +347,47 @@ class FlowQuestion(FlowElement):
         cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
     )
+
+    @hybrid_property
+    def num_total_answers(self) -> int:
+        """Count total answers for this flow question.
+
+        This hybrid property provides:
+        - Python-level computation when flow_question_users is already loaded
+        - SQL-level computation when used in queries
+
+        Examples:
+            # Python-level (when relationship is loaded)
+            flow_question = session.get(FlowQuestion, 1)
+            count = flow_question.num_total_answers  # No extra DB query
+
+            # SQL-level (in queries)
+            results = session.query(FlowQuestion).filter(
+                FlowQuestion.num_total_answers > 5
+            ).all()
+        """
+        return len(
+            [
+                fqu
+                for fqu in self.flow_question_users
+                if fqu.choice_id is not None or fqu.submitted_text
+            ]
+        )
+
+    @num_total_answers.inplace.expression
+    @classmethod
+    def _num_total_answers_expression(cls):
+        """SQL expression for counting total answers"""
+
+        return (
+            select(func.count())
+            .select_from(FlowQuestionUser)
+            .where(
+                FlowQuestionUser.flow_element_id == cls.id,
+                (FlowQuestionUser.choice_id.is_not(None))
+                | (FlowQuestionUser.submitted_text != ""),
+            )
+        ).scalar_subquery()
 
 
 class Choice(Base):
@@ -346,6 +413,13 @@ class Choice(Base):
 
 
 class FlowQuestionUser(Base):
+    """This stores information about a user's relationship to a flow question.
+
+    An answer exists when either:
+    - choice_id IS NOT NULL (multiple choice answer)
+    - submitted_text != '' (open-ended answer)
+    """
+
     flow_element_id: Mapped[int] = mapped_column(
         ForeignKey("flow_element.id", ondelete="CASCADE")
     )
@@ -369,11 +443,37 @@ class FlowQuestionUser(Base):
         CheckConstraint(
             """
             (choice_id IS NOT NULL AND submitted_text = '') OR
-            (choice_id IS NULL AND submitted_text != '')
+            (choice_id IS NULL AND submitted_text != '') OR
+            (choice_id IS NULL AND submitted_text = '')
             """,
             name="check_flow_question_user_answer_valid_states",
         ),
     )
+
+
+class FlowUserFeed(Base):
+    """Tracks when a user has seen a flow in their feed to prevent duplicates"""
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
+    user: Mapped["User"] = relationship(lazy="raise_on_sql")
+
+    flow_id: Mapped[int] = mapped_column(ForeignKey("flow.id", ondelete="CASCADE"))
+    flow: Mapped[Flow] = relationship(lazy="raise_on_sql")
+
+    __table_args__ = (UniqueConstraint("user_id", "flow_id"),)
+
+
+class Campaign(Base):
+    name: Mapped[str] = mapped_column(Text)
+    text: Mapped[str] = mapped_column(Text)
+    action_link: Mapped[str] = mapped_column(Text)
+    action_text: Mapped[str] = mapped_column(Text)
+
+    cover_image_id: Mapped[int | None] = mapped_column(ForeignKey("file.id"))
+    cover_image: Mapped["File | None"] = relationship(lazy="raise_on_sql")
+
+    num_questions_for_trigger_first: Mapped[int] = mapped_column()
+    num_questions_for_trigger_recurring: Mapped[int] = mapped_column()
 
 
 class FieldFile(Protocol):
