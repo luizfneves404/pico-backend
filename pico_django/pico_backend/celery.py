@@ -1,6 +1,6 @@
 import os
 from functools import wraps
-from typing import Callable
+from typing import Any, Callable
 
 from asgiref.sync import sync_to_async
 from celery import Celery, shared_task
@@ -8,6 +8,7 @@ from celery.contrib.django.task import DjangoTask
 from celery.signals import worker_process_init
 
 from app.config import settings
+from app.fcm.fcm_service import init_firebase
 
 if os.environ.get("DJANGO_SETTINGS_MODULE") != settings.django_settings_module:
     print(
@@ -24,8 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 @worker_process_init.connect(weak=False)
-def init_celery_tracing(*args, **kwargs):
-    CeleryInstrumentor().instrument()
+def init_worker_dependencies(*args: Any, **kwargs: Any) -> None:
+    # Initialize Firebase in each worker process
+    init_firebase()
 
 
 class LogErrorsDjangoTask(DjangoTask):
