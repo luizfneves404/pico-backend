@@ -13,11 +13,11 @@ class PaginationParams(BaseModel):
 
     Attributes:
         page: The page number to retrieve (1-based)
-        page_size: Number of items per page
+        size: Number of items per page
     """
 
     page: int = Field(1, ge=1, description="Page number (1-based)")
-    page_size: int = Field(
+    size: int = Field(
         settings.pagination_per_page,
         ge=1,
         description="Number of items per page",
@@ -28,12 +28,16 @@ class PaginatedResponse(BaseModel, Generic[T]):
     """Generic paginated response model.
 
     Attributes:
-        results: List of items for the current page
-        count: Total number of items across all pages
+        items: List of items for the current page
+        total: Total number of items across all pages
+        page: Current page number
+        size: Number of items per page
     """
 
-    results: list[T]
-    count: int
+    items: list[T]
+    total: int
+    page: int
+    size: int
 
 
 def paginate(
@@ -49,16 +53,18 @@ def paginate(
     Returns:
         Dictionary containing paginated results and total count
     """
-    offset = (pagination.page - 1) * pagination.page_size
+    offset = (pagination.page - 1) * pagination.size
     return PaginatedResponse(
-        results=items[offset : offset + pagination.page_size],
-        count=len(items),
+        items=items[offset : offset + pagination.size],
+        total=len(items),
+        page=pagination.page,
+        size=pagination.size,
     )
 
 
 def get_pagination_params(
     page: int = Query(1, ge=1, description="Page number (1-based)"),
-    page_size: int = Query(
+    size: int = Query(
         settings.pagination_per_page,
         ge=1,
         description="Number of items per page",
@@ -68,9 +74,9 @@ def get_pagination_params(
 
     Args:
         page: Page number from query
-        page_size: Page size from query
+        size: Page size from query
 
     Returns:
         PaginationParams object
     """
-    return PaginationParams(page=page, page_size=page_size)
+    return PaginationParams(page=page, size=size)

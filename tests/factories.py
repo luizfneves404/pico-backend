@@ -28,7 +28,6 @@ from app.files.models import File
 from app.files.storage import storage
 from app.flows.models import (
     ENEM_AREAS,
-    FLOW_QUESTION_POLYMORPHIC_IDENTITY,
     Choice,
     Flow,
     FlowDifficulty,
@@ -163,7 +162,7 @@ class AsyncSQLAlchemyFactory(Factory[T]):
         return database.sc_session
 
     @classmethod
-    async def create(cls, session: AsyncSession | None = None, **kwargs: Any) -> T:
+    async def create(cls, session: AsyncSession, **kwargs: Any) -> T:
         instance = super().create(**kwargs)
         session.add(instance)
         await session.flush()
@@ -171,7 +170,7 @@ class AsyncSQLAlchemyFactory(Factory[T]):
 
     @classmethod
     async def create_batch(
-        cls, size: int, session: AsyncSession | None = None, **kwargs: Any
+        cls, size: int, session: AsyncSession, **kwargs: Any
     ) -> list[T]:
         instances = [super().create(**kwargs) for _ in range(size)]
         session.add_all(instances)
@@ -379,5 +378,5 @@ class FlowQuestionFactory(AsyncSQLAlchemyFactory[FlowQuestion]):
 
     flow = SubFactory(FlowFactory)
     order = Sequence(lambda n: n)
-    element_type = FLOW_QUESTION_POLYMORPHIC_IDENTITY
+    element_type = "flow_question"
     question = SubFactory(QuestionFactory)

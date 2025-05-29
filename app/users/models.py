@@ -18,9 +18,9 @@ from app.currency.models import HasCurrencyTransactions
 from app.flows.models import Flow
 
 if TYPE_CHECKING:
-    from app.chat.models import UserWebsocketInfo
     from app.education.models import Education
     from app.fcm.models import FCMDevice
+    from app.ws.models import UserWebsocketInfo
 
 
 STARTING_BALANCE = 1000

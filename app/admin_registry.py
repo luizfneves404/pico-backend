@@ -1,6 +1,6 @@
 from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
-from sqladmin import ModelView
+from sqladmin import BaseView
 from sqladmin.authentication import AuthenticationBackend
 from starlette.status import HTTP_401_UNAUTHORIZED
 
@@ -16,12 +16,20 @@ from app.flows.admin import (
     FlowQuestionUserAdmin,
     QuestionAdmin,
 )
+from app.logging_admin import (
+    GetCurrentLevelsView,
+    LoggingControlView,
+    SetSqlLoggingLevelView,
+)
 from app.users import service as user_service
 from app.users.admin import UserAdmin, UserProfileAdmin
 from app.users.jwt_token import TokenError, generate_tokens, process_token
 
-admin_views: list[type[ModelView]] = []
+admin_views: list[type[BaseView]] = []
 
+admin_views.append(SetSqlLoggingLevelView)
+admin_views.append(GetCurrentLevelsView)
+admin_views.append(LoggingControlView)
 admin_views.append(UserAdmin)
 admin_views.append(CollegeAdmin)
 admin_views.append(CourseAdmin)

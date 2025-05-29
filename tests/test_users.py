@@ -13,11 +13,14 @@ from tests.factories import (
 )
 
 
-async def test_create_user_followed_by_jwt_and_user_me(client: AsyncClient):
-    school = await SchoolFactory.create()
-    college = await CollegeFactory.create()
-    course = await CourseFactory.create()
-    user = UserFactory.build()
+async def test_create_user_followed_by_jwt_and_user_me(
+    client: AsyncClient, session: AsyncSession
+):
+    async with session.begin():
+        school = await SchoolFactory.create(session)
+        college = await CollegeFactory.create(session)
+        course = await CourseFactory.create(session)
+        user = UserFactory.build()
     response = await client.post(
         "/api/users",
         json={

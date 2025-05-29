@@ -25,7 +25,7 @@ from app.pagination import (
 router = APIRouter(prefix="/flows", tags=["flows"], dependencies=[CurrentUserDep])
 
 
-@router.get("feed", response_model=PaginatedResponse[FlowInFeed])
+@router.get("/feed", response_model=PaginatedResponse[FlowInFeed])
 async def feed(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
@@ -42,7 +42,7 @@ async def feed(
     return paginate(flows_in_feed, pagination)
 
 
-@router.get("discover", response_model=PaginatedResponse[FlowInFeed])
+@router.get("/discover", response_model=PaginatedResponse[FlowInFeed])
 async def discover_flows(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
@@ -55,6 +55,7 @@ async def discover_flows(
     return paginate(flows_in_feed, pagination)
 
 
+@router.get("/search", response_model=list[FlowInSearch])
 async def search_flows(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
@@ -62,12 +63,16 @@ async def search_flows(
 ) -> list[FlowInSearch]:
     """Search flows for the current user"""
 
-    return await flow_service.search_flows(
+    flows = await flow_service.search_flows(
         db_session, user_id=current_user.id, query=query
     )
+    return [
+        FlowInSearch.from_orm_model_for_user(flow, user_id=current_user.id)
+        for flow in flows
+    ]
 
 
-@router.get("/{id}", response_model=FlowDetail)
+@router.get("/{id}/details", response_model=FlowDetail)
 async def flow_detail(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
@@ -76,7 +81,8 @@ async def flow_detail(
     """Get details for a specific flow"""
 
     try:
-        return await flow_service.get_flow(db_session, current_user.id, id)
+        flow = await flow_service.get_flow_detail(db_session, flow_id=id)
+        return FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
     except flow_service.FlowNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
@@ -160,16 +166,12 @@ async def submit_answer_multiple_choice(
     try:
         return await flow_service.submit_answer_multiple_choice(
             db_session,
-            current_user.id,
-            id,
-            answer.question_id,
-            answer.choice_id,
+            user_id=current_user.id,
+            flow_id=id,
+            question_id=answer.question_id,
+            choice_id=answer.choice_id,
         )
-    except flow_service.FlowNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
-        )
-    except flow_service.FlowElementNotFoundError:
+    except flow_service.FlowQuestionNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow element not found"
         )
@@ -177,7 +179,7 @@ async def submit_answer_multiple_choice(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{id}/delete", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_flow(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
@@ -197,9 +199,9 @@ async def delete_flow(
 @router.get("/user/{user_id}", response_model=list[FlowInSearch])
 async def user_flows(
     db_session: DBSessionAnnotated,
-    current_user: CurrentUserAnnotated,
     user_id: int,
-):
+) -> list[FlowInSearch]:
     """Get all flows for a specific user"""
 
-    return await flow_service.list_user_flows(db_session, user_id)
+    flows = await flow_service.list_user_flows(db_session, user_id=user_id)
+    return [FlowInSearch.from_orm_model(flow) for flow in flows]

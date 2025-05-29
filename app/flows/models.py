@@ -18,7 +18,7 @@ from sqlalchemy import (
     func,
     select,
 )
-from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.base import (
@@ -125,6 +125,7 @@ class Flow(Base):
         order_by="FlowTranscriptionBlock.block_number",
         cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
+        lazy="raise_on_sql",
     )
 
     elements: Mapped[list["FlowElement"]] = relationship(
@@ -132,6 +133,7 @@ class Flow(Base):
         order_by="FlowElement.order",
         cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
+        lazy="raise_on_sql",
     )
 
     @hybrid_property
@@ -196,6 +198,73 @@ class Flow(Base):
             )
         ).scalar_subquery()
 
+    @hybrid_method
+    def num_user_total_answers(self, user_id: int) -> int:
+        """Count total answers for this flow by a specific user."""
+        return len(
+            [
+                element
+                for element in self.elements
+                if isinstance(element, FlowQuestion)
+                and any(fqu.user_id == user_id for fqu in element.flow_question_users)
+            ]
+        )
+
+    @num_user_total_answers.inplace.expression
+    @classmethod
+    def _num_user_total_answers_expression(cls, user_id: int):
+        """SQL expression for counting total answers for a user"""
+        return (
+            select(func.count())
+            .select_from(FlowQuestionUser)
+            .where(
+                FlowQuestionUser.flow_element_id.in_(
+                    select(FlowElement.id)
+                    .select_from(FlowElement)
+                    .where(FlowElement.flow_id == cls.id)
+                ),
+                FlowQuestionUser.user_id == user_id,
+                (FlowQuestionUser.choice_id.is_not(None))
+                | (FlowQuestionUser.submitted_text != ""),
+            )
+        ).scalar_subquery()
+
+    @hybrid_method
+    def num_user_correct_answers(self, user_id: int) -> int:
+        """Count correct answers for this flow by a specific user."""
+        return len(
+            [
+                element
+                for element in self.elements
+                if isinstance(element, FlowQuestion)
+                and any(
+                    fqu.user_id == user_id
+                    and fqu.choice is not None
+                    and fqu.choice.is_correct
+                    for fqu in element.flow_question_users
+                )
+            ]
+        )
+
+    @num_user_correct_answers.inplace.expression
+    @classmethod
+    def _num_user_correct_answers_expression(cls, user_id: int):
+        """SQL expression for counting correct answers for a user"""
+        return (
+            select(func.count())
+            .select_from(FlowQuestionUser)
+            .where(
+                FlowQuestionUser.flow_element_id.in_(
+                    select(FlowElement.id)
+                    .select_from(FlowElement)
+                    .where(FlowElement.flow_id == cls.id)
+                ),
+                FlowQuestionUser.user_id == user_id,
+                FlowQuestionUser.choice_id.is_not(None),
+                FlowQuestionUser.choice.is_correct,
+            )
+        ).scalar_subquery()
+
 
 class FlowElement(Base):
     flow_id: Mapped[int] = mapped_column(
@@ -203,7 +272,9 @@ class FlowElement(Base):
     )
     flow: Mapped[Flow] = relationship(back_populates="elements")
 
-    order: Mapped[int] = mapped_column()
+    order: Mapped[int] = mapped_column(
+        CheckConstraint("order >= 0", name="flow_element_order_check"),
+    )
     element_type: Mapped[str] = mapped_column(Text)
 
     question_id: Mapped[int | None] = mapped_column(
@@ -214,7 +285,7 @@ class FlowElement(Base):
         UniqueConstraint("flow_id", "order"),
         UniqueConstraint("flow_id", "question_id"),
         CheckConstraint(
-            "(element_type = 'question' AND question_id IS NOT NULL)",
+            "(element_type = 'flow_question' AND question_id IS NOT NULL)",
             name="ck_flowelement_exactly_one_payload",
         ),
     )
@@ -264,9 +335,12 @@ class Question(Base):
     )
 
     source_type: Mapped[QuestionSourceType] = mapped_column()
-    official_source: Mapped[str] = mapped_column(
-        default=""
-    )  # add constraint according to source type
+    official_source_id: Mapped[int | None] = mapped_column(
+        ForeignKey("official_question_source.id")
+    )
+    official_source: Mapped["OfficialQuestionSource | None"] = relationship(
+        lazy="raise_on_sql", foreign_keys=[official_source_id]
+    )
     source_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("user.id")
     )  # add constraint according to source type
@@ -463,17 +537,54 @@ class FlowUserFeed(Base):
     __table_args__ = (UniqueConstraint("user_id", "flow_id"),)
 
 
+class CampaignType(StrEnum):
+    EXTERNAL = "external"
+    SCHOOL = "school"
+    INTENDED_EDUCATION = "intended_education"
+    REFERRALS = "referrals"
+    FLOW = "flow"
+    ADDED_PHONE_NUMBER = "added_phone_number"
+
+
 class Campaign(Base):
+    """
+    Represents a campaign with optional images, external link, and type.
+
+    Attributes:
+        name: The name of the campaign.
+        text: The main text content of the campaign.
+        external_link: A URL for an external link associated with the campaign.
+        external_link_text: The text to display for the external link.
+        image1_id: The ID of the first image file, or None.
+        image1: The first image file object, or None.
+        image2_id: The ID of the second image file, or None.
+        image2: The second image file object, or None.
+        probability: The probability value associated with the campaign.
+        campaign_type: The type of the campaign.
+    """
+
     name: Mapped[str] = mapped_column(Text)
     text: Mapped[str] = mapped_column(Text)
-    action_link: Mapped[str] = mapped_column(Text)
-    action_text: Mapped[str] = mapped_column(Text)
+    external_link: Mapped[str] = mapped_column(Text)
+    external_link_text: Mapped[str] = mapped_column(Text)
 
-    cover_image_id: Mapped[int | None] = mapped_column(ForeignKey("file.id"))
-    cover_image: Mapped["File | None"] = relationship(lazy="raise_on_sql")
+    image1_id: Mapped[int | None] = mapped_column(ForeignKey("file.id"))
+    image1: Mapped["File | None"] = relationship(
+        "File",
+        lazy="raise_on_sql",
+        foreign_keys=[image1_id],
+    )
 
-    num_questions_for_trigger_first: Mapped[int] = mapped_column()
-    num_questions_for_trigger_recurring: Mapped[int] = mapped_column()
+    image2_id: Mapped[int | None] = mapped_column(ForeignKey("file.id"))
+    image2: Mapped["File | None"] = relationship(
+        "File",
+        lazy="raise_on_sql",
+        foreign_keys=[image2_id],
+    )
+
+    probability: Mapped[float] = mapped_column(default=0.0)
+
+    campaign_type: Mapped[CampaignType] = mapped_column()
 
 
 class FieldFile(Protocol):

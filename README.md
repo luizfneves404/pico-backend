@@ -1,5 +1,10 @@
 # Development Guidelines
 
+## Python
+
+- Use type hints for everything that type checking in strict mode requires.
+- Think about the interface of functions and consider forcing the caller to pass some parameters as kwargs instead of positional arguments by using "*" before the kwargs. This is especially useful for service functions and functions with many parameters. It makes it easier to change parameters and to add new parameters in the future, since the order of the parameters is not important.
+
 ## Database Schema Design
 
 - If a column needs unique=True, don't add index=True, because PostgreSQL automatically creates an index for unique constraints.
@@ -13,7 +18,7 @@
 - Remember to do flush after altering objects to send changes to the database, since autoflush is off. This was chosen so that we know exactly when we are hitting the database.
 - Don't use column_property with alias, since it will force some early evaluation and break things. Use hybrid_property instead.
 - If you use a third mapped class as a many-to-many table, add viewonly=True to the relationship connecting the two other mapped classes to avoid conflicts.
-- When you want to define a "strong" relationship, where a child should be deleted if the parent is, you probably want to use the following, plus any other kwargs you want to pass to the relationship:
+- Use lazy="raise_on_sql" basically always on relationships, we don't want to do db access implicitly (even though using async sqlalchemy would already block this implicit db access, i prefer to be explicit). When you want to define a "strong" relationship, where a child should be deleted if the parent is, you probably want to use the following, plus any other kwargs you want to pass to the relationship:
 
 ```python
 relationship(
@@ -36,6 +41,7 @@ Add to the script.py.mako file.
 
 - Prefer to return the pydantic models directly in the router functions, instead of using response_model=... and returning your ORM models. This is better because it allows for better type checking. And don't create those pydantic models using model_validate, because model_validate doesn't give linting errors.
 - To make this more reusable, consider adding a classmethod on the pydantic model that takes in a db model and constructs the pydantic model instance. Or alternatively, create a function inside routers.py that takes an ORM model and returns a pydantic model.
+- The DBSessionAnnotated dependency takes care of committing, so don't call await db_session.commit() in the router function (or in services).
 
 
 # Common Commands
@@ -143,8 +149,7 @@ I used to use pipenv, but i now think Poetry is better.
 
 ## Uvicorn
 
-Well maintained, actively developed, production ready. I wanted to use Granian, which is written in Rust, but it's less maintained. I didn't benchmark anything, and I could do this
-in the future if desired.
+Well maintained, actively developed, production ready. I wanted to use Granian, which is written in Rust, but it's less maintained. I didn't benchmark anything, and I could do this in the future if desired.
 
 ## FastAPI
 
@@ -160,12 +165,11 @@ I chose SQLAlchemy. It's a very powerful ORM that is well maintained and has asy
 
 ## Asynchronous
 
-I chose to use async for the database operations and the API. This should be an improvement over the Django api, which was asynchronous but the underlying ORM was still blocking,
-so queries had to run in a thread outside of the event loop.
+I chose to use async for the database operations and the API. This should be an improvement over the Django api, which was asynchronous but the underlying ORM was still blocking, so queries had to run in a thread outside of the event loop.
 
 ## Arq
 
-I chose Arq for the task queue. I was afraid that it wasn't used or maintained enough. No new versions in 2024, for example (in 2025 there was one). But since it's very simple and easy to use, I decided to give it a try. I chose it instead of Celery because of the async support. I also did not choose taskiq because there were less github stars, and i also think i would have had to implement the redis broker on my own (since their implementation is not recommended for production).
+I chose Arq for the task queue. I was afraid that it wasn't used or maintained enough. No new versions in 2024, for example (in 2025 there was one though). But since it's very simple and easy to use, I decided to give it a try. I chose it instead of Celery because of the async support. I also did not choose taskiq because there were less github stars, and i also think i would have had to implement the redis broker on my own (since their implementation is not recommended for production).
 
 
 ## Dependencies

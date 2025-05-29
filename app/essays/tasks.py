@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import app.files.utils as file_utils
-from app.chat import notifications as notifications_utils
 from app.database import db_manager
 from app.essays.constants import (
     CLEAN_TEXT_MODEL,
@@ -29,6 +28,7 @@ from app.shared.constants import (
     EXTRACT_OPENAI_EXTRACTION_METHOD,
     PEN_TO_PRINT_EXTRACTION_METHOD,
 )
+from app.ws import notifications as notifications_utils
 
 logger = logging.getLogger(__name__)
 

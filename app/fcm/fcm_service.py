@@ -8,7 +8,7 @@ from firebase_admin import credentials, initialize_app
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import app.chat.notifications as notifications_service
+import app.ws.service as ws_service
 from app.arq_client import enqueue_job
 from app.config import settings
 from app.database import db_manager
@@ -146,9 +146,7 @@ async def send_notifications(
     user_ids = [data.user_id for data in notifications_list]
 
     # Get badge counts for these users
-    notification_counts = await notifications_service.count_queued_notifications(
-        user_ids
-    )
+    notification_counts = await ws_service.count_queued_notifications(user_ids)
 
     # Create notifications with badge counts
     notifications_with_badge = [

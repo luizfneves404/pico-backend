@@ -35,9 +35,7 @@ class AnswerInFeed(BaseModel):
                 id=flow_question_user.user.id, username=flow_question_user.user.username
             ),
             submitted_text=flow_question_user.submitted_text,
-            choice_id=flow_question_user.choice.id
-            if flow_question_user.choice
-            else None,
+            choice_id=flow_question_user.choice_id,
         )
 
 
@@ -154,12 +152,64 @@ class FlowInFeed(BaseModel):
 
 class FlowDetail(FlowInFeed):
     # but now with all questions
-    num_user_answers: int
+    num_user_total_answers: int
     num_user_correct_answers: int
+
+    @classmethod
+    def from_orm_model_for_user(cls, flow: Flow, *, user_id: int) -> "FlowDetail":
+        return cls(
+            id=flow.id,
+            code=flow.code,
+            created_at=flow.created_at,
+            title=flow.title,
+            cover_image=flow.cover_image.url if flow.cover_image else None,
+            action_link=flow.action_link,
+            action_text=flow.action_text,
+            created_by=SimpleUser(
+                id=flow.created_by.id, username=flow.created_by.username
+            ),
+            query=flow.query,
+            area=flow.area,
+            source_filter=flow.source_filter,
+            difficulty=flow.difficulty,
+            elements=[
+                FlowQuestionInFeed.from_orm_model(element)
+                for element in flow.elements
+                if isinstance(element, FlowQuestion)
+            ],
+            num_total_elements=flow.num_total_elements,
+            num_user_total_answers=flow.num_user_total_answers(user_id),
+            num_user_correct_answers=flow.num_user_correct_answers(user_id),
+        )
 
 
 class FlowInSearch(FlowDetail):
-    pass
+    @classmethod
+    def from_orm_model_for_user(cls, flow: Flow, *, user_id: int) -> "FlowInSearch":
+        return cls(
+            id=flow.id,
+            code=flow.code,
+            created_at=flow.created_at,
+            title=flow.title,
+            cover_image=flow.cover_image.url if flow.cover_image else None,
+            action_link=flow.action_link,
+            action_text=flow.action_text,
+            created_by=SimpleUser(
+                id=flow.created_by.id, username=flow.created_by.username
+            ),
+            query=flow.query,
+            area=flow.area,
+            source_filter=flow.source_filter,
+            difficulty=flow.difficulty,
+            elements=[
+                FlowQuestionInFeed.from_orm_model(element)
+                for element in flow.elements
+                if isinstance(element, FlowQuestion)
+            ],
+            num_total_elements=flow.num_total_elements,
+            num_user_total_answers=flow.num_user_total_answers(user_id),
+            num_user_correct_answers=flow.num_user_correct_answers(user_id),
+        )
 
 
 class QuestionDensity(

@@ -14,7 +14,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/token/pair")
 
 async def get_db_session():
     """
-    This function is used to get a database session.
+    This function is used to get a database session ready to be used in an http endpoint (since it starts a transaction).
     It will begin a transaction and yield the session.
     The transaction will be committed if the session is used.
     If an exception is raised, the transaction will be rolled back.

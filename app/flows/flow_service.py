@@ -1,17 +1,23 @@
 from fastapi import UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.files.models import create_file
 from app.flows.models import (
+    Choice,
     Flow,
     FlowElement,
     FlowInputType,
     FlowQuestion,
     FlowQuestionUser,
     FlowUserFeed,
+    Question,
 )
 from app.users.models import User
+
+# number of elements to load in the feed
+NUM_ELEMENTS_TO_LOAD_IN_FEED = 5
 
 
 class FlowNotFoundError(Exception):
@@ -20,7 +26,7 @@ class FlowNotFoundError(Exception):
     pass
 
 
-class FlowElementNotFoundError(Exception):
+class FlowQuestionNotFoundError(Exception):
     """Raised when a flow element is not found"""
 
     pass
@@ -55,15 +61,17 @@ async def feed(db_session: AsyncSession, *, user_id: int) -> list[Flow]:
     )
 
     query = (
-        select(Flow, func.count(FlowQuestionUser.id).label("answer_count"))
+        select(Flow)
         .join(FlowElement, Flow.id == FlowElement.flow_id)
         .outerjoin(FlowQuestionUser, FlowElement.id == FlowQuestionUser.flow_element_id)
         .where(Flow.id.not_in(seen_flow_ids_query))  # Exclude already seen flows
         .group_by(Flow.id)
         .order_by(func.count(FlowQuestionUser.id).desc(), Flow.created_at.desc())
+        .options(*get_flow_loader(num_elements=NUM_ELEMENTS_TO_LOAD_IN_FEED))
     )
     result = await db_session.execute(query)
     flows = [row[0] for row in result.all()]
+    print("flows", flows)
 
     # Mark these flows as seen by this user
     for flow in flows:
@@ -108,8 +116,25 @@ async def get_flow(db_session: AsyncSession, *, flow_id: int) -> Flow:
     return flow
 
 
+async def get_flow_detail(db_session: AsyncSession, *, flow_id: int) -> Flow:
+    """Get a specific flow with details"""
+    query = (
+        select(Flow)
+        .where(Flow.id == flow_id)
+        .options(*get_flow_loader(num_elements=None))
+    )
+    result = await db_session.execute(query)
+    flow = result.scalar_one_or_none()
+
+    if not flow:
+        raise FlowNotFoundError()
+
+    return flow
+
+
 async def create_flow(
     db_session: AsyncSession,
+    *,
     user: User,
     input_topic: str,
     input_files: list[UploadFile],
@@ -145,6 +170,7 @@ async def create_flow(
 
 async def create_flow_with_files(
     db_session: AsyncSession,
+    *,
     user: User,
     title: str,
     query: str,
@@ -208,6 +234,7 @@ async def create_flow_with_files(
 
 async def _generate_flow_questions(
     db_session: AsyncSession,
+    *,
     flow: Flow,
     n_questions: int,
 ) -> None:
@@ -224,78 +251,48 @@ async def _generate_flow_questions(
 
 async def submit_answer_multiple_choice(
     db_session: AsyncSession,
+    *,
     user_id: int,
     flow_id: int,
     question_id: int,
     choice_id: int | None,
-) -> dict[str, str]:
+) -> None:
     """Submit an answer for a question in a flow"""
-    # Check if flow exists
-    flow = await get_flow(db_session, flow_id=flow_id)
 
-    # Check if flow element exists
-    query = select(FlowElement).where(
-        FlowElement.id == question_id, FlowElement.flow_id == flow_id
+    # Check if flow question exists
+    query = (
+        select(FlowQuestion)
+        .where(FlowQuestion.id == question_id, FlowQuestion.flow_id == flow_id)
+        .options(
+            selectinload(FlowQuestion.question).options(
+                selectinload(Question.choices).selectinload(Choice.image)
+            )
+        )
     )
+
     result = await db_session.execute(query)
-    flow_element = result.scalar_one_or_none()
+    flow_question = result.scalar_one_or_none()
 
-    if not flow_element:
-        raise FlowElementNotFoundError()
+    if not flow_question:
+        raise FlowQuestionNotFoundError()
 
-    # Check answer type and validate
-    if isinstance(flow_element, FlowQuestion):
-        if choice_id:
-            # For multiple choice question
-            # Verify that the choice belongs to the question
-            question = flow_element.question
-            await db_session.refresh(question, ["choices"])
+    question = flow_question.question
 
-            valid_choice = False
-            for choice in question.choices:
-                if choice.id == choice_id:
-                    valid_choice = True
-                    break
+    if not any(choice.id == choice_id for choice in question.choices):
+        raise InvalidAnswerError("Invalid choice for this question")
 
-            if not valid_choice:
-                raise InvalidAnswerError("Invalid choice for this question")
-
-            # Create flow_question_user entry
-            flow_question_user = FlowQuestionUser(
-                flow_element_id=flow_element.id,
-                user_id=user_id,
-                choice_id=choice_id,
-            )
-            db_session.add(flow_question_user)
-
-        elif submitted_text:
-            # For open-ended question
-            flow_question_user = FlowQuestionUser(
-                flow_element_id=flow_element.id,
-                user_id=user_id,
-                submitted_text=submitted_text,
-            )
-            db_session.add(flow_question_user)
-
-        else:
-            raise InvalidAnswerError(
-                "Either choice_id or submitted_text must be provided"
-            )
-
-    else:
-        raise InvalidAnswerError("This flow element is not a question")
-
-    await db_session.commit()
-
-    # Return feedback or results
-    return {
-        "status": "success",
-        "message": "Answer submitted successfully",
-    }
+    # Create flow_question_user entry
+    flow_question_user = FlowQuestionUser(
+        flow_element_id=flow_question.id,
+        user_id=user_id,
+        choice_id=choice_id,
+    )
+    db_session.add(flow_question_user)
 
 
 async def add_elements_to_flow(
     db_session: AsyncSession,
+    *,
     user_id: int,
     flow_id: int,
     query: str,
@@ -312,9 +309,8 @@ async def add_elements_to_flow(
         raise FlowNotFoundError()
 
     # Generate additional questions
-    await _generate_flow_questions(db_session, flow, n_questions)
+    await _generate_flow_questions(db_session, flow=flow, n_questions=n_questions)
 
-    await db_session.commit()
     await db_session.refresh(flow, ["elements"])
 
     return flow
@@ -322,6 +318,7 @@ async def add_elements_to_flow(
 
 async def delete_flow(
     db_session: AsyncSession,
+    *,
     user_id: int,
     flow_id: int,
 ) -> None:
@@ -333,11 +330,11 @@ async def delete_flow(
         raise FlowNotFoundError()
 
     await db_session.delete(flow)
-    await db_session.commit()
 
 
 async def generate_pdf(
     db_session: AsyncSession,
+    *,
     user_id: int,
     flow_id: int,
 ) -> str:
@@ -348,3 +345,36 @@ async def generate_pdf(
     # This would typically call a service to generate a PDF
     # For now, it's a placeholder that returns a fake URL
     return f"https://example.com/flows/{flow.id}/pdf"
+
+
+def get_flow_loader(num_elements: int | None):
+    """
+    Returns loader options for SQLAlchemy queries to load Flow and related objects.
+
+    Args:
+        num_elements: If provided, limits the number of Flow.elements loaded by order. If None, loads all elements.
+
+    Returns:
+        A list of loader options for SQLAlchemy queries.
+    """
+    element_loader = (
+        selectinload(
+            Flow.elements.and_(FlowElement.order < num_elements).of_type(FlowQuestion)
+        )
+        if num_elements is not None
+        else selectinload(Flow.elements.of_type(FlowQuestion))
+    )
+    return [
+        selectinload(Flow.created_by),
+        selectinload(Flow.cover_image),
+        element_loader.options(
+            selectinload(FlowQuestion.question).options(
+                selectinload(Question.choices).selectinload(Choice.image),
+                selectinload(Question.source_user),
+            ),
+            selectinload(FlowQuestion.flow_question_users).options(
+                selectinload(FlowQuestionUser.user),
+                selectinload(FlowQuestionUser.choice),
+            ),
+        ),
+    ]

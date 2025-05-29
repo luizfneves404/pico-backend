@@ -21,12 +21,6 @@ from app.flows.models import (
     ENEM_AREAS,
     Choice,
     Question,
-    QuestionType,
-    Quiz,
-    QuizType,
-    SessionQuestion,
-    SessionQuestionUser,
-    UserInfo,
 )
 from app.flows.utils import (
     CATEGORIES,

@@ -1,10 +1,13 @@
-import asyncio
+"""import asyncio
 import logging
+from enum import StrEnum
 from typing import Any, Coroutine, Literal, TypeVar
 
 from redis.asyncio.client import Pipeline
 
-from app.chat.schemas import (
+from app.fcm import fcm_service
+from app.redis_client import get_redis
+from app.ws.schemas import (
     CleanedTextNotification,
     ErrorNotification,
     EssayCorrectionNotification,
@@ -12,8 +15,6 @@ from app.chat.schemas import (
     MessageNotification,
     Notification,
 )
-from app.fcm import fcm_service
-from app.redis_client import get_redis
 
 MAX_PIPELINE_BATCH_SIZE = 100
 
@@ -26,7 +27,14 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=Notification)
 
 
-async def set_user_status(user_id: int, status: Literal["online", "offline"]):
+class UserStatus(StrEnum):
+    #User status.
+
+    ONLINE = "online"
+    OFFLINE = "offline"
+
+
+async def set_user_status(user_id: int, status: UserStatus):
     conn = get_redis()
     await conn.set(f"user_status_{user_id}", status)
     logger.debug(f"User {user_id} status in redis set to '{status}'")
@@ -380,3 +388,4 @@ def prepare_messages_notifications(messages_data: list):
     )
 
     return NotificationBatch(user_notification_tuples)
+"""

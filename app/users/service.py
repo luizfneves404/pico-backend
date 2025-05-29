@@ -10,10 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import app.amp as amp
-import app.chat.notifications as notifications_service
-import app.chat.service as chat_service
 import app.mail as mail
 import app.timezone as timezone
+import app.ws.service as ws_service
 from app.education import service as education_service
 from app.education.models import Education
 
@@ -141,7 +140,6 @@ async def get_user(
         stmt = stmt.where(~User.username.in_(SENTINEL_USERNAMES))
 
     user = (await db_session.scalars(stmt)).first()
-
     return user
 
 
@@ -725,13 +723,13 @@ async def get_online_info(
             - last_online: last online time for offline users, None for online users
     """
     # Get current online/offline status for all users
-    statuses = await notifications_service.get_user_statuses(user_ids)
+    statuses = await ws_service.get_user_statuses(user_ids)
 
     # Get last online time for offline users
     offline_user_ids = [
         user_id for user_id, status in zip(user_ids, statuses) if status != "online"
     ]
-    last_online_users = await chat_service.get_last_online_users(
+    last_online_users = await ws_service.get_last_online_users(
         db_session, offline_user_ids
     )
 

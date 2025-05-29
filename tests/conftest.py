@@ -1,3 +1,4 @@
+import contextlib
 import logging
 from typing import (
     AsyncContextManager,
@@ -16,9 +17,11 @@ import redis
 from arq.worker import Worker, create_worker
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from httpx_ws.transport import ASGIWebSocketTransport
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.arq_client as arq_client
+import app.users.jwt_token as jwt_token
 from alembic.command import upgrade
 from app.arq_worker import WorkerSettings
 from app.config import settings
@@ -27,12 +30,13 @@ from app.deps import get_db_session
 from app.fcm.fcm_service import init_firebase
 from app.redis_client import get_redis, use_redis
 from app.users.models import User
+from app.ws.routers import get_db_session_websocket
 from tests.db_utils import alembic_config_from_url, tmp_database
 from tests.factories import UserFactory
 
 T = TypeVar("T")
 DEFAULT_TEST_PASSWORD = "defaultpassword"
-
+BASE_URL = "http://test"
 logger = logging.getLogger(__name__)
 
 
@@ -119,12 +123,38 @@ async def session_factory(
         yield factory
 
 
+@pytest.fixture()
+async def websocket_session_factory(
+    sessionmanager_for_tests: DatabaseSessionManager,
+) -> AsyncGenerator[Callable[[], AsyncContextManager[AsyncSession]], None]:
+    """
+    Creates a session factory for WebSocket tests that commits data to make it
+    visible across different event loops and database connections.
+    """
+
+    @contextlib.asynccontextmanager
+    async def get_websocket_session() -> AsyncIterator[AsyncSession]:
+        async with sessionmanager_for_tests.websocket_session() as session:
+            yield session
+
+    yield get_websocket_session
+
+
 @pytest.fixture
 async def session(
     session_factory: Callable[[], AsyncContextManager[AsyncSession]],
 ) -> AsyncIterator[AsyncSession]:
     """Get a new session for each test"""
     async with session_factory() as session:
+        yield session
+
+
+@pytest.fixture
+async def websocket_session(
+    websocket_session_factory: Callable[[], AsyncContextManager[AsyncSession]],
+) -> AsyncIterator[AsyncSession]:
+    """Get a new WebSocket-compatible session for each test"""
+    async with websocket_session_factory() as session:
         yield session
 
 
@@ -148,6 +178,7 @@ async def arq_worker() -> AsyncGenerator[Worker, None]:
 @pytest.fixture()
 def app(
     session_factory: Callable[[], AsyncContextManager[AsyncSession]],
+    websocket_session_factory: Callable[[], AsyncContextManager[AsyncSession]],
     arq_worker: Worker,
     redis_for_tests: redis.Redis,
     firebase_for_tests: None,
@@ -155,12 +186,19 @@ def app(
     from app.main import fastapi_app
 
     async def get_db_session_override():
-        # Create a new session for each request
         async with session_factory() as session:
             async with session.begin():
                 yield session
 
     fastapi_app.dependency_overrides[get_db_session] = get_db_session_override
+
+    async def get_db_session_websocket_override():
+        async with websocket_session_factory() as session:
+            yield session
+
+    fastapi_app.dependency_overrides[get_db_session_websocket] = (
+        get_db_session_websocket_override
+    )
     yield fastapi_app
     fastapi_app.dependency_overrides.clear()
 
@@ -170,29 +208,58 @@ async def client(
     app: FastAPI,
 ) -> AsyncIterator[AsyncClient]:
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app), base_url=BASE_URL
     ) as client:
+        yield client
+
+
+@pytest.fixture
+async def ws_client(app: FastAPI) -> AsyncIterator[AsyncClient]:
+    async with AsyncClient(transport=ASGIWebSocketTransport(app)) as client:
         yield client
 
 
 @pytest.fixture()
 async def user(session: AsyncSession) -> User:
     async with session.begin():
-        return await UserFactory.create(session=session)
+        return await UserFactory.create(session)
 
 
 @pytest.fixture()
-async def user_client(client: AsyncClient, user: User) -> AsyncIterator[AsyncClient]:
-    token_response = await client.post(
-        "/api/token/pair",
-        data={
-            "username": user.username,
-            "password": DEFAULT_TEST_PASSWORD,
-        },
-    )
-    token_data = token_response.json()
+async def websocket_user(
+    sessionmanager_for_tests: DatabaseSessionManager,
+) -> AsyncGenerator[User, None]:
+    """
+    Creates a user that's committed to the database for WebSocket tests.
+    This ensures the user is visible to WebSocket sessions running in different event loops.
+    """
+    # Use a regular session with transaction to commit the user
+    async with sessionmanager_for_tests.session_with_transaction() as session:
+        user = await UserFactory.create(session)
+        # Transaction is committed when context exits
 
-    client.headers["Authorization"] = f"Bearer {token_data['access']}"
+    yield user
+
+    # Clean up: delete the user after the test
+    async with sessionmanager_for_tests.session_with_transaction() as session:
+        await session.delete(user)
+
+
+@pytest.fixture
+def access_token(user: User) -> str:
+    return jwt_token.generate_tokens(user)[0]
+
+
+@pytest.fixture
+def websocket_access_token(websocket_user: User) -> str:
+    return jwt_token.generate_tokens(websocket_user)[0]
+
+
+@pytest.fixture
+async def user_client(
+    client: AsyncClient, access_token: str
+) -> AsyncIterator[AsyncClient]:
+    client.headers["Authorization"] = f"Bearer {access_token}"
 
     yield client
 
@@ -200,11 +267,11 @@ async def user_client(client: AsyncClient, user: User) -> AsyncIterator[AsyncCli
 @pytest.fixture
 async def user2(session: AsyncSession) -> User:
     async with session.begin():
-        return await UserFactory.create(session=session)
+        return await UserFactory.create(session)
 
 
 @pytest.fixture
-def users_factory(session: AsyncSession) -> Callable[[int], Awaitable[Sequence[User]]]:
+def user_factory(session: AsyncSession) -> Callable[[int], Awaitable[Sequence[User]]]:
     """
     Returns a factory that creates a specified number of users.
     Args:
@@ -215,7 +282,7 @@ def users_factory(session: AsyncSession) -> Callable[[int], Awaitable[Sequence[U
 
     async def factory(n: int) -> Sequence[User]:
         async with session.begin():
-            return await UserFactory.create_batch(n, session=session)
+            return await UserFactory.create_batch(n, session)
 
     return factory
 
@@ -224,7 +291,7 @@ def users_factory(session: AsyncSession) -> Callable[[int], Awaitable[Sequence[U
 def user_client_factory(client: AsyncClient, session: AsyncSession):
     async def factory(n: int) -> list[tuple[User, AsyncClient]]:
         async with session.begin():
-            users = await UserFactory.create_batch(n, session=session)
+            users = await UserFactory.create_batch(n, session)
         pairs: list[tuple[User, AsyncClient]] = []
         for user in users:
             token_response = await client.post(

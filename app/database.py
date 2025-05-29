@@ -2,6 +2,7 @@ import contextlib
 import logging
 from typing import AsyncContextManager, AsyncIterator, Callable
 
+from sqlalchemy import NullPool
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
     AsyncEngine,
@@ -11,7 +12,6 @@ from sqlalchemy.ext.asyncio import (
 )
 
 # all of these are needed so that the Base subclasses are registered
-import app.chat.models  # noqa: F401
 import app.currency.models  # noqa: F401
 import app.education.models  # noqa: F401
 
@@ -20,6 +20,7 @@ import app.fcm.models  # noqa: F401
 import app.files.models  # noqa: F401
 import app.flows.models  # noqa: F401
 import app.users.models  # noqa: F401
+import app.ws.models  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,40 @@ class DatabaseSessionManager:
 
             # Roll back the transaction when we're done
             await connection.rollback()
+
+    @contextlib.asynccontextmanager
+    async def websocket_session(self) -> AsyncIterator[AsyncSession]:
+        """
+        Creates a session using a separate NullPool engine for WebSocket use.
+
+        This avoids asyncpg event loop issues when WebSockets run in different
+        event loops than the main application, as discussed in:
+        https://github.com/sqlalchemy/sqlalchemy/discussions/12211
+        """
+        if self._engine is None:
+            raise IOError("DatabaseSessionManager is not initialized")
+
+        # Create a separate engine with NullPool for WebSocket use
+        # Preserve the original URL with all credentials
+        websocket_engine = create_async_engine(
+            url=self._engine.url,
+            pool_pre_ping=True,
+            isolation_level="READ COMMITTED",
+            poolclass=NullPool,
+        )
+
+        websocket_sessionmaker = async_sessionmaker(
+            bind=websocket_engine,
+            expire_on_commit=False,
+            autobegin=False,
+            autoflush=False,
+        )
+
+        try:
+            async with websocket_sessionmaker() as session:
+                yield session
+        finally:
+            await websocket_engine.dispose()
 
 
 db_manager = DatabaseSessionManager()

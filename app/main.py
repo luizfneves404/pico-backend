@@ -25,7 +25,6 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 import app.arq_client as arq_client
 from app.admin_registry import admin_views, authentication_backend, require_admin_login
 from app.amp import track_amplitude_endpoint_event
-from app.chat.websockets import router as websockets_router
 from app.config import Environment, settings
 from app.database import db_manager
 from app.deps import CurrentUserDep
@@ -36,6 +35,7 @@ from app.flows.routers import router as flows_router
 from app.log_filters import add_log_filters
 from app.redis_client import use_redis
 from app.users.routers import token_router, user_router
+from app.ws.routers import router as websockets_router
 from pico_django.pico_backend.asgi import application as django_application
 
 logging.config.fileConfig("logging.ini", disable_existing_loggers=False)
