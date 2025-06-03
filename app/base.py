@@ -1,8 +1,10 @@
 import datetime
+import enum
 import logging
 import re
 from typing import Annotated, Any, Callable, Literal, cast
 
+import sqlalchemy
 from pydantic import BaseModel, Field, TypeAdapter
 from sqlalchemy import TIMESTAMP, MetaData, event, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -110,6 +112,7 @@ class Base(DeclarativeBase):
     )
     type_annotation_map = {
         datetime.datetime: TIMESTAMP(timezone=True),
+        enum.Enum: sqlalchemy.Enum(enum.Enum, length=50, native_enum=False),
     }
 
     @declared_attr.directive

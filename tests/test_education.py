@@ -17,8 +17,12 @@ async def test_list_schools(client: AsyncClient, session: AsyncSession) -> None:
     """Test listing schools using the education API."""
     # Create two schools using the service layer
     async with session.begin():
-        await create_school(session, name="School 1")
-        await create_school(session, name="School 2")
+        await create_school(
+            session, name="School 1", inep_code="INEP123456", user_submitted=False
+        )
+        await create_school(
+            session, name="School 2", inep_code="INEP123457", user_submitted=False
+        )
 
     # Get list of schools using the endpoint
     response = await client.get("/api/education/schools")
@@ -144,10 +148,15 @@ async def test_list_institutions(client: AsyncClient, session: AsyncSession) -> 
     # Create both a school and a college
     async with session.begin():
         await create_school(
-            session, name="Test School for Institutions", user_submitted=False
+            session,
+            name="Test School for Institutions",
+            inep_code="INEP123456",
+            user_submitted=False,
         )
         await create_college(
-            session, name="Test College for Institutions", user_submitted=False
+            session,
+            name="Test College for Institutions",
+            user_submitted=False,
         )
 
     # Get list of all institutions

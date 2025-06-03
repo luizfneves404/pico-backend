@@ -36,11 +36,12 @@ class UserNotFoundError(TokenError):
     pass
 
 
-def generate_tokens(user: UserDB) -> tuple[str, str]:
+def generate_tokens(user: UserDB, auth_provider: str = "local") -> tuple[str, str]:
     """Generate a pair of access and refresh tokens for a user.
 
     Args:
         user (UserDB): The user to generate tokens for.
+        auth_provider (str): The authentication provider ('local', 'google', 'apple').
 
     Returns:
         tuple[str, str]: A tuple containing the access, refresh tokens.
@@ -48,6 +49,8 @@ def generate_tokens(user: UserDB) -> tuple[str, str]:
     now = datetime.now(timezone.utc)
     common_payload = {
         "user_id": user.id,
+        "email": user.email,
+        "auth_provider": auth_provider,
         "iat": int(now.timestamp()),
         "jti": str(uuid.uuid4()),
     }

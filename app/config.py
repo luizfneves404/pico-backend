@@ -153,6 +153,13 @@ class Settings(BaseSettings):
     firebase_json_service_key: str = Field(default=...)
     fcm_dry_run: bool = Field(default=False)
 
+    # Social authentication settings
+    apple_app_id: str = Field(
+        default=..., description="Apple app identifier for ID token verification"
+    )
+
+    google_client_id: str = Field(default=...)
+
     pagination_per_page: int = Field(
         default=20, ge=1, description="Number of items per page"
     )

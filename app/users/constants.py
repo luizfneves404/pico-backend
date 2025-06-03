@@ -1,6 +1,22 @@
 STARTING_DUEL_SCORE = 500
 
-WELCOME_EMAIL_SUBJECT = "Bem-vindo ao Pico!"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+DELETED_USERNAME = "deleted"
+DELETED_PHONE_NUMBER = "1121111111"
+DELETED_EMAIL = "deleted@sophinity.co"
+PICO_USERNAME = "pico"
+PICO_PHONE_NUMBER = "1122211111"
+PICO_EMAIL = "pico@sophinity.co"
+SYSTEM_USERNAME = "system"
+SYSTEM_PHONE_NUMBER = "1122111111"
+SYSTEM_EMAIL = "system@sophinity.co"
+
+SENTINEL_USERNAMES = [DELETED_USERNAME, PICO_USERNAME, SYSTEM_USERNAME]
+
+NUM_RANKED_USERS = 10
+
+WELCOME_EMAIL_SUBJECT = "Welcome to Pico!"
 WELCOME_EMAIL_MESSAGE = """
 <!DOCTYPE html>
 <html>
@@ -83,8 +99,6 @@ WELCOME_EMAIL_MESSAGE = """
 </body>
 </html>
 """
-
-NUM_RANKED_USERS = 10
 
 SYSTEM_MESSAGE_GENERATE_TRANSCRIPTION_FROM_IMAGE = """Você recebeu a tarefa de transcrever o conteúdo acadêmico presente em uma imagem de um caderno ou material escolar.
 

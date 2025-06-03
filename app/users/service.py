@@ -1,146 +1,214 @@
-import datetime
 import logging
+import random
+import re
+import unicodedata
 from typing import Any, Literal
 
-import bcrypt
-from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import func, or_, select
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import app.amp as amp
 import app.mail as mail
-import app.timezone as timezone
-import app.ws.service as ws_service
+import app.users.external_auth as external_auth
 from app.education import service as education_service
 from app.education.models import Education
-
-# from app.flows import quiz_service
-from app.flows.models import (
-    Choice,
-    FlowQuestion,
-    FlowQuestionUser,
-    Question,
-)
-from app.shared.validation import CustomPhoneNumber
-from app.users.models import (
-    EducationLevel,
-    SignupSource,
-    User,
-    UserProfile,
-)
-
-from .constants import (
+from app.users.constants import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    DELETED_EMAIL,
+    DELETED_PHONE_NUMBER,
+    DELETED_USERNAME,
+    NUM_RANKED_USERS,
+    PICO_EMAIL,
+    PICO_PHONE_NUMBER,
+    PICO_USERNAME,
+    SENTINEL_USERNAMES,
+    SYSTEM_EMAIL,
+    SYSTEM_PHONE_NUMBER,
+    SYSTEM_USERNAME,
     WELCOME_EMAIL_MESSAGE,
     WELCOME_EMAIL_SUBJECT,
 )
-
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
-DELETED_USERNAME = "deleted"
-DELETED_PHONE_NUMBER = "1121111111"
-DELETED_EMAIL = "deleted@sophinity.co"
-PICO_USERNAME = "pico"
-PICO_PHONE_NUMBER = "1122211111"
-PICO_EMAIL = "pico@sophinity.co"
-SYSTEM_USERNAME = "system"
-SYSTEM_PHONE_NUMBER = "1122111111"
-SYSTEM_EMAIL = "system@sophinity.co"
-
-SENTINEL_USERNAMES = [DELETED_USERNAME, PICO_USERNAME, SYSTEM_USERNAME]
-
-NUM_RANKED_USERS = 10
+from app.users.exceptions import (
+    AccountExistsError,
+    EmailAlreadyExists,
+    InvalidCredentialsError,
+    InvalidTokenError,
+    PhoneNumberAlreadyExists,
+    ReferredByNotFoundError,
+    SocialAuthError,
+    UsernameAlreadyExists,
+    UserNotFoundError,
+)
+from app.users.models import EducationLevel, SignupSource, User, UserProfile
+from app.users.social import (
+    check_contacts,
+    get_ranking,
+    search_username,
+)
+from app.users.utils import (
+    get_online_info,
+    get_streak_info,
+)
 
 logger = logging.getLogger(__name__)
+__all__ = [
+    # Exceptions
+    "UserNotFoundError",
+    "UsernameAlreadyExists",
+    "PhoneNumberAlreadyExists",
+    "EmailAlreadyExists",
+    "ReferredByNotFoundError",
+    "InvalidCredentialsError",
+    "SocialAuthError",
+    "InvalidTokenError",
+    "AccountExistsError",
+    # Constants
+    "ACCESS_TOKEN_EXPIRE_MINUTES",
+    "DELETED_USERNAME",
+    "DELETED_PHONE_NUMBER",
+    "DELETED_EMAIL",
+    "PICO_USERNAME",
+    "PICO_PHONE_NUMBER",
+    "PICO_EMAIL",
+    "SYSTEM_USERNAME",
+    "SYSTEM_PHONE_NUMBER",
+    "SYSTEM_EMAIL",
+    "SENTINEL_USERNAMES",
+    "NUM_RANKED_USERS",
+    "WELCOME_EMAIL_SUBJECT",
+    "WELCOME_EMAIL_MESSAGE",
+    # Authentication
+    "authenticate_user_by_apple",
+    "authenticate_user_by_google",
+    "authenticate_user_by_password",
+    "get_password_hash",
+    "verify_password",
+    # CRUD
+    "create_user_by_password",
+    "delete_user",
+    "get_sentinel_users",
+    "get_user",
+    "to_other_user_out",
+    # Profile management
+    "update_user_fields",
+    # Social
+    "check_contacts",
+    "get_ranking",
+    "search_username",
+    # Utils
+    "get_online_info",
+    "get_streak_info",
+]
 
-phone_number_adapter: TypeAdapter[CustomPhoneNumber] = TypeAdapter(CustomPhoneNumber)
 
-
-class UserNotFoundError(Exception):
-    pass
-
-
-class UsernameAlreadyExists(Exception):
-    pass
-
-
-class PhoneNumberAlreadyExists(Exception):
-    pass
-
-
-class EmailAlreadyExists(Exception):
-    pass
-
-
-class ReferredByNotFoundError(Exception):
-    pass
-
-
-class InvalidCredentialsError(Exception):
-    pass
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(
-        plain_password.encode("utf-8"), hashed_password.encode("utf-8")
-    )
-
-
-def get_password_hash(password: str) -> str:
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
-
-
-async def get_user(
+async def _set_education_field(
     db_session: AsyncSession,
-    *,
-    username: str | None = None,
-    id: int | None = None,
-    phone_number: str | None = None,
-    email: str | None = None,
-    exclude_sentinel: bool = True,
-) -> User | None:
-    """Get a user by either username or user_id.
+    user: User,
+    education_data: dict[str, Any],
+    field_name: Literal["current_education", "intended_education"],
+) -> None:
+    """Set either current or intended education for a user.
 
     Args:
-        db_session: The database session
-        username: Username to look up. Defaults to None.
-        id: User ID to look up. Defaults to None.
-        phone_number: Phone number to look up. Defaults to None.
-        email: Email to look up. Defaults to None.
-        exclude_sentinel: Whether to exclude sentinel usernames. Defaults to True.
+        db_session: Database session
+        user: User to update
+        education_data: Education data to set
+        field_name: Which education field to update
+    """
+    current_education = getattr(user, field_name)
 
+    if current_education:
+        await education_service.update_education(
+            db_session,
+            current_education,
+            level=education_data.get("level"),
+            institution_id=education_data.get("institution_id"),
+            course_id=education_data.get("course_id"),
+        )
+    else:
+        new_education = await _create_education_from_data(db_session, education_data)
+        setattr(user, field_name, new_education)
+
+    await db_session.flush()
+    logger.info(f"User {user.id} updated their {field_name}")
+
+
+async def _create_social_user(
+    db_session: AsyncSession,
+    *,
+    name: str | None,
+    email: str | None,
+    signup_source: SignupSource,
+    referred_by_username: str,
+    google_id: str | None = None,
+    apple_id: str | None = None,
+) -> User:
+    """Create a new user from social authentication.
+
+    Args:
+        db_session: Database session
+        name: User's name
+        email: User's email
+        google_id: Google ID if authenticating with Google
+        apple_id: Apple ID if authenticating with Apple
+        signup_source: How the user came to know the app. Defaults to SignupSource.UNKNOWN.
     Returns:
-        The found user
+        Created user
 
     Raises:
-        UserNotFound: If no user is found
-        ValueError: If neither username nor user_id is provided
+        UsernameAlreadyExists: If generated username is taken
+        EmailAlreadyExists: If email is taken
     """
-    if username is None and id is None and phone_number is None and email is None:
-        raise ValueError(
-            "Must provide either username, user_id, phone_number, or email"
+    display_name = name or f"User {random.randint(1000, 9999)}"
+    base_username = _normalize_username(display_name)
+    username = f"{base_username}{random.randint(1000, 9999)}"
+
+    referred_by_id = None
+    if referred_by_username:
+        referred_by = await get_user(db_session, username=referred_by_username)
+        if not referred_by:
+            raise ReferredByNotFoundError
+        referred_by_id = referred_by.id
+
+    new_user = User(
+        name=display_name,
+        username=username,
+        email=email,
+        google_id=google_id,
+        apple_id=apple_id,
+        signup_source=signup_source,
+        referred_by_id=referred_by_id,
+    )
+    db_session.add(UserProfile(user=new_user))
+
+    try:
+        db_session.add(new_user)
+        await db_session.flush()
+    except IntegrityError as e:
+        error_msg = str(e.orig)
+        if "username" in error_msg:
+            raise UsernameAlreadyExists
+        elif "email" in error_msg:
+            raise EmailAlreadyExists
+        else:
+            raise
+
+    await db_session.refresh(new_user, ["referrals", "profile"])
+
+    if new_user.email:
+        await mail.enqueue_email(
+            mail.EmailMessage(
+                subject=WELCOME_EMAIL_SUBJECT,
+                body_html=WELCOME_EMAIL_MESSAGE.format(username=new_user.username),
+                to_emails=[new_user.email],
+            ),
         )
 
-    if username is not None:
-        stmt = select(User).where(func.lower(User.username) == func.lower(username))
-    elif id is not None:
-        stmt = select(User).where(User.id == id)
-    elif phone_number is not None:
-        stmt = select(User).where(User.phone_number == phone_number)
-    elif email is not None:
-        stmt = select(User).where(User.email == email)
-    else:
-        raise ValueError(
-            "Must provide either username, user_id, phone_number, or email"
-        )
-
-    if exclude_sentinel:
-        stmt = stmt.where(~User.username.in_(SENTINEL_USERNAMES))
-
-    user = (await db_session.scalars(stmt)).first()
-    return user
+    return new_user
 
 
 async def _create_education_from_data(
@@ -171,616 +239,9 @@ async def _create_education_from_data(
     )
 
 
-async def create_user(
-    db_session: AsyncSession,
-    *,
-    username: str,
-    password: str,
-    phone_number: str,
-    email: str,
-    referred_by_username: str | None,
-    signup_source: SignupSource,
-    current_education: dict[str, Any] | None,
-    intended_education: dict[str, Any] | None,
-) -> User:
-    """Create a new user.
-
-    Args:
-        db_session: The database session
-        username: The username of the user to create
-        password: The password of the user to create
-        phone_number: The phone number of the user to create
-        email: The email of the user to create
-        referred_by_username: The username of the user who referred the new user. Defaults to None.
-        signup_source: How the user came to know the app. Defaults to SignupSource.UNKNOWN.
-        current_education: Current education data. Defaults to None.
-        intended_education: Intended education data. Defaults to None.
-
-    Raises:
-        ReferredByNotFoundError: The referred by user was not found
-        UsernameAlreadyExists: There's a user with this username, case insensitive
-        PhoneNumberAlreadyExists: There's a user with this phone number
-        EmailAlreadyExists: There's a user with this email
-
-    Returns:
-        The created user
-    """
-    # Create education records
-    current_education_obj = await _create_education_from_data(
-        db_session, current_education
-    )
-    intended_education_obj = await _create_education_from_data(
-        db_session, intended_education
-    )
-
-    # Handle referral
-    referred_by_id = None
-    if referred_by_username:
-        referred_by = await get_user(db_session, username=referred_by_username)
-        if not referred_by:
-            raise ReferredByNotFoundError
-        referred_by_id = referred_by.id
-
-    # Create user object with common attributes
-    db_user = User(
-        username=username,
-        hashed_password=get_password_hash(password),
-        phone_number=phone_number,
-        email=email,
-        referred_by_id=referred_by_id,
-        signup_source=signup_source,
-        current_education=current_education_obj,
-        intended_education=intended_education_obj,
-    )
-    db_session.add(UserProfile(user=db_user))
-
-    # Save user to database
-    try:
-        db_session.add(db_user)
-        await db_session.flush()
-    except IntegrityError as e:
-        error_msg = str(e.orig)
-        if "username" in error_msg:
-            raise UsernameAlreadyExists
-        elif "phone_number" in error_msg:
-            raise PhoneNumberAlreadyExists
-        elif "email" in error_msg:
-            raise EmailAlreadyExists
-        else:
-            raise
-
-    await db_session.refresh(db_user, ["referrals", "profile"])
-
-    await mail.enqueue_email(
-        mail.EmailMessage(
-            subject=WELCOME_EMAIL_SUBJECT,
-            body_html=WELCOME_EMAIL_MESSAGE.format(username=db_user.username),
-            to_emails=[db_user.email],
-        ),
-    )
-
-    return db_user
-
-
-async def authenticate_user(
-    db_session: AsyncSession, username: str, password: str
-) -> User | Literal[False]:
-    """Given credentials, return a user if they are valid.
-
-    Args:
-        db_session: The database session.
-        username: The username of the user to authenticate.
-        password: The password of the user to authenticate.
-
-    Returns:
-        The user if the credentials are valid, otherwise False.
-    """
-    user = await get_user(db_session, username=username)
-    if not user:
-        logger.info(f"User with username {username} not found when authenticating")
-        return False
-    if not verify_password(password, user.hashed_password):
-        logger.info(
-            f"User with username {username} password is incorrect when authenticating"
-        )
-        return False
-    return user
-
-
-async def validate_username(db_session: AsyncSession, username: str) -> None:
-    if await get_user(db_session, username=username):
-        raise UsernameAlreadyExists
-
-
-async def validate_phone_number(db_session: AsyncSession, phone_number: str) -> None:
-    if await get_user(db_session, phone_number=phone_number):
-        raise PhoneNumberAlreadyExists
-
-
-async def validate_email(db_session: AsyncSession, email: str) -> None:
-    if await get_user(db_session, email=email):
-        raise EmailAlreadyExists
-
-
-async def set_password(
-    db_session: AsyncSession, user: User, new_password: str, current_password: str
-) -> None:
-    if not verify_password(current_password, user.hashed_password):
-        raise InvalidCredentialsError
-    user.hashed_password = get_password_hash(new_password)
-    await db_session.flush()
-    logger.info(f"User {user.id} changed their password")
-
-
-async def set_phone_number(
-    db_session: AsyncSession, user: User, new_phone_number: str, current_password: str
-) -> None:
-    if not verify_password(current_password, user.hashed_password):
-        raise InvalidCredentialsError
-    user.phone_number = new_phone_number
-    try:
-        await db_session.flush()
-    except IntegrityError as e:
-        error_msg = str(e.orig)
-        if "phone_number" in error_msg:
-            raise PhoneNumberAlreadyExists
-        else:
-            raise
-    logger.info(f"User {user.id} changed their phone number to {new_phone_number}")
-
-
-async def set_email(
-    db_session: AsyncSession, user: User, new_email: str, current_password: str
-) -> None:
-    if not verify_password(current_password, user.hashed_password):
-        raise InvalidCredentialsError
-    user.email = new_email
-    try:
-        await db_session.flush()
-    except IntegrityError as e:
-        error_msg = str(e.orig)
-        if "email" in error_msg:
-            raise EmailAlreadyExists
-        else:
-            raise
-    logger.info(f"User {user.id} changed their email to {new_email}")
-
-
-async def set_current_education(
-    db_session: AsyncSession, user: User, education_data: dict[str, Any]
-) -> None:
-    """Update user's current education.
-
-    Args:
-        db_session: The database session
-        user: The user to update
-        education_data: Dictionary containing education information
-    """
-    if user.current_education:
-        # Update existing education
-        await education_service.update_education(
-            db_session,
-            user.current_education,
-            level=education_data.get("level"),
-            institution_id=education_data.get("institution_id"),
-            course_id=education_data.get("course_id"),
-        )
-    else:
-        # Create new education
-        new_education = await _create_education_from_data(db_session, education_data)
-        user.current_education = new_education
-
-    await db_session.flush()
-    logger.info(f"User {user.id} updated their current education")
-
-
-async def set_intended_education(
-    db_session: AsyncSession, user: User, education_data: dict[str, Any]
-) -> None:
-    """Update user's intended education.
-
-    Args:
-        db_session: The database session
-        user: The user to update
-        education_data: Dictionary containing education information
-    """
-    if user.intended_education:
-        # Update existing education
-        await education_service.update_education(
-            db_session,
-            user.intended_education,
-            level=education_data.get("level"),
-            institution_id=education_data.get("institution_id"),
-            course_id=education_data.get("course_id"),
-        )
-    else:
-        # Create new education
-        new_education = await _create_education_from_data(db_session, education_data)
-        user.intended_education = new_education
-
-    await db_session.flush()
-    logger.info(f"User {user.id} updated their intended education")
-
-
-async def delete_user(
-    db_session: AsyncSession, user: User, current_password: str
-) -> None:
-    if not verify_password(current_password, user.hashed_password):
-        raise InvalidCredentialsError
-    logger.info(f"Deleting user {user.id}")
-    await amp.delete_user(user.id)
-    await db_session.delete(user)
-    await db_session.flush()
-
-
-async def check_contacts(
-    db_session: AsyncSession, raw_phone_numbers: list[str]
-) -> list[User]:
-    phone_numbers: list[str] = []
-    for phone_number in raw_phone_numbers:
-        try:
-            phone_numbers.append(phone_number_adapter.validate_python(phone_number))
-        except ValidationError:
-            pass
-    logger.debug(
-        f"Contacts checked! There were {len(phone_numbers)} valid phone numbers"
-    )
-    matched_users = (
-        await db_session.scalars(
-            select(User)
-            .where(User.phone_number.in_(phone_numbers))
-            .order_by(User.username)
-        )
-    ).all()
-    logger.debug(f"Found {len(matched_users)} matching users after checking contacts")
-    return list(matched_users)
-
-
-async def search_username(db_session: AsyncSession, username: str) -> list[User]:
-    logger.debug(f"Searching for username containing '{username}'")
-    return list(
-        (
-            await db_session.scalars(
-                select(User)
-                .where(User.username.ilike(f"%{username}%"))
-                .order_by(User.username)
-            )
-        ).all()
-    )
-
-
-async def get_sentinel_users(db_session: AsyncSession) -> list[User]:
-    return list(
-        (
-            await db_session.scalars(
-                select(User).where(User.username.in_(SENTINEL_USERNAMES))
-            )
-        ).all()
-    )
-
-
-def get_streak_info(answer_timestamps: list[datetime.datetime]) -> tuple[bool, int]:
-    """
-    Receives a list of user answer timestamps (must be timezone-aware).
-    Returns a tuple of (done_today, streak).
-    """
-
-    if not answer_timestamps:
-        return False, 0
-
-    # Ensure all timestamps are timezone-aware
-    if any(
-        ts.tzinfo is None or ts.tzinfo.utcoffset(ts) is None for ts in answer_timestamps
-    ):
-        raise ValueError("All timestamps must be timezone-aware")
-
-    # Convert timestamps to server's timezone
-    ordered_timestamps = sorted(
-        (timezone.localtime(ts) for ts in answer_timestamps), reverse=True
-    )
-
-    streak = 0
-    today = timezone.localdate()
-    done_today = False
-    last_processed_date = None
-
-    for timestamp in ordered_timestamps:
-        current_date = timestamp.date()
-
-        if last_processed_date == current_date:
-            continue
-        last_processed_date = current_date
-
-        if streak == 0:
-            if current_date == today:
-                done_today = True
-                streak += 1
-            elif current_date == today - datetime.timedelta(days=1):
-                streak += 1
-            else:
-                break
-        else:
-            if current_date == today - datetime.timedelta(
-                days=streak + 1 if not done_today else streak
-            ):
-                streak += 1
-            else:
-                break
-
-    return done_today, streak
-
-
-async def get_user_stats(
-    db_session: AsyncSession,
-    *,
-    user_id: int | None = None,
-    username: str | None = None,
-) -> dict[str, Any]:
-    """Get statistics for a user.
-
-    Args:
-        db_session: Database session
-        user_id: Optional user ID to look up
-        username: Optional username to look up
-
-    Returns:
-        Dictionary containing user statistics
-
-    Raises:
-        UserNotFoundError: If the user cannot be found
-    """
-    if user_id is not None:
-        found_user = await get_user(db_session, id=user_id)
-    elif username is not None:
-        found_user = await get_user(db_session, username=username)
-    else:
-        raise ValueError("Must provide either user_id or username")
-
-    if not found_user:
-        raise UserNotFoundError
-
-    # user_stats = await quiz_service.calc_user_stats(db_session, found_user.id)
-    # Placeholder user stats - ignoring flow/quiz issues
-    user_stats = {
-        "score": 0.0,
-        "total_answers": 0,
-        "correct_answers": 0,
-        "area_expected_scores": {
-            "Matemática": 0.0,
-            "Linguagens": 0.0,
-            "Ciências Humanas": 0.0,
-            "Ciências da Natureza": 0.0,
-        },
-    }
-
-    await db_session.refresh(
-        found_user, ["current_education", "intended_education", "profile"]
-    )
-    # Get user answer timestamps
-    stmt = (
-        select(FlowQuestionUser.created_at)
-        .where(
-            or_(
-                FlowQuestionUser.choice_id.is_not(None),
-                FlowQuestionUser.submitted_text != "",
-            ),
-            FlowQuestionUser.user_id == found_user.id,
-        )
-        .order_by(FlowQuestionUser.created_at.desc())
-    )
-
-    result = await db_session.execute(stmt)
-    user_answers_timestamps = [row[0] for row in result.all()]
-
-    done_today, streak = get_streak_info(user_answers_timestamps)
-
-    user_stats.update(
-        {
-            "id": found_user.id,
-            "username": found_user.username,
-            "current_education": found_user.current_education,
-            "intended_education": found_user.intended_education,
-            "score": user_stats["score"],
-            "area_expected_scores": {
-                "Matemática": user_stats["area_expected_scores"]["Matemática"],
-                "Linguagem": user_stats["area_expected_scores"][
-                    "Linguagens"
-                ],  # deveria ser Linguagens, mas o front ta esperando errado
-                "Ciências Humanas": user_stats["area_expected_scores"][
-                    "Ciências Humanas"
-                ],
-                "Ciências da Natureza": user_stats["area_expected_scores"][
-                    "Ciências da Natureza"
-                ],
-            },
-            "streak": streak,
-            "done_today": done_today,
-            "percentage_score": await get_user_percentage_score(
-                db_session, found_user.id
-            ),
-        }
-    )
-    return user_stats
-
-
-async def get_user_percentage_score(
-    db_session: AsyncSession, user_id: int, subject: str | None = None
-) -> float:
-    """
-    Calculate percentage score for a single user.
-    Returns the ratio of correct answers to total answers.
-    """
-    # Start with base query counting answers
-    query = select(
-        func.count(FlowQuestionUser.id)
-        .filter(
-            or_(
-                FlowQuestionUser.choice_id.is_not(None),
-            )
-        )
-        .label("total_answers"),
-        func.count(FlowQuestionUser.id)
-        .filter(Choice.is_correct.is_(True))
-        .label("correct_answers"),
-    ).select_from(FlowQuestionUser)
-
-    # Always join with Choice for correct answer counting
-    query = query.outerjoin(Choice, FlowQuestionUser.choice_id == Choice.id)
-
-    # Apply user filter
-    query = query.where(FlowQuestionUser.user_id == user_id)
-
-    # Only join with Question tables if we need to filter by subject
-    if subject:
-        query = (
-            query.join(
-                FlowQuestion,
-                FlowQuestionUser.flow_element_id == FlowQuestion.id,
-            )
-            .join(Question, FlowQuestion.question_id == Question.id)
-            .where(Question.subject == subject)
-        )
-
-    # Execute query
-    result = await db_session.execute(query)
-    row = result.one()
-
-    total_answers = row.total_answers
-    correct_answers = row.correct_answers
-
-    return correct_answers / total_answers if total_answers else 0.0
-
-
-async def get_ranking(
-    db_session: AsyncSession,
-    asking_user_id: int,
-    score_type: Literal["dynamic", "percentage"],
-    school_filter: int | None,
-    course_filter: str | None,
-    education_level_filter: EducationLevel | None,
-    subject: str | None = None,
-) -> list[dict[str, Any]]:
-    # Note: This function needs to be updated to work with the new education structure
-    # For now, keeping the basic structure but this will need more work
-    stmt = select(User.id)
-    # TODO: Update filtering logic to work with new education structure
-    # if school_filter:
-    #     stmt = stmt.where(User.school_id == school_filter)
-    # if course_filter:
-    #     stmt = stmt.join(User.chosen_course).where(Course.name == course_filter)
-    # if education_level_filter:
-    #     stmt = stmt.where(User.education_level == education_level_filter)
-
-    # users_ids = await db_session.scalars(stmt)
-    # Note: quiz_service is not imported, this will need to be fixed
-    # if score_type == "dynamic":
-    #     return await quiz_service.get_ranked_users_stats_by_dynamic_score(
-    #         users_ids, NUM_RANKED_USERS, asking_user_id
-    #     )
-    # elif score_type == "percentage":
-    #     return await quiz_service.get_ranked_users_stats_by_percentage(
-    #         users_ids, NUM_RANKED_USERS, asking_user_id, subject
-    #     )
-    # else:
-    #     raise ValueError(f"Invalid score type: {score_type}")
-    return []  # Placeholder
-
-
-async def get_user_infos(
-    db_session: AsyncSession, users: list[User]
-) -> list[dict[str, str | int | datetime.datetime]]:
-    total_answers = (
-        select(FlowQuestionUser.user_id, func.count(FlowQuestionUser.id))
-        .where(FlowQuestionUser.user_id.in_(users))
-        .group_by(FlowQuestionUser.user_id)
-    )
-    result = await db_session.execute(total_answers)
-    answer_dict: dict[int, int] = {row[0]: row[1] for row in result.all()}
-
-    return [
-        {
-            "username": user.username,
-            "total_answers": answer_dict.get(user.id, 0),
-            "date_joined": user.created_at,
-        }
-        for user in users
-    ]
-
-
-async def get_online_info(
-    db_session: AsyncSession,
-    user_ids: list[int],
-) -> list[dict[str, int | bool | datetime.datetime | None]]:
-    """Get online status and last online time for a list of users.
-
-    Args:
-        user_ids: List of user IDs to check status for
-
-    Returns:
-        List of dicts containing:
-            - id: user ID
-            - is_online: boolean indicating if the user is online
-            - last_online: last online time for offline users, None for online users
-    """
-    # Get current online/offline status for all users
-    statuses = await ws_service.get_user_statuses(user_ids)
-
-    # Get last online time for offline users
-    offline_user_ids = [
-        user_id for user_id, status in zip(user_ids, statuses) if status != "online"
-    ]
-    last_online_users = await ws_service.get_last_online_users(
-        db_session, offline_user_ids
-    )
-
-    # Build response combining status and last online time
-    return [
-        {
-            "id": user_id,
-            "is_online": status == "online",  # Convert to boolean
-            "last_online": last_online_users.get(user_id)
-            if status != "online"
-            else None,
-        }
-        for user_id, status in zip(user_ids, statuses)
-    ]
-
-
-async def get_balance(db_session: AsyncSession, user_id: int) -> int:
-    """Get user's currency balance."""
-    user = await get_user(db_session, id=user_id)
-    if not user:
-        raise UserNotFoundError
-    return user.balance
-
-
-async def to_other_user_out(
-    db_session: AsyncSession,
-    user_ids: list[int],
-) -> list[User]:
-    """Convert user IDs to OtherUserOut objects.
-
-    Args:
-        db_session: The database session
-        user_ids: List of user IDs to convert
-
-    Returns:
-        List of OtherUserOut objects
-    """
-    result = await db_session.scalars(
-        select(User)
-        .where(User.id.in_(user_ids))
-        .options(
-            selectinload(User.current_education),
-            selectinload(User.intended_education),
-        )
-    )
-    users = list(result.all())
-    return users
-
-
 async def update_user_fields(
     db_session: AsyncSession,
+    *,
     user: User,
     updates: dict[str, Any],
     current_password: str | None = None,
@@ -802,13 +263,9 @@ async def update_user_fields(
         PhoneNumberAlreadyExists: If phone number already taken
         EmailAlreadyExists: If email already taken
     """
-    # Define which fields require password verification
     password_required_fields = {"username", "phone_number", "email", "password"}
-
-    # Check if any sensitive fields are being updated
     sensitive_updates = password_required_fields.intersection(updates.keys())
 
-    # Verify password if needed
     if sensitive_updates:
         if not current_password:
             raise InvalidCredentialsError(
@@ -819,13 +276,30 @@ async def update_user_fields(
 
     updated_fields: list[str] = []
 
-    # Handle each field type with specific validation
     for field_name, new_value in updates.items():
+        # Handle education fields that can be set to None
+        if field_name in ("current_education", "intended_education"):
+            if new_value is None:
+                setattr(user, field_name, None)
+                setattr(user, f"{field_name}_id", None)
+                updated_fields.append(field_name)
+                continue
+
+            education_data = new_value
+            if hasattr(new_value, "model_dump"):
+                education_data = new_value.model_dump()
+            elif hasattr(new_value, "dict"):
+                education_data = new_value.dict()
+
+            await _set_education_field(db_session, user, education_data, field_name)
+            updated_fields.append(field_name)
+            continue
+
         if new_value is None:
             continue
 
         if field_name == "username":
-            if new_value != user.username:
+            if new_value.strip().lower() != user.username.lower():
                 try:
                     user.username = str(new_value).strip()
                     await db_session.flush()
@@ -836,9 +310,13 @@ async def update_user_fields(
                         raise UsernameAlreadyExists
                     raise
 
+        elif field_name == "name":
+            if new_value != user.name:
+                user.name = str(new_value).strip()
+                await db_session.flush()
+                updated_fields.append(field_name)
+
         elif field_name == "password":
-            # Update password (current_password already verified above)
-            # Extract the actual password string from SecretStr
             password_value = (
                 new_value.get_secret_value()
                 if hasattr(new_value, "get_secret_value")
@@ -848,52 +326,390 @@ async def update_user_fields(
             await db_session.flush()
             updated_fields.append(field_name)
 
-        elif field_name == "phone_number":
-            if str(new_value) != user.phone_number:
+        elif field_name in ("phone_number", "email"):
+            if str(new_value) != getattr(user, field_name):
                 try:
-                    user.phone_number = str(new_value)
+                    setattr(user, field_name, str(new_value))
                     await db_session.flush()
                     updated_fields.append(field_name)
                 except IntegrityError as e:
                     await db_session.rollback()
-                    if "phone_number" in str(e.orig):
-                        raise PhoneNumberAlreadyExists
+                    error_msg = str(e.orig)
+                    if field_name in error_msg:
+                        if field_name == "phone_number":
+                            raise PhoneNumberAlreadyExists
+                        else:  # email
+                            raise EmailAlreadyExists
                     raise
-
-        elif field_name == "email":
-            if str(new_value) != user.email:
-                try:
-                    user.email = str(new_value)
-                    await db_session.flush()
-                    updated_fields.append(field_name)
-                except IntegrityError as e:
-                    await db_session.rollback()
-                    if "email" in str(e.orig):
-                        raise EmailAlreadyExists
-                    raise
-
-        elif field_name == "current_education":
-            # Convert education data to dict if needed
-            education_data = new_value
-            if hasattr(new_value, "model_dump"):
-                education_data = new_value.model_dump()
-            elif hasattr(new_value, "dict"):
-                education_data = new_value.dict()
-            await set_current_education(db_session, user, education_data)
-            updated_fields.append(field_name)
-
-        elif field_name == "intended_education":
-            # Convert education data to dict if needed
-            education_data = new_value
-            if hasattr(new_value, "model_dump"):
-                education_data = new_value.model_dump()
-            elif hasattr(new_value, "dict"):
-                education_data = new_value.dict()
-            await set_intended_education(db_session, user, education_data)
-            updated_fields.append(field_name)
 
     if updated_fields:
         await db_session.flush()
         logger.info(f"User {user.id} updated fields: {', '.join(updated_fields)}")
 
     return user, updated_fields
+
+
+async def authenticate_user_by_password(
+    db_session: AsyncSession, email: str, password: str
+) -> User | Literal[False]:
+    """Given credentials, return a user if they are valid.
+
+    Args:
+        db_session: The database session.
+        email: The email of the user to authenticate.
+        password: The password of the user to authenticate.
+
+    Returns:
+        The user if the credentials are valid, otherwise False.
+    """
+    user = await get_user(db_session, email=email)
+    if not user:
+        logger.info(f"User with email {email} not found when authenticating")
+        return False
+    if not verify_password(password, user.hashed_password):
+        logger.info(
+            f"User with email {email} password is incorrect when authenticating"
+        )
+        return False
+    return user
+
+
+async def authenticate_user_by_google(
+    db_session: AsyncSession,
+    *,
+    id_token: str,
+    signup_source: SignupSource,
+    referred_by_username: str,
+) -> User:
+    """Authenticate user using Google ID token.
+
+    Args:
+        db_session: Database session
+        id_token: Google ID token
+        signup_source: How the user came to know the app. Defaults to SignupSource.UNKNOWN.
+    Returns:
+        Authenticated user
+
+    Raises:
+        InvalidTokenError: If token is invalid
+        AccountExistsError: If account exists with different auth method
+    """
+    google_user_info = await external_auth.verify_google_id_token(id_token)
+
+    existing_user = await get_user(db_session, google_id=google_user_info.sub)
+    if existing_user:
+        return existing_user
+
+    existing_user = await get_user(db_session, email=google_user_info.email)
+    if existing_user:
+        if google_user_info.email_verified:
+            # oh, sorry, this email on your google account must be yours! let me give it to you!
+            existing_user.google_id = google_user_info.sub
+            await db_session.flush()
+            return existing_user
+        else:
+            # you're going to have to do more to convince me that this email on your google account is yours
+            raise AccountExistsError
+
+    # there is no user with the same email nor google_id
+
+    return await _create_social_user(
+        db_session,
+        name=google_user_info.name,
+        email=google_user_info.email,
+        google_id=google_user_info.sub,
+        signup_source=signup_source,
+        referred_by_username=referred_by_username,
+    )
+
+
+async def authenticate_user_by_apple(
+    db_session: AsyncSession,
+    *,
+    id_token: str,
+    name: str,
+    signup_source: SignupSource,
+    referred_by_username: str,
+) -> User:
+    """Authenticate user using Apple ID token.
+
+    Args:
+        db_session: Database session
+        id_token: Apple ID token
+        signup_source: How the user came to know the app. Defaults to SignupSource.UNKNOWN.
+    Returns:
+        Authenticated user
+
+    Raises:
+        InvalidTokenError: If token is invalid
+        AccountExistsError: If account exists with different auth method
+    """
+    user_info = await external_auth.verify_apple_id_token(id_token)
+
+    existing_user = await get_user(db_session, apple_id=user_info.sub)
+    if existing_user:
+        return existing_user
+
+    existing_user = await get_user(db_session, email=user_info.email)
+    if existing_user:
+        if user_info.email_verified:
+            # oh, sorry, this email on your apple account must be yours! let
+            # me give you access to this existing account!
+            existing_user.apple_id = user_info.sub
+            await db_session.flush()
+            return existing_user
+        else:
+            # you're going to have to do more to convince me that
+            # this email on your apple account is yours
+            raise AccountExistsError
+
+    return await _create_social_user(
+        db_session,
+        name=name,
+        email=user_info.email,
+        apple_id=user_info.sub,
+        signup_source=signup_source,
+        referred_by_username=referred_by_username,
+    )
+
+
+def _normalize_username(raw_name: str) -> str:
+    """Normalize a name to create a username.
+
+    Args:
+        raw_name: The raw name to normalize
+
+    Returns:
+        Normalized username
+    """
+    nfkd_form = unicodedata.normalize("NFKD", raw_name)
+    no_accents = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+    no_spaces = no_accents.replace(" ", "_")
+    only_alnum = re.sub(r"[^a-zA-Z0-9_]", "", no_spaces)
+    username = only_alnum.lower()
+    return username
+
+
+async def get_user(
+    db_session: AsyncSession,
+    *,
+    username: str | None = None,
+    id: int | None = None,
+    phone_number: str | None = None,
+    email: str | None = None,
+    google_id: str | None = None,
+    apple_id: str | None = None,
+    exclude_sentinel: bool = True,
+) -> User | None:
+    """Get a user by either username or user_id.
+
+    Args:
+        db_session: The database session
+        username: Username to look up. Defaults to None.
+        id: User ID to look up. Defaults to None.
+        phone_number: Phone number to look up. Defaults to None.
+        email: Email to look up. Defaults to None.
+        google_id: Google ID to look up. Defaults to None.
+        apple_id: Apple ID to look up. Defaults to None.
+        exclude_sentinel: Whether to exclude sentinel usernames. Defaults to True.
+
+    Returns:
+        The found user
+
+    Raises:
+        UserNotFound: If no user is found
+        ValueError: If neither username nor user_id is provided
+    """
+
+    if username is not None:
+        stmt = select(User).where(User.username == username)
+    elif id is not None:
+        stmt = select(User).where(User.id == id)
+    elif phone_number is not None:
+        stmt = select(User).where(User.phone_number == phone_number)
+    elif email is not None:
+        stmt = select(User).where(User.email == email)
+    elif google_id is not None:
+        stmt = select(User).where(User.google_id == google_id)
+    elif apple_id is not None:
+        stmt = select(User).where(User.apple_id == apple_id)
+    else:
+        raise ValueError(
+            "Must provide either username, user_id, phone_number, email, google_id, or apple_id"
+        )
+
+    if exclude_sentinel:
+        stmt = stmt.where(~User.username.in_(SENTINEL_USERNAMES))
+
+    user = (await db_session.scalars(stmt)).first()
+    return user
+
+
+async def create_user_by_password(
+    db_session: AsyncSession,
+    *,
+    name: str,
+    password: str,
+    email: str,
+    referred_by_username: str | None,
+    signup_source: SignupSource,
+) -> User:
+    """Create a new user, choosing a username based on the name.
+
+    Args:
+        db_session: The database session
+        name: The name of the user to create
+        password: The password of the user to create
+        email: The email of the user to create
+        referred_by_username: The username of the user who referred the new user. Defaults to None.
+        signup_source: How the user came to know the app. Defaults to SignupSource.UNKNOWN.
+
+    Raises:
+        ReferredByNotFoundError: The referred by user was not found
+        UsernameAlreadyExists: There's a user with this username, case insensitive
+        PhoneNumberAlreadyExists: There's a user with this phone number
+        EmailAlreadyExists: There's a user with this email
+
+    Returns:
+        The created user
+    """
+
+    referred_by_id = None
+    if referred_by_username:
+        referred_by = await get_user(db_session, username=referred_by_username)
+        if not referred_by:
+            raise ReferredByNotFoundError
+        referred_by_id = referred_by.id
+
+    base_username = _normalize_username(name)
+    username = f"{base_username}{random.randint(1000, 9999)}"
+
+    db_user = User(
+        name=name,
+        username=username,
+        hashed_password=get_password_hash(password),
+        email=email,
+        referred_by_id=referred_by_id,
+        signup_source=signup_source,
+    )
+    db_session.add(UserProfile(user=db_user))
+
+    try:
+        db_session.add(db_user)
+        await db_session.flush()
+    except IntegrityError as e:
+        error_msg = str(e.orig)
+        if "username" in error_msg:
+            raise UsernameAlreadyExists
+        elif "email" in error_msg:
+            raise EmailAlreadyExists
+        else:
+            raise
+
+    await db_session.refresh(db_user, ["referrals", "profile"])
+
+    await mail.enqueue_email(
+        mail.EmailMessage(
+            subject=WELCOME_EMAIL_SUBJECT,
+            body_html=WELCOME_EMAIL_MESSAGE.format(username=db_user.username),
+            to_emails=[db_user.email],
+        ),
+    )
+
+    return db_user
+
+
+async def delete_user(
+    db_session: AsyncSession, user: User, current_password: str
+) -> None:
+    """Delete a user after password verification.
+
+    Args:
+        db_session: The database session
+        user: The user to delete
+        current_password: Current password for verification
+
+    Raises:
+        InvalidCredentialsError: If password is incorrect
+    """
+    if not verify_password(current_password, user.hashed_password):
+        raise InvalidCredentialsError
+    logger.info(f"Deleting user {user.id}")
+    await amp.delete_user(user.id)
+    await db_session.delete(user)
+    await db_session.flush()
+
+
+async def get_sentinel_users(db_session: AsyncSession) -> list[User]:
+    """Get all sentinel users (system users).
+
+    Args:
+        db_session: The database session
+
+    Returns:
+        List of sentinel users
+    """
+    return list(
+        (
+            await db_session.scalars(
+                select(User).where(User.username.in_(SENTINEL_USERNAMES))
+            )
+        ).all()
+    )
+
+
+async def to_other_user_out(
+    db_session: AsyncSession,
+    user_ids: list[int],
+) -> list[User]:
+    """Convert user IDs to OtherUserOut objects.
+
+    Args:
+        db_session: The database session
+        user_ids: List of user IDs to convert
+
+    Returns:
+        List of OtherUserOut objects
+    """
+    result = await db_session.scalars(
+        select(User)
+        .where(User.id.in_(user_ids))
+        .options(
+            selectinload(User.current_education),
+            selectinload(User.intended_education),
+            selectinload(User.profile),
+        )
+    )
+    users = list(result.all())
+    return users
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a plain password against its hashed version.
+
+    Args:
+        plain_password: The plain text password to verify
+        hashed_password: The hashed password to verify against
+
+    Returns:
+        True if password matches, False otherwise
+    """
+    ph = PasswordHasher()
+    try:
+        ph.verify(hashed_password, plain_password)
+        return True
+    except VerifyMismatchError:
+        return False
+
+
+def get_password_hash(password: str) -> str:
+    """Generate a hash for the given password.
+
+    Args:
+        password: The plain text password to hash
+
+    Returns:
+        The hashed password
+    """
+    ph = PasswordHasher()
+    return ph.hash(password)

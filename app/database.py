@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import (
 )
 
 # all of these are needed so that the Base subclasses are registered
-import app.currency.models  # noqa: F401
 import app.education.models  # noqa: F401
 
 # import app.essays.models  # noqa: F401

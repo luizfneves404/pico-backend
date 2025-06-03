@@ -8,8 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.files.utils as file_utils
 from app.arq_client import enqueue_job
-from app.currency.decorators import currency_transaction
-from app.currency.models import CurrencyAction, CurrencyType
 from app.essays.models import (
     Essay,
     EssayTopic,
@@ -72,7 +70,6 @@ def _validate_essay_upload(upload: UploadFile, mime_type: str):
     logger.info("File upload for essay original_file is valid")
 
 
-@currency_transaction(CurrencyAction.ESSAY_CREATION, CurrencyType.PRICE)
 async def submit_essay_with_file(
     db_session: AsyncSession,
     user: User,

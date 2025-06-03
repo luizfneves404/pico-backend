@@ -2,7 +2,7 @@ from typing import Annotated
 
 from pydantic import AfterValidator, EmailStr, StringConstraints
 from pydantic.networks import validate_email
-from pydantic_extra_types.phone_numbers import PhoneNumber, PhoneNumberValidator
+from pydantic_extra_types.phone_numbers import PhoneNumberValidator
 
 from app.config import settings
 
@@ -18,6 +18,6 @@ LowercaseEmailStr = Annotated[str, AfterValidator(validate_lowercase_email)]
 
 
 CustomPhoneNumber = Annotated[
-    str | PhoneNumber,
+    str,
     PhoneNumberValidator(default_region=settings.default_phone_number_country),
 ]

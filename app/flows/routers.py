@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from fastapi import File as FastAPIFile
 
 import app.flows.flow_service as flow_service
-from app.currency.currency_service import InsufficientFundsError
 from app.deps import CurrentUserAnnotated, CurrentUserDep, DBSessionAnnotated
 from app.flows.models import FlowInputType
 from app.flows.schemas import (
@@ -62,7 +61,7 @@ async def search_flows(
     query: str,
 ) -> list[FlowInSearch]:
     """Search flows for the current user"""
-
+    # TODO: implement search flows. can search by subject, area, lots o stuff
     flows = await flow_service.search_flows(
         db_session, user_id=current_user.id, query=query
     )
@@ -188,7 +187,7 @@ async def delete_flow(
     """Delete a flow"""
 
     try:
-        await flow_service.delete_flow(db_session, current_user.id, id)
+        await flow_service.delete_flow(db_session, user_id=current_user.id, flow_id=id)
     except flow_service.FlowNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
@@ -204,4 +203,17 @@ async def user_flows(
     """Get all flows for a specific user"""
 
     flows = await flow_service.list_user_flows(db_session, user_id=user_id)
-    return [FlowInSearch.from_orm_model(flow) for flow in flows]
+    return [
+        FlowInSearch.from_orm_model_for_user(flow, user_id=user_id) for flow in flows
+    ]
+
+
+@router.get("/group/feed", response_model=list[FlowInFeed])
+async def group_flows(
+    db_session: DBSessionAnnotated,
+    current_user: CurrentUserAnnotated,
+) -> list[FlowInFeed]:
+    """Get the feed for a specific user"""
+
+    flows = await flow_service.get_group_feed(db_session, user_id=current_user.id)
+    return [FlowInFeed.from_orm_model(flow) for flow in flows]

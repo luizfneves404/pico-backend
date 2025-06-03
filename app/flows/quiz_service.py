@@ -13,9 +13,6 @@ from pylatexenc.latex2text import LatexNodes2Text
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.currency.currency_service import handle_currency_transaction
-from app.currency.decorators import currency_transaction
-from app.currency.models import CurrencyAction, CurrencyType
 from app.flows.models import (
     CUSTOM_SOURCE,
     ENEM_AREAS,
@@ -314,9 +311,7 @@ def create_personalized_quiz(
         return quiz
 
 
-""" @currency_transaction(
-    action=CurrencyAction.QUIZ_CREATION, transaction_type=CurrencyType.PRICE
-)
+""" 
 async def acreate_personalized_quiz(
     user: User,
     question_type: QuestionType = QuestionType.MULTIPLE_CHOICE,
@@ -373,9 +368,6 @@ def get_quiz_from_code(code: str, user_id: int) -> dict[str, Any]:
     return prepare_quiz_outs(quiz.id, user_id)
 
 
-@currency_transaction(
-    action=CurrencyAction.QUIZ_CREATION, transaction_type=CurrencyType.PRICE
-)
 async def create_quiz(
     user: User,
     query: str,

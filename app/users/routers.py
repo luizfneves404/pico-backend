@@ -1,7 +1,7 @@
 import logging
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 import app.users.jwt_token as jwt_token
@@ -16,12 +16,14 @@ from app.users import service
 from app.users.jwt_token import TokenError
 from app.users.models import EducationLevel
 from app.users.schemas import (
-    BalanceOut,
+    AppleAuthRequest,
+    GoogleAuthRequest,
     OnlineInfo,
     OtherUserOut,
     PasswordRequest,
     RawPhoneNumbersIn,
     RefreshRequest,
+    SentinelUserOut,
     TokenResponse,
     UserIdsIn,
     UserIn,
@@ -44,7 +46,12 @@ async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db_session: DBSessionAnnotated,
 ) -> TokenResponse:
-    user = await service.authenticate_user(
+    """
+    Login with email and password, passed as form data
+    - username: it's actually the email of the user
+    - password: the password of the user
+    """
+    user = await service.authenticate_user_by_password(
         db_session, form_data.username.strip(), form_data.password
     )
 
@@ -86,41 +93,95 @@ async def verify_token(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=e.message)
 
 
+@token_router.post("/social/google", response_model=TokenResponse)
+async def google_auth(
+    google_request: GoogleAuthRequest, db_session: DBSessionAnnotated
+) -> TokenResponse:
+    """
+    Authenticate with Google ID token
+
+    Verifies the Google ID token and either logs in existing user or creates new account.
+    """
+    try:
+        user = await service.authenticate_user_by_google(
+            db_session,
+            id_token=google_request.id_token,
+            signup_source=google_request.signup_source,
+            referred_by_username=google_request.referred_by_username,
+        )
+        access_token, refresh_token = jwt_token.generate_tokens(user, "google")
+        return TokenResponse(access=access_token, refresh=refresh_token)
+    except service.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid ID token"
+        )
+    except service.AccountExistsError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Account already exists. Please log in using email and password.",
+        )
+    except service.UsernameAlreadyExists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Username already exists"
+        )
+    except service.EmailAlreadyExists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Email already exists"
+        )
+
+
+@token_router.post("/social/apple", response_model=TokenResponse)
+async def apple_auth(
+    apple_request: AppleAuthRequest, db_session: DBSessionAnnotated
+) -> TokenResponse:
+    """
+    Authenticate with Apple ID token
+
+    Verifies the Apple ID token and either logs in existing user or creates new account.
+    """
+    try:
+        user = await service.authenticate_user_by_apple(
+            db_session,
+            id_token=apple_request.id_token,
+            name=apple_request.name,
+            signup_source=apple_request.signup_source,
+            referred_by_username=apple_request.referred_by_username,
+        )
+        access_token, refresh_token = jwt_token.generate_tokens(user, "apple")
+        return TokenResponse(access=access_token, refresh=refresh_token)
+    except service.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid ID token"
+        )
+    except service.AccountExistsError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Account already exists. Please log in using email and password.",
+        )
+    except service.UsernameAlreadyExists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Username already exists"
+        )
+    except service.EmailAlreadyExists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Email already exists"
+        )
+
+
 @user_router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def create_user(
     db_session: DBSessionAnnotated,
     user_in: UserIn,
-    request: Request,
 ) -> UserOut:
     logger.info("Starting create_user")
     try:
-        # Convert EducationIn to dict for the service
-        current_education_dict = None
-        if user_in.current_education:
-            current_education_dict = {
-                "level": user_in.current_education.level,
-                "institution_id": user_in.current_education.institution_id,
-                "course_id": user_in.current_education.course_id,
-            }
-
-        intended_education_dict = None
-        if user_in.intended_education:
-            intended_education_dict = {
-                "level": user_in.intended_education.level,
-                "institution_id": user_in.intended_education.institution_id,
-                "course_id": user_in.intended_education.course_id,
-            }
-
-        db_user = await service.create_user(
+        db_user = await service.create_user_by_password(
             db_session,
-            username=user_in.username.strip(),
+            name=user_in.name.strip(),
             password=user_in.password.get_secret_value(),
-            phone_number=user_in.phone_number,
             email=user_in.email,
             referred_by_username=user_in.referred_by_username.strip() or None,
             signup_source=user_in.signup_source,
-            current_education=current_education_dict,
-            intended_education=intended_education_dict,
         )
         # Refresh relationships for UserOut response
         await db_session.refresh(
@@ -146,7 +207,7 @@ async def create_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Referred by not found",
         )
-    logger.info(f"User with username {user_in.username} created successfully")
+    logger.info(f"User with username {db_user.username} created successfully")
     return UserOut.from_orm_model(db_user)
 
 
@@ -187,7 +248,7 @@ async def update_user(
     request: UserUpdateRequest,
     current_user: CurrentUserAnnotated,
     db_session: DBSessionAnnotated,
-):
+) -> UserPartialUpdateResponse:
     """Update multiple user fields in a single request.
 
     This endpoint allows updating multiple user fields atomically.
@@ -222,9 +283,9 @@ async def update_user(
 
         updated_user, updated_fields = await service.update_user_fields(
             db_session,
-            current_user,
-            updates_dict,
-            current_password,
+            user=current_user,
+            updates=updates_dict,
+            current_password=current_password,
         )
 
         # Refresh relationships for response
@@ -238,20 +299,21 @@ async def update_user(
             user=UserOut.from_orm_model(updated_user),
         )
 
-    except service.InvalidCredentialsError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect password or password required for sensitive fields",
-        )
+    except service.InvalidCredentialsError as e:
+        if "Password required" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password is required for sensitive field updates",
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect password",
+            )
     except service.UsernameAlreadyExists:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Username already exists",
-        )
-    except service.PhoneNumberAlreadyExists:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Phone number already exists",
         )
     except service.EmailAlreadyExists:
         raise HTTPException(
@@ -279,30 +341,6 @@ async def delete_user(
         )
 
 
-""" @user_authenticated_router.get("/stats", response_model=UserStatsMeResponse)
-async def get_user_stats_me(
-    current_user: CurrentUserAnnotated,
-    db_session: DBSessionAnnotated,
-):
-    user_stats = await service.get_user_stats(db_session, user_id=current_user.id)
-    return user_stats
-
-
-@user_authenticated_router.get("/stats/{username}", response_model=UserStatsResponse)
-async def get_stats_by_username(
-    username: str,
-    db_session: DBSessionAnnotated,
-):
-    try:
-        user_stats = await service.get_user_stats(db_session, username=username)
-        return user_stats
-    except service.UserNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        ) """
-
-
 @user_authenticated_router.post(
     "/check-contacts",
     response_model=PaginatedResponse[OtherUserOut],
@@ -311,11 +349,12 @@ async def check_contacts(
     raw_phone_numbers_schema: RawPhoneNumbersIn,
     pagination: Annotated[PaginationParams, Depends(get_pagination_params)],
     db_session: DBSessionAnnotated,
-):
+) -> PaginatedResponse[OtherUserOut]:
     raw_phone_numbers = raw_phone_numbers_schema.phone_numbers
     users = await service.check_contacts(db_session, raw_phone_numbers)
     user_outs = await service.to_other_user_out(db_session, [user.id for user in users])
-    return paginate(user_outs, pagination)
+    other_user_outs = [OtherUserOut.from_orm_model(user) for user in user_outs]
+    return paginate(other_user_outs, pagination)
 
 
 @user_router.get(
@@ -329,19 +368,27 @@ async def search_username(
 ):
     users = await service.search_username(db_session, username)
     user_outs = await service.to_other_user_out(db_session, [user.id for user in users])
-    return paginate(user_outs, pagination)
+    other_user_outs = [OtherUserOut.from_orm_model(user) for user in user_outs]
+    return paginate(other_user_outs, pagination)
 
 
 @user_router.get(
     "/sentinel",
-    response_model=list[OtherUserOut],
+    response_model=list[SentinelUserOut],
 )
 async def sentinel_users(
     db_session: DBSessionAnnotated,
-):
+) -> list[SentinelUserOut]:
     users = await service.get_sentinel_users(db_session)
-    user_outs = await service.to_other_user_out(db_session, [user.id for user in users])
-    return user_outs
+    return [
+        SentinelUserOut(
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            phone_number=user.phone_number,
+        )
+        for user in users
+    ]
 
 
 @user_authenticated_router.get(
@@ -381,25 +428,14 @@ async def user_ranking(
 async def get_online_info(
     user_ids_in: UserIdsIn,
     db_session: DBSessionAnnotated,
-):
-    return await service.get_online_info(db_session, user_ids_in.user_ids)
-
-
-@user_authenticated_router.get(
-    "/me/balance",
-    response_model=BalanceOut,
-)
-async def get_balance(
-    current_user: CurrentUserAnnotated,
-    db_session: DBSessionAnnotated,
-):
-    try:
-        return {"balance": await service.get_balance(db_session, current_user.id)}
-    except service.UserNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+) -> list[OnlineInfo]:
+    online_info = await service.get_online_info(db_session, user_ids_in.user_ids)
+    return [
+        OnlineInfo(
+            id=info["id"], is_online=info["is_online"], last_online=info["last_online"]
         )
+        for info in online_info
+    ]
 
 
 user_router.include_router(user_authenticated_router)

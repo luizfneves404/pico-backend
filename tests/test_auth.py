@@ -9,7 +9,7 @@ async def test_token_obtain_pair(client: AsyncClient, user: User):
     response = await client.post(
         "/api/token/pair",
         data={
-            "username": user.username,
+            "username": user.email,
             "password": "defaultpassword",
         },
     )
@@ -29,7 +29,7 @@ async def test_token_obtain_pair_whitespace(client: AsyncClient, user: User):
     response = await client.post(
         "/api/token/pair",
         data={
-            "username": f"  {user.username}  ",
+            "username": f"  {user.email}  ",
             "password": "defaultpassword",
         },
     )
@@ -47,14 +47,14 @@ async def test_token_verify(client: AsyncClient, user: User):
     token_response = await client.post(
         "/api/token/pair",
         data={
-            "username": user.username,
+            "username": user.email,
             "password": "defaultpassword",
         },
     )
     access_token = token_response.json()["access"]
 
     response = await client.post(
-        "/token/verify",
+        "/api/token/verify",
         json={"token": access_token},
     )
     assert response.status_code == 200
@@ -64,14 +64,14 @@ async def test_token_refresh(client: AsyncClient, user: User):
     token_response = await client.post(
         "/api/token/pair",
         data={
-            "username": user.username,
+            "username": user.email,
             "password": "defaultpassword",
         },
     )
     refresh_token = token_response.json()["refresh"]
 
     response = await client.post(
-        "/token/refresh",
+        "/api/token/refresh",
         json={"refresh": refresh_token},
     )
     assert response.status_code == 200
@@ -88,7 +88,7 @@ async def test_user_me_endpoint(client: AsyncClient, user: User):
     token_response = await client.post(
         "/api/token/pair",
         data={
-            "username": user.username,
+            "username": user.email,
             "password": "defaultpassword",
         },
     )

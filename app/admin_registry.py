@@ -52,7 +52,7 @@ class AdminAuth(AuthenticationBackend):
         # Create a database session
         async with db_manager.session_with_transaction() as db_session:
             # Authenticate the user using the existing authentication system
-            user = await user_service.authenticate_user(
+            user = await user_service.authenticate_user_by_password(
                 db_session, str(username), str(password)
             )
 

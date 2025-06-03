@@ -28,15 +28,6 @@ relationship(
 )
 ```
 
-## Enum Handling
-
-- If you create an enum in a migration, you may need to add this to the downgrade function:
-
-```python
-op.execute("DROP TYPE enum_name")
-```
-Add to the script.py.mako file.
-
 ## FastAPI Usage
 
 - Prefer to return the pydantic models directly in the router functions, instead of using response_model=... and returning your ORM models. This is better because it allows for better type checking. And don't create those pydantic models using model_validate, because model_validate doesn't give linting errors.
@@ -162,6 +153,10 @@ I chose Postgres. It's a reliable, mature database that is battle-tested.
 ## SQLAlchemy
 
 I chose SQLAlchemy. It's a very powerful ORM that is well maintained and has async support. Massive improvements over the Django ORM, which is synchronous and way less flexible.
+
+### Enums
+
+I started using non native enums, because the native ones are badly supported by alembic and gave a lot of headaches.
 
 ## Asynchronous
 

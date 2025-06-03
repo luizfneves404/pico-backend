@@ -199,6 +199,7 @@ class FlowInSearch(FlowDetail):
             ),
             query=flow.query,
             area=flow.area,
+            subject=flow.subject,
             source_filter=flow.source_filter,
             difficulty=flow.difficulty,
             elements=[
@@ -251,9 +252,10 @@ class CampaignInFeed(BaseModel):
     id: int
     name: str
     text: str
-    action_link: str
-    action_text: str
-    cover_image: str | None
+    external_link: str
+    external_link_text: str
+    image1: str | None
+    image2: str | None
 
     @classmethod
     def from_orm_model(cls, campaign: Campaign) -> "CampaignInFeed":
@@ -261,7 +263,8 @@ class CampaignInFeed(BaseModel):
             id=campaign.id,
             name=campaign.name,
             text=campaign.text,
-            action_link=campaign.action_link,
-            action_text=campaign.action_text,
-            cover_image=campaign.cover_image.url if campaign.cover_image else None,
+            external_link=campaign.external_link,
+            external_link_text=campaign.external_link_text,
+            image1=campaign.image1.url if campaign.image1 else None,
+            image2=campaign.image2.url if campaign.image2 else None,
         )

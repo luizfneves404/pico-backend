@@ -61,6 +61,10 @@ QUERIES = [
 _file_cache: dict[str, dict[str, Any]] = {}
 
 
+def name_sequence(n: int) -> str:
+    return f"User {n}"
+
+
 def username_sequence(n: int) -> str:
     return f"user{n}"
 
@@ -233,13 +237,13 @@ class UserFactory(AsyncSQLAlchemyFactory[User]):
         model = User
         sqlalchemy_get_or_create = ("username",)
 
+    name = Sequence(name_sequence)
     username = Sequence(username_sequence)
     hashed_password = LazyFunction(hashed_password_func)
     email = Sequence(email_sequence)
     phone_number = Sequence(phone_number_sequence)
     is_superuser = False
     is_premium = False
-    balance = 1000
     is_bot = False
     bot_difficulty = None
     signup_source = "social"

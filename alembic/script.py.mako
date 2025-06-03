@@ -19,29 +19,10 @@ down_revision: Union[str, None] = ${repr(down_revision)}
 branch_labels: Union[str, Sequence[str], None] = ${repr(branch_labels)}
 depends_on: Union[str, Sequence[str], None] = ${repr(depends_on)}
 
-def drop_types() -> None:
-    op.execute("DROP TYPE IF EXISTS educationlevel")
-    op.execute("DROP TYPE IF EXISTS questiontype")
-    op.execute("DROP TYPE IF EXISTS quiztype")
-    op.execute("DROP TYPE IF EXISTS questionselectionmethod")
-    op.execute("DROP TYPE IF EXISTS duelstatus")
-    op.execute("DROP TYPE IF EXISTS duelturnphase")
-    op.execute("DROP TYPE IF EXISTS tournamentstatus")
-    op.execute("DROP TYPE IF EXISTS currencyaction")
-    op.execute("DROP TYPE IF EXISTS currencytype")
-    op.execute("DROP TYPE IF EXISTS signupsource")
-    op.execute("DROP TYPE IF EXISTS devicetype")
-    op.execute("DROP TYPE IF EXISTS flowinputtype")
-    op.execute("DROP TYPE IF EXISTS questionsourcetype")
-    op.execute("DROP TYPE IF EXISTS questionanswertype")
-    op.execute("DROP TYPE IF EXISTS flowdifficulty")
-    op.execute("DROP TYPE IF EXISTS questiondifficulty")
-
 def upgrade() -> None:
     # Only execute this code if it's the first migration
     if not down_revision:
         op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
-        drop_types()
 
     ${upgrades if upgrades else "pass"}
     
@@ -67,7 +48,3 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     ${downgrades if downgrades else "pass"}
-    
-    # Only drop types if it's the first migration
-    if not down_revision:
-        drop_types()

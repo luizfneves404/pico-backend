@@ -72,7 +72,7 @@ async def test_flow_feed(user_client: AsyncClient, user: User, session: AsyncSes
         assert isinstance(flow["created_at"], str)
         assert isinstance(flow["title"], str)
         assert flow["cover_image"] is None or isinstance(flow["cover_image"], str)
-        assert flow["action_link"] is None or isinstance(flow["action_link"], str)
+        assert flow["action_url"] is None or isinstance(flow["action_url"], str)
         assert flow["action_text"] is None or isinstance(flow["action_text"], str)
         assert isinstance(flow["created_by"], dict)
         assert isinstance(flow["query"], str)
@@ -163,7 +163,7 @@ async def test_discover_flows(
         assert isinstance(flow["created_at"], str)
         assert isinstance(flow["title"], str)
         assert flow["cover_image"] is None or isinstance(flow["cover_image"], str)
-        assert flow["action_link"] is None or isinstance(flow["action_link"], str)
+        assert flow["action_url"] is None or isinstance(flow["action_url"], str)
         assert flow["action_text"] is None or isinstance(flow["action_text"], str)
         assert isinstance(flow["created_by"], dict)
         assert isinstance(flow["query"], str)
@@ -240,7 +240,7 @@ async def test_get_flow_details(
     assert response_data["cover_image"] == (
         flow.cover_image.url if flow.cover_image else None
     )
-    assert response_data["action_link"] == flow.action_link
+    assert response_data["action_url"] == flow.action_url
     assert response_data["action_text"] == flow.action_text
     assert response_data["created_by"] == {
         "id": user.id,

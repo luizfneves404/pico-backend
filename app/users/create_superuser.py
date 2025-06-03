@@ -36,9 +36,8 @@ async def create_superuser(
 
             # Create new user
             user_data = UserIn(
-                username=username,
+                name=username,
                 email=email,
-                phone_number=phone_number,
                 password=SecretStr(password),
                 referred_by_username="",
                 signup_source=SignupSource.OTHER,  # Mark as admin-created
@@ -46,9 +45,8 @@ async def create_superuser(
 
             hashed_password = get_password_hash(user_data.password.get_secret_value())
             db_user = User(
-                username=str(user_data.username),
+                name=str(user_data.name),
                 email=str(user_data.email),
-                phone_number=str(user_data.phone_number),
                 hashed_password=str(hashed_password),
                 is_superuser=True,
             )

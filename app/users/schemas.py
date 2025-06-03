@@ -1,3 +1,4 @@
+import re
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -42,6 +43,28 @@ def validate_name_field(value: Any) -> str:
 ObjectName = Annotated[str, BeforeValidator(validate_name_field)]
 
 
+def validate_username_field(value: str) -> str:
+    """
+    Validate that the username fits the normalization rules.
+
+    Args:
+        value: The username string to validate.
+
+    Returns:
+        The original username string if valid.
+
+    Raises:
+        ValueError: If the username does not fit the normalization rules.
+    """
+    # Username must only contain a-z, A-Z, 0-9, and underscores, and no spaces or accents
+    if not re.fullmatch(r"[a-z0-9_]+", value):
+        raise ValueError("Username contains invalid characters or format")
+    return value
+
+
+UsernameStr = Annotated[str, AfterValidator(validate_username_field)]
+
+
 class TokenRequest(BaseModel):
     username: StripWhitespaceStr
     password: PasswordStr
@@ -67,19 +90,40 @@ class VerifyRequest(BaseModel):
     token: str
 
 
+class SocialTokenRequest(BaseModel):
+    """Base schema for social authentication requests."""
+
+    id_token: str
+    signup_source: SignupSource
+    referred_by_username: UsernameStr | Literal[""]
+
+
+class GoogleAuthRequest(SocialTokenRequest):
+    """Request schema for Google social authentication."""
+
+    pass
+
+
+class AppleAuthRequest(SocialTokenRequest):
+    """Request schema for Apple social authentication."""
+
+    name: StripWhitespaceStr
+
+
 class UserBase(BaseModel):
     model_config = ConfigDict(coerce_numbers_to_str=True, from_attributes=True)
-
-    username: StripWhitespaceStr = Field(min_length=1, max_length=50)
-    phone_number: CustomPhoneNumber
+    name: StripWhitespaceStr = Field(min_length=1, max_length=150)
+    username: UsernameStr = Field(min_length=1, max_length=50)
+    phone_number: CustomPhoneNumber | Literal[""]
     email: LowercaseEmailStr
 
 
-class UserIn(UserBase):
+class UserIn(BaseModel):
+    model_config = ConfigDict(coerce_numbers_to_str=True, from_attributes=True)
+    name: StripWhitespaceStr = Field(min_length=1, max_length=150)
+    email: LowercaseEmailStr
     password: PasswordStr
     referred_by_username: StripWhitespaceStr = Field(max_length=50, default="")
-    current_education: EducationIn | None = Field(default=None)
-    intended_education: EducationIn | None = Field(default=None)
     signup_source: SignupSource = Field(default=SignupSource.UNKNOWN)
 
 
@@ -94,6 +138,7 @@ class OtherUserOut(UserBase):
     def from_orm_model(cls, user: User) -> "OtherUserOut":
         return cls(
             id=user.id,
+            name=user.name,
             username=user.username,
             phone_number=user.phone_number,
             email=user.email,
@@ -122,6 +167,7 @@ class UserOut(OtherUserOut):
         other_user = OtherUserOut.from_orm_model(user)
         return cls(
             id=other_user.id,
+            name=other_user.name,
             username=other_user.username,
             phone_number=other_user.phone_number,
             email=other_user.email,
@@ -132,28 +178,15 @@ class UserOut(OtherUserOut):
         )
 
 
+class SentinelUserOut(BaseModel):
+    id: int
+    username: StripWhitespaceStr
+    email: LowercaseEmailStr
+    phone_number: CustomPhoneNumber | Literal[""]
+
+
 class PasswordRequest(BaseModel):
     current_password: PasswordStr
-
-
-class UsernameUpdateRequest(PasswordRequest):
-    new_username: StripWhitespaceStr = Field(min_length=1, max_length=50)
-
-
-class PasswordUpdateRequest(PasswordRequest):
-    new_password: PasswordStr
-
-
-class PhoneNumberUpdateRequest(PasswordRequest):
-    new_phone_number: CustomPhoneNumber
-
-
-class EmailUpdateRequest(PasswordRequest):
-    new_email: LowercaseEmailStr
-
-
-class EducationUpdateRequest(BaseModel):
-    education: EducationIn
 
 
 class UserStatsResponse(BaseModel):
@@ -217,17 +250,14 @@ class OnlineInfo(BaseModel):
     last_online: AwareDatetime | None
 
 
-class BalanceOut(BaseModel):
-    balance: int
-
-
 # New unified update schemas
 class UserUpdate(BaseModel):
     """Unified user update schema with optional fields."""
 
     model_config = ConfigDict(coerce_numbers_to_str=True)
 
-    username: StripWhitespaceStr | None = Field(None, min_length=1, max_length=50)
+    name: StripWhitespaceStr | None = Field(None, min_length=1, max_length=150)
+    username: UsernameStr | None = Field(None, min_length=1, max_length=50)
     password: PasswordStr | None = None
     phone_number: CustomPhoneNumber | None = None
     email: LowercaseEmailStr | None = None

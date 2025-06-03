@@ -1,11 +1,8 @@
 import logging
-import os
 import string
-import tempfile
 import uuid
-from contextlib import contextmanager
 from enum import StrEnum
-from typing import TYPE_CHECKING, Iterator, Protocol
+from typing import TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -543,7 +540,7 @@ class CampaignType(StrEnum):
     INTENDED_EDUCATION = "intended_education"
     REFERRALS = "referrals"
     FLOW = "flow"
-    ADDED_PHONE_NUMBER = "added_phone_number"
+    ADD_PHONE_NUMBER = "add_phone_number"
 
 
 class Campaign(Base):
@@ -584,44 +581,4 @@ class Campaign(Base):
 
     probability: Mapped[float] = mapped_column(default=0.0)
 
-    campaign_type: Mapped[CampaignType] = mapped_column()
-
-
-class FieldFile(Protocol):
-    name: str
-    size: int
-
-    def chunks(self) -> Iterator[bytes]: ...
-
-
-@contextmanager
-def open_field_file_as_temp(field_file: FieldFile) -> Iterator[str]:
-    file_path = ""
-    try:
-        _, file_extension = os.path.splitext(field_file.name)
-
-        temp_file = tempfile.NamedTemporaryFile(
-            mode="r+b", delete=False, suffix=file_extension
-        )
-
-        logger.debug(f"Writing {field_file.size} bytes to temp file...")
-
-        for chunk in field_file.chunks():
-            temp_file.write(chunk)
-
-        logger.debug(f"Finished writing {field_file.size} bytes to temp file")
-
-        temp_file.close()
-
-        file_path = temp_file.name
-
-        yield file_path
-
-    finally:
-        try:
-            os.remove(file_path)
-            logger.debug("Cleaned up temporary file for field_file")
-        except UnboundLocalError:
-            logger.debug(
-                "UnboundLocalError: file_path is not defined, so no cleanup needed"
-            )
+    campaign_type: Mapped[str] = mapped_column(String(50))

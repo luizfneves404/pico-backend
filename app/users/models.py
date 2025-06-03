@@ -14,7 +14,6 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, aliased, mapped_column, relationship
 
 from app.base import ASYNC_PARENT_FOREIGN_KEY_OPTIONS, Base
-from app.currency.models import HasCurrencyTransactions
 from app.flows.models import Flow
 
 if TYPE_CHECKING:
@@ -23,14 +22,11 @@ if TYPE_CHECKING:
     from app.ws.models import UserWebsocketInfo
 
 
-STARTING_BALANCE = 1000
-
-
 class EducationLevel(StrEnum):
     MIDDLE_SCHOOL = "MS"
-    FIRST_GRADE_HIGH_SCHOOL = "FYHS"
-    SECOND_GRADE_HIGH_SCHOOL = "SYHS"
-    THIRD_GRADE_HIGH_SCHOOL = "TYHS"
+    FIRST_GRADE_HIGH_SCHOOL = "FGHS"
+    SECOND_GRADE_HIGH_SCHOOL = "SGHS"
+    THIRD_GRADE_HIGH_SCHOOL = "TGHS"
     HIGH_SCHOOL_COMPLETE = "HSG"
     COLLEGE = "COL"
     UNKNOWN = ""
@@ -46,19 +42,18 @@ class SignupSource(StrEnum):
     UNKNOWN = ""
 
 
-class User(Base, HasCurrencyTransactions):
+class User(Base):
+    name: Mapped[str] = mapped_column(String(150))
     username: Mapped[str] = mapped_column(String(50), unique=True)
     email: Mapped[str] = mapped_column(String(255), unique=True)
-    phone_number: Mapped[str] = mapped_column(String(25), unique=True)
-    hashed_password: Mapped[str] = mapped_column(String(255))
+    phone_number: Mapped[str] = mapped_column(String(25), default="")
+    hashed_password: Mapped[str] = mapped_column(String(255), default="")
+    google_id: Mapped[str] = mapped_column(String(255), server_default="")
+    apple_id: Mapped[str] = mapped_column(String(255), server_default="")
+
     is_superuser: Mapped[bool] = mapped_column(default=False)
 
     is_premium: Mapped[bool] = mapped_column(default=False)
-
-    balance: Mapped[int] = mapped_column(
-        CheckConstraint("balance >= 0", name="user_balance_check"),
-        default=STARTING_BALANCE,
-    )
 
     is_bot: Mapped[bool] = mapped_column(default=False)
     bot_difficulty: Mapped[float | None] = mapped_column(default=None)
@@ -127,12 +122,25 @@ class User(Base, HasCurrencyTransactions):
             "is_bot = True AND bot_difficulty IS NOT NULL",
             name="bot_difficulty_check",
         ),
-        Index(
-            "ix_user_username_lower",
-            func.lower(username),
-            unique=True,
-        ),  # the username is stored as it comes (should be trimmed though), but we use this index to make queries case insensitive and disallow duplicates
+        CheckConstraint(
+            "(google_id != '' AND apple_id = '' AND hashed_password = '') OR "
+            "(google_id = '' AND apple_id != '' AND hashed_password = '') OR "
+            "(google_id = '' AND apple_id = '' AND hashed_password != '')",
+            name="google_or_apple_or_password_exclusive_check",
+        ),
         Index("ix_user_email_lower", func.lower(email), unique=True),
+        Index(
+            "unique_google_id",
+            "google_id",
+            unique=True,
+            postgresql_where=google_id != "",
+        ),
+        Index(
+            "unique_apple_id",
+            "apple_id",
+            unique=True,
+            postgresql_where=apple_id != "",
+        ),
     )
 
     @hybrid_property
