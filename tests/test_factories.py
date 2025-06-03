@@ -12,7 +12,6 @@ async def test_create_user(session: AsyncSession, user: User) -> None:
     assert user.phone_number.startswith("tel:+55-11-99999-9")
     assert verify_password("defaultpassword", user.hashed_password)
     assert user.is_superuser is False
-    assert user.is_premium is False
     assert user.is_bot is False
     assert user.bot_difficulty is None
     assert user.signup_source == "social"

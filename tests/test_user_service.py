@@ -424,7 +424,6 @@ class TestCreateUserByPassword:
 
         # Assert default values
         assert user.is_superuser is False
-        assert user.is_premium is False
         assert user.is_bot is False
         assert user.bot_difficulty is None
         assert user.phone_number == ""

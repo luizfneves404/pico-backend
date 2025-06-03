@@ -28,6 +28,7 @@ class InAppNotification(Base):
 class ExternalInAppNotification(InAppNotification):
     __mapper_args__ = {
         "polymorphic_identity": "external_in_app_notification",
+        "polymorphic_load": "inline",
     }
 
     external_url: Mapped[str] = mapped_column(Text)
@@ -36,6 +37,7 @@ class ExternalInAppNotification(InAppNotification):
 class FlowInAppNotification(InAppNotification):
     __mapper_args__ = {
         "polymorphic_identity": "flow_in_app_notification",
+        "polymorphic_load": "inline",
     }
 
     flow_id: Mapped[int] = mapped_column(ForeignKey("flow.id", ondelete="CASCADE"))

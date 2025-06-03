@@ -15,6 +15,7 @@ from app.flows.models import (
     Question,
 )
 from app.users.models import User
+from app.users.service import get_user
 
 # number of elements to load in the feed
 NUM_ELEMENTS_TO_LOAD_IN_FEED = 5
@@ -288,6 +289,16 @@ async def submit_answer_multiple_choice(
         choice_id=choice_id,
     )
     db_session.add(flow_question_user)
+
+    # increase social score of the user who created the flow
+    created_by = flow_question.flow.created_by
+    created_by.profile.social_score += 1
+    db_session.add(created_by.profile)
+
+    # increase xp score of the user who answered the question
+    user = await get_user(db_session, id=user_id)
+    user.profile.xp_score += 1
+    db_session.add(user.profile)
 
 
 async def add_elements_to_flow(

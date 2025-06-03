@@ -243,7 +243,6 @@ class UserFactory(AsyncSQLAlchemyFactory[User]):
     email = Sequence(email_sequence)
     phone_number = Sequence(phone_number_sequence)
     is_superuser = False
-    is_premium = False
     is_bot = False
     bot_difficulty = None
     signup_source = "social"

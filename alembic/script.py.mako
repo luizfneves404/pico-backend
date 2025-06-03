@@ -30,18 +30,8 @@ def upgrade() -> None:
     if not down_revision:
         op.execute(
             """
-            INSERT INTO "user" (username, email, phone_number, hashed_password, is_superuser, 
-                               is_premium, balance, is_bot, 
-                               bot_difficulty, signup_source)
-            VALUES ('system', 'system@example.com', '21999202122', '', 
-                    false, false, 0, false,
-                    NULL, 'OTHER'),
-                    ('pico', 'pico@example.com', '21999202123', '', 
-                    false, false, 0, false,
-                    NULL, 'OTHER'),
-                    ('deleted', 'deleted@example.com', '21999202124', '', 
-                    false, false, 0, false,
-                    NULL, 'OTHER');
+            INSERT INTO "user" (username, name, email, phone_number, hashed_password, is_superuser, is_bot, bot_difficulty, signup_source)
+            VALUES ('deleted', 'deleted', 'deleted@example.com', '21999202124', '', false, false, NULL, 'OTHER');
             """
         )
 

@@ -17,6 +17,7 @@ from app.base import ASYNC_PARENT_FOREIGN_KEY_OPTIONS, Base
 from app.flows.models import Flow
 
 if TYPE_CHECKING:
+    from app.community.models import Community
     from app.education.models import Education
     from app.fcm.models import FCMDevice
     from app.ws.models import UserWebsocketInfo
@@ -52,8 +53,6 @@ class User(Base):
     apple_id: Mapped[str] = mapped_column(String(255), server_default="")
 
     is_superuser: Mapped[bool] = mapped_column(default=False)
-
-    is_premium: Mapped[bool] = mapped_column(default=False)
 
     is_bot: Mapped[bool] = mapped_column(default=False)
     bot_difficulty: Mapped[float | None] = mapped_column(default=None)
@@ -114,6 +113,12 @@ class User(Base):
         passive_deletes=True,
     )
 
+    communities: Mapped[list["Community"]] = relationship(
+        back_populates="users",
+        lazy="raise_on_sql",
+        secondary="community_user",
+    )
+
     __table_args__ = (
         CheckConstraint(
             # either is not bot and doesnt have bot_difficulty
@@ -125,7 +130,8 @@ class User(Base):
         CheckConstraint(
             "(google_id != '' AND apple_id = '' AND hashed_password = '') OR "
             "(google_id = '' AND apple_id != '' AND hashed_password = '') OR "
-            "(google_id = '' AND apple_id = '' AND hashed_password != '')",
+            "(google_id = '' AND apple_id = '' AND hashed_password != '') OR "
+            "(google_id = '' AND apple_id = '' AND hashed_password = '')",  # this one cannot login
             name="google_or_apple_or_password_exclusive_check",
         ),
         Index("ix_user_email_lower", func.lower(email), unique=True),

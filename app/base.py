@@ -47,7 +47,7 @@ class RichText(BaseModel):
 
 
 class TextBlock(BaseModel):
-    type: Literal["text"]
+    block_type: Literal["text"]
     style: Literal[
         "paragraph",
         "heading1",
@@ -61,12 +61,12 @@ class TextBlock(BaseModel):
 
 
 class ImageBlock(BaseModel):
-    type: Literal["image"]
+    block_type: Literal["image"]
     file_id: str
     alt: str | None = None
 
 
-ContentBlock = Annotated[TextBlock | ImageBlock, Field(discriminator="type")]
+ContentBlock = Annotated[TextBlock | ImageBlock, Field(discriminator="block_type")]
 
 
 def camel_to_snake(name: str) -> str:

@@ -124,3 +124,14 @@ async def get_institution_detail(db_session: DBSessionAnnotated, institution_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Institution not found"
         )
+
+
+@router.get("/groups/{group_id}", response_model=GroupOut)
+async def get_group_detail(db_session: DBSessionAnnotated, group_id: int):
+    try:
+        group = await education_service.get_group(db_session, group_id)
+        return group
+    except education_service.GroupNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Group not found"
+        )

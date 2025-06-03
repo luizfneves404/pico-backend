@@ -123,7 +123,7 @@ class UserIn(BaseModel):
     name: StripWhitespaceStr = Field(min_length=1, max_length=150)
     email: LowercaseEmailStr
     password: PasswordStr
-    referred_by_username: StripWhitespaceStr = Field(max_length=50, default="")
+    referred_by_username: UsernameStr | Literal[""]
     signup_source: SignupSource = Field(default=SignupSource.UNKNOWN)
 
 
