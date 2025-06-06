@@ -17,11 +17,12 @@ from app.config import settings
 from app.database import db_manager
 from app.fcm.fcm_service import init_firebase, task_send_notifications
 from app.flows.tasks import task_mark_question_timed_out
+from app.logging_config import get_logging_config
 from app.mail import task_send_email
 
-REDIS_SETTINGS = RedisSettings.from_dsn(settings.redis_url)
+logging.config.dictConfig(get_logging_config())
 
-logging.config.fileConfig("logging.ini", disable_existing_loggers=False)
+REDIS_SETTINGS = RedisSettings.from_dsn(settings.redis_url)
 
 
 async def startup(ctx: dict[Any, Any]):

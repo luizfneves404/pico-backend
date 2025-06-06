@@ -28,6 +28,7 @@ from app.config import settings
 from app.database import DatabaseSessionManager, db_manager
 from app.deps import get_db_session
 from app.fcm.fcm_service import init_firebase
+from app.main import fastapi_app
 from app.redis_client import get_redis, use_redis
 from app.users.models import User
 from app.ws.routers import get_db_session_websocket
@@ -175,7 +176,7 @@ async def arq_worker() -> AsyncGenerator[Worker, None]:
         yield create_worker(WorkerSettings)
 
 
-@pytest.fixture()
+@pytest.fixture
 def app(
     session_factory: Callable[[], AsyncContextManager[AsyncSession]],
     websocket_session_factory: Callable[[], AsyncContextManager[AsyncSession]],
@@ -183,8 +184,6 @@ def app(
     redis_for_tests: redis.Redis,
     firebase_for_tests: None,
 ) -> Generator[FastAPI, None, None]:
-    from app.main import fastapi_app
-
     async def get_db_session_override():
         async with session_factory() as session:
             async with session.begin():
@@ -225,7 +224,7 @@ async def user(session: AsyncSession) -> User:
         return await UserFactory.create(session)
 
 
-@pytest.fixture()
+@pytest.fixture
 async def websocket_user(
     sessionmanager_for_tests: DatabaseSessionManager,
 ) -> AsyncGenerator[User, None]:

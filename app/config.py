@@ -184,7 +184,7 @@ class Settings(BaseSettings):
             return "pico_backend.prod_settings"
 
 
-if "test" in sys.argv or "migrate" in sys.argv:
+if any("test" in arg for arg in sys.argv) or any("migrate" in arg for arg in sys.argv):
     os.environ["ENVIRONMENT"] = "test"
 
 settings = Settings()

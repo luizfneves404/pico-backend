@@ -1,6 +1,9 @@
+import logging
 import logging.config
 import os
 import sys
+
+from app.logging_config import get_logging_config
 
 sys.path.insert(
     1,
@@ -32,16 +35,14 @@ from app.education.routers import router as education_router
 from app.fcm.fcm_service import init_firebase
 from app.files.routers import router as files_router
 from app.flows.routers import router as flows_router
-from app.log_filters import add_log_filters
 from app.redis_client import use_redis
 from app.users.routers import token_router, user_router
 from app.ws.routers import router as websockets_router
 from pico_django.pico_backend.asgi import application as django_application
 
-logging.config.fileConfig("logging.ini", disable_existing_loggers=False)
 logger = logging.getLogger(__name__)
 
-add_log_filters()
+logging.config.dictConfig(get_logging_config())
 
 
 @asynccontextmanager
