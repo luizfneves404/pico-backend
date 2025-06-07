@@ -34,6 +34,8 @@ variables:
   OPENAI_API_KEY: $OPENAI_API_KEY
   PEN_TO_PRINT_RAPIDAPI_KEY: $PEN_TO_PRINT_RAPIDAPI_KEY
   TINIFY_API_KEY: $TINIFY_API_KEY
+  GOOGLE_CLIENT_ID: 123456
+  APPLE_APP_ID: 123456
 
 pipeline-job:
   image: registry.gitlab.com/gitlab-org/cloud-deploy/aws-base:latest

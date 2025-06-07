@@ -40,6 +40,8 @@ services:
       - UVICORN_HOST=0.0.0.0
       - UVICORN_PORT=8000
       - UVICORN_RELOAD=false
+      - GOOGLE_CLIENT_ID=123456
+      - APPLE_APP_ID=123456
 
       # API Keys
       - AMPLITUDE_API_KEY
@@ -91,6 +93,8 @@ services:
       - UVICORN_HOST=0.0.0.0
       - UVICORN_PORT=8000
       - UVICORN_RELOAD=false
+      - GOOGLE_CLIENT_ID=123456
+      - APPLE_APP_ID=123456
 
       # API Keys
       - AMPLITUDE_API_KEY
@@ -142,6 +146,8 @@ services:
       - UVICORN_HOST=0.0.0.0
       - UVICORN_PORT=8000
       - UVICORN_RELOAD=false
+      - GOOGLE_CLIENT_ID=123456
+      - APPLE_APP_ID=123456
 
       # API Keys
       - AMPLITUDE_API_KEY
