@@ -6,7 +6,7 @@ set -e
 echo "Starting celery worker and ARQ worker..."
 
 # Start ARQ worker in the background
-arq app.arq_worker.WorkerSettings &
+python -m app.arq_worker &
 ARQ_PID=$!
 
 # Start Celery worker

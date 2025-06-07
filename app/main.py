@@ -28,6 +28,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 import app.arq_client as arq_client
 from app.admin_registry import admin_views, authentication_backend, require_admin_login
 from app.amp import track_amplitude_endpoint_event
+from app.community.routers import router as community_router
 from app.config import Environment, settings
 from app.database import db_manager
 from app.deps import CurrentUserDep
@@ -35,14 +36,13 @@ from app.education.routers import router as education_router
 from app.fcm.fcm_service import init_firebase
 from app.files.routers import router as files_router
 from app.flows.routers import router as flows_router
+from app.in_app_notifications.routers import router as in_app_notifications_router
 from app.redis_client import use_redis
 from app.users.routers import token_router, user_router
 from app.ws.routers import router as websockets_router
 from pico_django.pico_backend.asgi import application as django_application
 
 logger = logging.getLogger(__name__)
-
-logging.config.dictConfig(get_logging_config())
 
 
 @asynccontextmanager
@@ -155,16 +155,19 @@ async def openapi(request: Request) -> dict[str, Any]:
 base_api_router = APIRouter(prefix="/api")
 
 # not authenticated (unless some authentication is required inside the router)
+# if any route inside needs to have no authentication, add it to this router
 base_api_router.include_router(token_router)
 base_api_router.include_router(user_router)
 base_api_router.include_router(websockets_router)
 base_api_router.include_router(education_router)
 
-# authenticated
+# authenticated (all routes inside will have authentication)
 authenticated_routers = APIRouter(dependencies=[CurrentUserDep])
 
+authenticated_routers.include_router(community_router)
 authenticated_routers.include_router(files_router)
 authenticated_routers.include_router(flows_router)
+authenticated_routers.include_router(in_app_notifications_router)
 
 # including base routers
 base_api_router.include_router(authenticated_routers)
@@ -198,6 +201,7 @@ application = HostRouter(
 
 
 if __name__ == "__main__":
+    logging.config.dictConfig(get_logging_config())
     uvicorn.run(
         "app.main:application",
         host=settings.uvicorn_host,

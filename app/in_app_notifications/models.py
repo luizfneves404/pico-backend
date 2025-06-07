@@ -31,7 +31,7 @@ class ExternalInAppNotification(InAppNotification):
         "polymorphic_load": "inline",
     }
 
-    external_url: Mapped[str] = mapped_column(Text)
+    external_url: Mapped[str] = mapped_column(Text, default="")
 
 
 class FlowInAppNotification(InAppNotification):
@@ -39,6 +39,7 @@ class FlowInAppNotification(InAppNotification):
         "polymorphic_identity": "flow_in_app_notification",
         "polymorphic_load": "inline",
     }
-
-    flow_id: Mapped[int] = mapped_column(ForeignKey("flow.id", ondelete="CASCADE"))
+    flow_id: Mapped[int] = mapped_column(
+        ForeignKey("flow.id", ondelete="CASCADE"), nullable=True
+    )
     flow: Mapped["Flow"] = relationship(lazy="raise_on_sql")

@@ -69,7 +69,7 @@ class FlowQuestionInFeed(BaseModel):
     difficulty: QuestionDifficulty
 
     source_type: QuestionSourceType
-    official_source: str
+    official_source: str | None
     source_user: SimpleUser | None
 
     answer_type: QuestionAnswerType
@@ -94,7 +94,9 @@ class FlowQuestionInFeed(BaseModel):
             subcategory=flow_question.question.subcategory,
             difficulty=flow_question.question.difficulty,
             source_type=flow_question.question.source_type,
-            official_source=flow_question.question.official_source,
+            official_source=flow_question.question.official_source.exam.name
+            if flow_question.question.official_source
+            else None,
             source_user=SimpleUser(
                 id=flow_question.question.source_user.id,
                 username=flow_question.question.source_user.username,
@@ -243,9 +245,13 @@ class AddQuestionsToFlowOfficial(BaseModel):
     difficulty: FlowDifficulty = Field(default=FlowDifficulty.ALL)
 
 
-class SubmitAnswerMultipleChoice(BaseModel):
+class SubmitAnswerMultipleChoiceRequest(BaseModel):
     question_id: int
     choice_id: int | None
+
+
+class SubmitAnswerMultipleChoiceResponse(BaseModel):
+    xp_increase: int
 
 
 class CampaignInFeed(BaseModel):

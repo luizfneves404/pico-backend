@@ -204,7 +204,6 @@ async def correct_essay(
             raise
 
         # correct_essay_and_save_and_notify([existing_essay.id])
-        print("will not correct and save and notify")
         return existing_essay
     else:
         # Create new essay with insert().returning()
@@ -231,7 +230,6 @@ async def correct_essay(
             raise
 
         # correct_essay_and_save_and_notify([essay.id])
-        print("will not correct and save and notify")
         return essay
 
 

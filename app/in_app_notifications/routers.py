@@ -40,4 +40,4 @@ async def mark_all_as_seen(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
 ) -> None:
-    service.mark_all_as_seen(db_session, user_id=current_user.id)
+    await service.mark_all_as_seen(db_session, user_id=current_user.id)

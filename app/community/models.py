@@ -24,3 +24,5 @@ class Community(Base):
         secondary="community_user",
         lazy="raise_on_sql",
     )
+
+    __table_args__ = (UniqueConstraint("name", "subtitle"),)

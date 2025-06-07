@@ -19,10 +19,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.base import ASYNC_PARENT_FOREIGN_KEY_OPTIONS, Base, auto_now_insert_timestamp
 from app.files.models import File
-from app.shared.code_generation import HasCode
 
 if TYPE_CHECKING:
-    from app.tournaments.old_models_sqlalchemy import Tournament
     from app.users.models import User
 
 logger = logging.getLogger(__name__)
@@ -102,7 +100,7 @@ class UserInfo(Base):
     duel_score: Mapped[float] = mapped_column(default=STARTING_DUEL_SCORE)
 
 
-class Session(Base, HasCode, HasCurrencyTransactions):
+class Session(Base):
     __mapper_args__ = {
         "polymorphic_on": "session_type",
         "polymorphic_identity": "session",

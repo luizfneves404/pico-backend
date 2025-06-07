@@ -12,7 +12,8 @@ from app.flows.schemas import (
     FlowDetail,
     FlowInFeed,
     FlowInSearch,
-    SubmitAnswerMultipleChoice,
+    SubmitAnswerMultipleChoiceRequest,
+    SubmitAnswerMultipleChoiceResponse,
 )
 from app.pagination import (
     PaginatedResponse,
@@ -105,8 +106,6 @@ async def create_flow(
             input_files,
             FlowInputType.TOPIC if not input_files else FlowInputType.FILES,
         )
-    except InsufficientFundsError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except flow_service.FlowValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -128,8 +127,6 @@ async def add_questions_to_flow_official(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
         )
-    except InsufficientFundsError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/{id}/add-questions-ai", response_model=FlowDetail)
@@ -149,27 +146,29 @@ async def add_questions_to_flow_ai(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
         )
-    except InsufficientFundsError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.post("/{id}/submit", status_code=status.HTTP_200_OK)
+@router.post(
+    "/{id}/submit",
+    status_code=status.HTTP_200_OK,
+    response_model=SubmitAnswerMultipleChoiceResponse,
+)
 async def submit_answer_multiple_choice(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
     id: int,
-    answer: SubmitAnswerMultipleChoice,
-):
+    answer: SubmitAnswerMultipleChoiceRequest,
+) -> SubmitAnswerMultipleChoiceResponse:
     """Submit an answer for a question in the flow"""
-
     try:
-        return await flow_service.submit_answer_multiple_choice(
+        xp_increase = await flow_service.submit_answer_multiple_choice(
             db_session,
             user_id=current_user.id,
             flow_id=id,
             question_id=answer.question_id,
             choice_id=answer.choice_id,
         )
+        return SubmitAnswerMultipleChoiceResponse(xp_increase=xp_increase)
     except flow_service.FlowQuestionNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow element not found"

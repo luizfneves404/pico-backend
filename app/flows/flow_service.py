@@ -1,5 +1,7 @@
+import random
+
 from fastapi import UploadFile
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -12,13 +14,16 @@ from app.flows.models import (
     FlowQuestion,
     FlowQuestionUser,
     FlowUserFeed,
+    OfficialQuestionSource,
     Question,
+    QuestionAnswerType,
 )
-from app.users.models import User
-from app.users.service import get_user
+from app.users.models import User, UserProfile
 
-# number of elements to load in the feed
 NUM_ELEMENTS_TO_LOAD_IN_FEED = 5
+
+REPEATED_CORRECT_ANSWER_XP_MULTIPLIER = 0.1
+WRONG_ANSWER_XP_MULTIPLIER = 0.1
 
 
 class FlowNotFoundError(Exception):
@@ -72,7 +77,6 @@ async def feed(db_session: AsyncSession, *, user_id: int) -> list[Flow]:
     )
     result = await db_session.execute(query)
     flows = [row[0] for row in result.all()]
-    print("flows", flows)
 
     # Mark these flows as seen by this user
     for flow in flows:
@@ -80,7 +84,7 @@ async def feed(db_session: AsyncSession, *, user_id: int) -> list[Flow]:
         db_session.add(flow_user_feed)
 
     # Commit the seen records
-    await db_session.commit()
+    await db_session.flush()
 
     return flows
 
@@ -97,6 +101,7 @@ async def list_user_flows(db_session: AsyncSession, *, user_id: int) -> list[Flo
         select(Flow)
         .where(Flow.created_by_id == user_id)
         .order_by(Flow.created_at.desc())
+        .options(*get_flow_loader(num_elements=None))
     )
     result = await db_session.execute(query)
     return list(result.scalars().all())
@@ -257,17 +262,37 @@ async def submit_answer_multiple_choice(
     flow_id: int,
     question_id: int,
     choice_id: int | None,
-) -> None:
-    """Submit an answer for a question in a flow"""
+) -> int:
+    """Submit an answer for a multiple choice question in a flow
 
-    # Check if flow question exists
+    Args:
+        user_id: ID of the user submitting the answer
+        flow_id: ID of the flow containing the question
+        question_id: ID of the underlying Question (not FlowQuestion)
+        choice_id: ID of the selected choice, or None if no choice selected
+
+    Returns:
+        The created FlowQuestionUser entry
+
+    Raises:
+        FlowQuestionNotFoundError: If the question is not found in the flow
+        InvalidAnswerError: If the choice is invalid for the question or if the user has already answered this question in this flow
+    """
+
+    # Find the FlowQuestion by flow_id and underlying question_id
     query = (
         select(FlowQuestion)
-        .where(FlowQuestion.id == question_id, FlowQuestion.flow_id == flow_id)
+        .where(
+            FlowQuestion.flow_id == flow_id,
+            FlowQuestion.question_id == question_id,
+            FlowQuestion.question.has(
+                Question.answer_type == QuestionAnswerType.MULTIPLE_CHOICE
+            ),
+        )
         .options(
-            selectinload(FlowQuestion.question).options(
-                selectinload(Question.choices).selectinload(Choice.image)
-            )
+            selectinload(FlowQuestion.question).options(selectinload(Question.choices)),
+            selectinload(FlowQuestion.flow),
+            selectinload(FlowQuestion.multiple_choice_answers),
         )
     )
 
@@ -277,10 +302,28 @@ async def submit_answer_multiple_choice(
     if not flow_question:
         raise FlowQuestionNotFoundError()
 
-    question = flow_question.question
-
-    if not any(choice.id == choice_id for choice in question.choices):
+    if not any(choice.id == choice_id for choice in flow_question.question.choices):
         raise InvalidAnswerError("Invalid choice for this question")
+
+    if any(
+        flow_question_user.user_id == user_id
+        for flow_question_user in flow_question.multiple_choice_answers
+    ):
+        raise InvalidAnswerError("You have already answered this question in this flow")
+
+    # check if the user has already answered this question before adding the new answer
+    has_answered_correctly_before_query = await db_session.execute(
+        select(
+            exists().where(
+                FlowQuestionUser.user_id == user_id,
+                FlowQuestionUser.flow_question.has(
+                    FlowQuestion.question_id == flow_question.question_id
+                ),
+                FlowQuestionUser.choice.has(Choice.is_correct),
+            )
+        )
+    )
+    has_answered_correctly_before = has_answered_correctly_before_query.scalar_one()
 
     # Create flow_question_user entry
     flow_question_user = FlowQuestionUser(
@@ -290,15 +333,44 @@ async def submit_answer_multiple_choice(
     )
     db_session.add(flow_question_user)
 
-    # increase social score of the user who created the flow
-    created_by = flow_question.flow.created_by
-    created_by.profile.social_score += 1
-    db_session.add(created_by.profile)
+    # Increase social score of the user who created the flow if it's not the same user who answered the question
+    if flow_question.flow.created_by_id != user_id:
+        await db_session.execute(
+            update(UserProfile)
+            .where(
+                UserProfile.user_id == flow_question.flow.created_by_id,
+            )
+            .values(social_score=UserProfile.social_score + 1)
+        )
 
-    # increase xp score of the user who answered the question
-    user = await get_user(db_session, id=user_id)
-    user.profile.xp_score += 1
-    db_session.add(user.profile)
+    # calculate xp score
+    base_xp = get_question_xp()
+
+    if flow_question_user.choice_id == flow_question.question.correct_choice_id:
+        if has_answered_correctly_before:
+            xp_increase = round(base_xp * REPEATED_CORRECT_ANSWER_XP_MULTIPLIER)
+        else:
+            xp_increase = base_xp
+    else:
+        xp_increase = round(base_xp * WRONG_ANSWER_XP_MULTIPLIER)
+
+    # Increase XP score of the user who answered the question
+    await db_session.execute(
+        update(UserProfile)
+        .where(UserProfile.user_id == user_id)
+        .values(xp_score=UserProfile.xp_score + xp_increase)
+    )
+
+    return xp_increase
+
+
+def get_question_xp() -> int:
+    if random.random() < 0.02:
+        return 50
+    else:
+        # Draw from N(30, 5) and clamp to [20, 40]
+        xp = random.gauss(mu=30, sigma=5)
+        return min(40, max(20, round(xp)))
 
 
 async def add_elements_to_flow(
@@ -382,6 +454,9 @@ def get_flow_loader(num_elements: int | None):
             selectinload(FlowQuestion.question).options(
                 selectinload(Question.choices).selectinload(Choice.image),
                 selectinload(Question.source_user),
+                selectinload(Question.official_source).selectinload(
+                    OfficialQuestionSource.exam
+                ),
             ),
             selectinload(FlowQuestion.flow_question_users).options(
                 selectinload(FlowQuestionUser.user),

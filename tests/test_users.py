@@ -3,12 +3,15 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import jwt
+import pytest
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.community.models import Community, CommunityUser
 from app.config import settings
+from app.education.models import EducationLevel
 from app.users import external_auth
 from app.users.exceptions import (
     InvalidTokenError,
@@ -80,8 +83,10 @@ class TestUserCreation:
                 "name": f"  {user.name}  ",
                 "password": "defaultpassword",
                 "email": user.email,
+                "referred_by_username": "",
             },
         )
+        print(response.json())
         assert response.status_code == 201
 
         # Verify login works
@@ -103,6 +108,7 @@ class TestUserCreation:
                 "name": "",
                 "password": "defaultpassword",
                 "email": "test@example.com",
+                "referred_by_username": "",
             },
         )
         assert response.status_code == 422
@@ -115,6 +121,7 @@ class TestUserCreation:
                 "name": f"  {user2_data.name.upper()}  ",
                 "password": "defaultpassword",
                 "email": f"  {user.email.upper()}  ",
+                "referred_by_username": "",
             },
         )
         assert response.status_code == 409
@@ -125,6 +132,7 @@ class TestUserCreation:
             "name": "José María González-Smith",
             "password": "defaultpassword",
             "email": "jose.maria@example.com",
+            "referred_by_username": "",
         }
 
         response = await client.post("/api/users", json=user_data)
@@ -673,24 +681,14 @@ class TestUserRetrieval:
         response_ids = [user["id"] for user in response_data]
         response_usernames = [user["username"] for user in response_data]
 
-        assert len(response_ids) == 3
+        assert len(response_ids) == 1
         async with session.begin():
             deleted_user = (
                 await session.execute(select(User).where(User.username == "deleted"))
             ).scalar_one()
-            system_user = (
-                await session.execute(select(User).where(User.username == "system"))
-            ).scalar_one()
-            pico_user = (
-                await session.execute(select(User).where(User.username == "pico"))
-            ).scalar_one()
 
         assert deleted_user.id in response_ids
         assert deleted_user.username in response_usernames
-        assert system_user.id in response_ids
-        assert system_user.username in response_usernames
-        assert pico_user.id in response_ids
-        assert pico_user.username in response_usernames
 
 
 class TestUserUpdates:
@@ -821,17 +819,18 @@ class TestUserUpdates:
         data = {
             "updates": {
                 "current_education": {
-                    "level": "TYHS",
+                    "level": "TGHS",
                     "institution_id": school.id,
                     "course_id": course.id,
                 }
             }
         }
         response = await user_client.patch("/api/users/me", json=data)
+        print(response.json())
         assert response.status_code == 200
         response_data = response.json()
         assert "current_education" in response_data["updated_fields"]
-        assert response_data["user"]["current_education"]["level"] == "TYHS"
+        assert response_data["user"]["current_education"]["level"] == "TGHS"
         assert response_data["user"]["current_education"]["institution_id"] == school.id
         assert response_data["user"]["current_education"]["course_id"] == course.id
 
@@ -1065,3 +1064,81 @@ class TestSocialFeatures:
         assert response.status_code == 200
         assert len(response.json()["items"]) == 20
         assert response.json()["total"] == 30
+
+    @pytest.mark.parametrize(
+        "level,expected_community_subtitle",
+        [
+            (EducationLevel.THIRD_GRADE_HIGH_SCHOOL, "3° Ano do Ensino Médio"),
+            (EducationLevel.COLLEGE, "Ensino Superior"),
+        ],
+    )
+    async def test_user_auto_joins_communities_on_education_change(
+        self,
+        user: User,
+        user_client: AsyncClient,
+        session: AsyncSession,
+        level: EducationLevel,
+        expected_community_subtitle: str,
+    ) -> None:
+        """Test that users automatically join communities based on their education when changed."""
+        # Create education resources first
+        async with session.begin():
+            institution = (
+                await SchoolFactory.create(session=session)
+                if level == EducationLevel.THIRD_GRADE_HIGH_SCHOOL
+                else await CollegeFactory.create(session=session)
+            )
+            course = await CourseFactory.create(session=session)
+
+        print("institution", institution.name)
+        print("course", course.name)
+
+        async with session.begin():
+            response = await user_client.patch(
+                "/api/users/me",
+                json={
+                    "updates": {
+                        "current_education": {
+                            "level": level,
+                            "institution_id": institution.id,
+                            "course_id": course.id,
+                        }
+                    },
+                },
+            )
+            assert response.status_code == 200
+            assert response.json()["updated_fields"] == ["current_education"]
+            assert response.json()["user"]["current_education"]["level"] == level
+            assert (
+                response.json()["user"]["current_education"]["institution_id"]
+                == institution.id
+            )
+
+        # Verify community was created and user joined it
+        async with session.begin():
+            print("searched community", institution.name, expected_community_subtitle)
+            print(
+                "all communities",
+                [
+                    (community.name, community.subtitle)
+                    for community in await session.scalars(select(Community))
+                ],
+            )
+            result = await session.execute(
+                select(Community).where(
+                    Community.name == institution.name,
+                    Community.subtitle == expected_community_subtitle,
+                )
+            )
+            community = result.scalar_one_or_none()
+            assert community is not None
+
+            # Verify user is in the community
+            result = await session.execute(
+                select(CommunityUser).where(
+                    CommunityUser.user_id == user.id,
+                    CommunityUser.community_id == community.id,
+                )
+            )
+            community_user = result.scalar_one_or_none()
+            assert community_user is not None

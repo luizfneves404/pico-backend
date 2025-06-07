@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.users.models import EducationLevel
+from app.education.models import EducationLevel
 
 
 class InstitutionOut(BaseModel):

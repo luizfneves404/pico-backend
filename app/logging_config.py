@@ -40,8 +40,10 @@ def get_logging_config() -> dict[str, Any]:
                 "formatter": "default",
             },
         },
-        "root": {"level": "DEBUG", "handlers": ["console", "admin_email"]},
+        "root": {"level": "WARNING", "handlers": ["console", "admin_email"]},
         "loggers": {
+            "app": {"level": "DEBUG", "propagate": True},
+            "alembic": {"level": "DEBUG", "propagate": True},
             "sqlalchemy.engine": {
                 "level": "DEBUG"
                 if settings.environment != Environment.PROD
@@ -62,7 +64,7 @@ def get_logging_config() -> dict[str, Any]:
                 "propagate": True,
                 "filters": ["suppress_sensitive_ws"],
             },
-            "arq": {"level": "INFO", "propagate": True},
+            "arq": {"level": "DEBUG", "propagate": True},
             "faker": {"level": "INFO", "propagate": True},
         },
     }

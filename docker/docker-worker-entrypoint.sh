@@ -4,4 +4,4 @@ set -e
 
 . /code/.venv/bin/activate
 
-exec arq app.arq_worker.WorkerSettings
+exec python -m app.arq_worker

@@ -1,11 +1,14 @@
 import contextlib
 import logging
+import logging.config
 from typing import (
+    Any,
     AsyncContextManager,
     AsyncGenerator,
     AsyncIterator,
     Awaitable,
     Callable,
+    Coroutine,
     Generator,
     Literal,
     Sequence,
@@ -18,16 +21,18 @@ from arq.worker import Worker, create_worker
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from httpx_ws.transport import ASGIWebSocketTransport
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import NullPool
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import app.arq_client as arq_client
 import app.users.jwt_token as jwt_token
 from alembic.command import upgrade
-from app.arq_worker import WorkerSettings
+from app.arq_worker import make_worker_settings
 from app.config import settings
 from app.database import DatabaseSessionManager, db_manager
 from app.deps import get_db_session
 from app.fcm.fcm_service import init_firebase
+from app.logging_config import get_logging_config
 from app.main import fastapi_app
 from app.redis_client import get_redis, use_redis
 from app.users.models import User
@@ -39,6 +44,15 @@ T = TypeVar("T")
 DEFAULT_TEST_PASSWORD = "defaultpassword"
 BASE_URL = "http://test"
 logger = logging.getLogger(__name__)
+
+
+def pytest_configure():
+    """
+    This hook is called exactly once after command-line options have been parsed
+    and all plugins and initial configuration are set up—but *before* any tests
+    are collected or run.
+    """
+    logging.config.dictConfig(get_logging_config())
 
 
 class DummySESClient:
@@ -129,16 +143,43 @@ async def websocket_session_factory(
     sessionmanager_for_tests: DatabaseSessionManager,
 ) -> AsyncGenerator[Callable[[], AsyncContextManager[AsyncSession]], None]:
     """
-    Creates a session factory for WebSocket tests that commits data to make it
-    visible across different event loops and database connections.
+    Creates a session factory for WebSocket tests with rollback-based isolation.
+    Uses NullPool engine to avoid asyncpg event loop issues with WebSockets.
     """
 
-    @contextlib.asynccontextmanager
-    async def get_websocket_session() -> AsyncIterator[AsyncSession]:
-        async with sessionmanager_for_tests.websocket_session() as session:
-            yield session
+    # Create a separate engine with NullPool for WebSocket use
+    websocket_engine = create_async_engine(
+        url=sessionmanager_for_tests.engine.url,
+        pool_pre_ping=True,
+        isolation_level="READ COMMITTED",
+        poolclass=NullPool,
+    )
 
-    yield get_websocket_session
+    try:
+        # Create a connection with transaction, similar to session_factory
+        async with websocket_engine.begin() as connection:
+            # Create a sessionmaker bound to this connection
+            websocket_sessionmaker = async_sessionmaker(
+                bind=connection,
+                expire_on_commit=False,
+                autobegin=False,
+                autoflush=False,
+            )
+
+            # Create factory function that yields sessions bound to the same connection
+            @contextlib.asynccontextmanager
+            async def get_websocket_session() -> AsyncIterator[AsyncSession]:
+                async with websocket_sessionmaker(
+                    join_transaction_mode="create_savepoint"
+                ) as session:
+                    yield session
+
+            yield get_websocket_session
+
+            # Roll back the transaction when we're done
+            await connection.rollback()
+    finally:
+        await websocket_engine.dispose()
 
 
 @pytest.fixture
@@ -168,12 +209,17 @@ async def redis_for_tests():
 
 
 @pytest.fixture()
-async def arq_worker() -> AsyncGenerator[Worker, None]:
+async def arq_worker(migrated_postgres_template: str) -> AsyncGenerator[Worker, None]:
     async with arq_client.arq_redis():
-        WorkerSettings.burst = True
+        worker_settings = make_worker_settings(
+            redis_url=settings.redis_url,
+            database_url=migrated_postgres_template,
+            burst_mode=True,
+            log_configured=True,
+        )
         # Clear Redis at the start of the test session
         await arq_client.clear_redis()
-        yield create_worker(WorkerSettings)
+        yield create_worker(worker_settings)
 
 
 @pytest.fixture
@@ -226,22 +272,15 @@ async def user(session: AsyncSession) -> User:
 
 @pytest.fixture
 async def websocket_user(
-    sessionmanager_for_tests: DatabaseSessionManager,
+    websocket_session_factory: Callable[[], AsyncContextManager[AsyncSession]],
 ) -> AsyncGenerator[User, None]:
     """
-    Creates a user that's committed to the database for WebSocket tests.
-    This ensures the user is visible to WebSocket sessions running in different event loops.
+    Creates a user using the websocket session factory with rollback-based isolation.
     """
-    # Use a regular session with transaction to commit the user
-    async with sessionmanager_for_tests.session_with_transaction() as session:
-        user = await UserFactory.create(session)
-        # Transaction is committed when context exits
-
-    yield user
-
-    # Clean up: delete the user after the test
-    async with sessionmanager_for_tests.session_with_transaction() as session:
-        await session.delete(user)
+    async with websocket_session_factory() as session:
+        async with session.begin():
+            user = await UserFactory.create(session)
+            yield user
 
 
 @pytest.fixture
@@ -264,12 +303,6 @@ async def user_client(
 
 
 @pytest.fixture
-async def user2(session: AsyncSession) -> User:
-    async with session.begin():
-        return await UserFactory.create(session)
-
-
-@pytest.fixture
 def user_factory(session: AsyncSession) -> Callable[[int], Awaitable[Sequence[User]]]:
     """
     Returns a factory that creates a specified number of users.
@@ -287,28 +320,23 @@ def user_factory(session: AsyncSession) -> Callable[[int], Awaitable[Sequence[Us
 
 
 @pytest.fixture
-def user_client_factory(client: AsyncClient, session: AsyncSession):
-    async def factory(n: int) -> list[tuple[User, AsyncClient]]:
+def user_client_factory(
+    session: AsyncSession, app: FastAPI
+) -> Callable[..., Coroutine[Any, Any, tuple[list[User], list[AsyncClient]]]]:
+    async def factory(n: int) -> tuple[list[User], list[AsyncClient]]:
         async with session.begin():
             users = await UserFactory.create_batch(n, session)
-        pairs: list[tuple[User, AsyncClient]] = []
+        clients: list[AsyncClient] = []
         for user in users:
-            token_response = await client.post(
-                "/api/token/pair",
-                data={
-                    "username": user.username,
-                    "password": DEFAULT_TEST_PASSWORD,
-                },
-            )
-            token_data = token_response.json()
+            token_data = jwt_token.generate_tokens(user)
             user_client = AsyncClient(
-                base_url=client.base_url,
+                base_url=BASE_URL,
+                transport=ASGITransport(app=app),
                 headers={
-                    **client.headers,
-                    "Authorization": f"Bearer {token_data['access']}",
+                    "Authorization": f"Bearer {token_data[0]}",
                 },
             )
-            pairs.append((user, user_client))
-        return pairs
+            clients.append(user_client)
+        return users, clients
 
     return factory

@@ -47,7 +47,7 @@ class RichText(BaseModel):
 
 
 class TextBlock(BaseModel):
-    block_type: Literal["text"]
+    block_type: Literal["text"] = "text"
     style: Literal[
         "paragraph",
         "heading1",
@@ -61,7 +61,7 @@ class TextBlock(BaseModel):
 
 
 class ImageBlock(BaseModel):
-    block_type: Literal["image"]
+    block_type: Literal["image"] = "image"
     file_id: str
     alt: str | None = None
 

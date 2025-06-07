@@ -390,6 +390,10 @@ class Question(Base):
                 return ""
         return "\n".join(choices_text)
 
+    @property
+    def correct_choice_id(self) -> int | None:
+        return next(choice.id for choice in self.choices if choice.is_correct)
+
 
 class Exam(Base):
     name: Mapped[str] = mapped_column(Text)
@@ -417,6 +421,18 @@ class FlowQuestion(FlowElement):
         lazy="raise_on_sql",
         cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
+    )
+
+    answers: Mapped[list["FlowQuestionUser"]] = relationship(
+        lazy="raise_on_sql",
+        viewonly=True,
+        primaryjoin="and_(FlowQuestionUser.flow_element_id == FlowQuestion.id, or_(FlowQuestionUser.choice_id != None, FlowQuestionUser.submitted_text != ''))",
+    )
+
+    multiple_choice_answers: Mapped[list["FlowQuestionUser"]] = relationship(
+        lazy="raise_on_sql",
+        viewonly=True,
+        primaryjoin="and_(FlowQuestionUser.flow_element_id == FlowQuestion.id, FlowQuestionUser.choice_id != None)",
     )
 
     @hybrid_property

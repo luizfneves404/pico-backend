@@ -5,8 +5,9 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.education.models import EducationLevel
 from app.shared.validation import CustomPhoneNumber
-from app.users.models import EducationLevel, User
+from app.users.models import User
 
 logger = logging.getLogger(__name__)
 

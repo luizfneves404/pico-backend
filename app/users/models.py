@@ -23,16 +23,6 @@ if TYPE_CHECKING:
     from app.ws.models import UserWebsocketInfo
 
 
-class EducationLevel(StrEnum):
-    MIDDLE_SCHOOL = "MS"
-    FIRST_GRADE_HIGH_SCHOOL = "FGHS"
-    SECOND_GRADE_HIGH_SCHOOL = "SGHS"
-    THIRD_GRADE_HIGH_SCHOOL = "TGHS"
-    HIGH_SCHOOL_COMPLETE = "HSG"
-    COLLEGE = "COL"
-    UNKNOWN = ""
-
-
 class SignupSource(StrEnum):
     REFERRAL = "referral"
     SOCIAL = "social"
@@ -172,16 +162,6 @@ class User(Base):
 
     def __str__(self):
         return self.username
-
-    @property
-    def social_score(self) -> int:
-        """Access social_score from profile."""
-        return self.profile.social_score
-
-    @property
-    def xp_score(self) -> int:
-        """Access xp_score from profile."""
-        return self.profile.xp_score
 
 
 class UserProfile(Base):

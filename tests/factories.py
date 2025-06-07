@@ -3,6 +3,7 @@
 # Copyright (c) 2022 Kacper Kuźniarski
 
 import functools
+import logging
 import os
 import tempfile
 import uuid
@@ -12,7 +13,6 @@ from factory.alchemy import SQLAlchemyOptions
 from factory.base import Factory
 from factory.declarations import (
     Iterator,
-    LazyAttribute,
     LazyFunction,
     RelatedFactoryList,
     Sequence,
@@ -22,25 +22,34 @@ from factory.faker import Faker
 from sqlalchemy.ext.asyncio import AsyncSession, async_scoped_session
 
 import app.database as database
-from app.base import Base, RichText, TextBlock
-from app.education.models import College, Course, Education, School
+from app.base import Base, ContentBlock, ImageBlock, RichText, TextBlock
+from app.community.models import Community
+from app.education.models import College, Course, Education, EducationLevel, School
 from app.files.models import File
 from app.files.storage import storage
 from app.flows.models import (
     ENEM_AREAS,
     Choice,
+    Exam,
     Flow,
     FlowDifficulty,
     FlowElement,
     FlowInputType,
     FlowQuestion,
+    OfficialQuestionSource,
     Question,
     QuestionAnswerType,
     QuestionDifficulty,
     QuestionSourceType,
 )
-from app.users.models import EducationLevel, User, UserProfile
+from app.in_app_notifications.models import (
+    ExternalInAppNotification,
+    FlowInAppNotification,
+)
+from app.users.models import User, UserProfile
 from app.users.service import get_password_hash
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=Base)
 
@@ -92,6 +101,14 @@ def course_name_sequence(n: int) -> str:
 
 def college_name_sequence(n: int) -> str:
     return f"College {n}"
+
+
+def community_name_sequence(n: int) -> str:
+    return f"Community {n}"
+
+
+def community_subtitle_sequence(n: int) -> str:
+    return f"Join Community {n} and connect with peers!"
 
 
 def file_id_sequence(n: int) -> str:
@@ -167,18 +184,29 @@ class AsyncSQLAlchemyFactory(Factory[T]):
 
     @classmethod
     async def create(cls, session: AsyncSession, **kwargs: Any) -> T:
+        if cls._meta.model is User:
+            logger.info(f"CREATING USER {kwargs}")
         instance = super().create(**kwargs)
         session.add(instance)
         await session.flush()
+        if cls._meta.model is User:
+            logger.info(f"CREATED USER {instance.id} {instance.username}")
         return instance
 
     @classmethod
     async def create_batch(
         cls, size: int, session: AsyncSession, **kwargs: Any
     ) -> list[T]:
+        if cls._meta.model is User:
+            logger.info(f"CREATING BATCH OF USERS {kwargs}")
         instances = [super().create(**kwargs) for _ in range(size)]
         session.add_all(instances)
         await session.flush()
+        if cls._meta.model is User:
+            logger.info(
+                f"CREATED BATCH OF USERS {len(instances)}",
+                [instance.id for instance in instances],
+            )
         return instances
 
 
@@ -209,6 +237,17 @@ class CollegeFactory(AsyncSQLAlchemyFactory[College]):
     institution_type = "college"
     user_submitted = False
     courses = RelatedFactoryList(CourseFactory, size=3)
+
+
+class CommunityFactory(AsyncSQLAlchemyFactory[Community]):
+    """Factory for creating Community instances."""
+
+    class Meta:
+        model = Community
+        sqlalchemy_get_or_create = ("name",)
+
+    name = Sequence(community_name_sequence)
+    subtitle = Sequence(community_subtitle_sequence)
 
 
 class EducationFactory(AsyncSQLAlchemyFactory[Education]):
@@ -264,6 +303,48 @@ class FileFactory(AsyncSQLAlchemyFactory[File]):
     updated_at = Faker("date_time_this_year")
 
 
+def get_content_blocks() -> list[ContentBlock]:
+    return [
+        TextBlock(
+            style="paragraph",
+            content=[
+                RichText(
+                    text="This is sample question text for testing purposes.",
+                    bold=False,
+                    italic=False,
+                    underline=False,
+                    strikethrough=False,
+                ),
+            ],
+        ),
+        ImageBlock(
+            file_id="file1",
+            alt="This is a sample image for testing purposes.",
+        ),
+    ]
+
+
+class ExamFactory(AsyncSQLAlchemyFactory[Exam]):
+    """Factory for creating Exam instances."""
+
+    name = "ENEM"
+    country = "Brazil"
+
+    class Meta:
+        model = Exam
+        sqlalchemy_get_or_create = ("name",)
+
+
+class OfficialQuestionSourceFactory(AsyncSQLAlchemyFactory[OfficialQuestionSource]):
+    """Factory for creating OfficialQuestionSource instances."""
+
+    class Meta:
+        model = OfficialQuestionSource
+
+    exam = SubFactory(ExamFactory)
+    year = 2024
+
+
 class QuestionFactory(AsyncSQLAlchemyFactory[Question]):
     """Factory for creating Question instances."""
 
@@ -271,30 +352,7 @@ class QuestionFactory(AsyncSQLAlchemyFactory[Question]):
         model = Question
         sqlalchemy_get_or_create = ("content_blocks",)
 
-    content_blocks = LazyAttribute(
-        lambda obj: [
-            TextBlock(
-                type="text",
-                style="paragraph",
-                content=[
-                    RichText(
-                        text="This is sample question text for testing purposes.",
-                        bold=False,
-                        italic=False,
-                        underline=False,
-                        strikethrough=False,
-                    ),
-                    RichText(
-                        text="This is additional content for the question.",
-                        bold=True,
-                        italic=False,
-                        underline=False,
-                        strikethrough=False,
-                    ),
-                ],
-            )
-        ]
-    )
+    content_blocks = LazyFunction(get_content_blocks)
 
     is_active = True
     subject = "Matemática"
@@ -309,7 +367,7 @@ class QuestionFactory(AsyncSQLAlchemyFactory[Question]):
     answer_text = "This is the correct answer"
     embedding = Faker("random_elements", elements=[0.0, 1.0], length=1024)
     source_type = QuestionSourceType.OFFICIAL
-    official_source = "ENEM"
+    official_source = SubFactory(OfficialQuestionSourceFactory)
     source_user_id = None
     answer_type = QuestionAnswerType.MULTIPLE_CHOICE
     answer_image = SubFactory(FileFactory)
@@ -353,7 +411,7 @@ class FlowFactory(AsyncSQLAlchemyFactory[Flow]):
     difficulty = FlowDifficulty.ALL
     flow_input_type = FlowInputType.TOPIC
     input_topic = Faker("paragraph")
-    created_by = SubFactory(UserFactory)
+    created_by = None
     question_answer_type = QuestionAnswerType.MULTIPLE_CHOICE
 
 
@@ -383,3 +441,31 @@ class FlowQuestionFactory(AsyncSQLAlchemyFactory[FlowQuestion]):
     order = Sequence(lambda n: n)
     element_type = "flow_question"
     question = SubFactory(QuestionFactory)
+
+
+class ExternalInAppNotificationFactory(
+    AsyncSQLAlchemyFactory[ExternalInAppNotification]
+):
+    """Factory for creating ExternalInAppNotification instances."""
+
+    class Meta:
+        model = ExternalInAppNotification
+
+    seen = False
+    user = None
+    text = Faker("sentence")
+    in_app_notification_type = "external_in_app_notification"
+    external_url = Faker("url")
+
+
+class FlowInAppNotificationFactory(AsyncSQLAlchemyFactory[FlowInAppNotification]):
+    """Factory for creating FlowInAppNotification instances."""
+
+    class Meta:
+        model = FlowInAppNotification
+
+    seen = False
+    user = None
+    text = Faker("sentence")
+    in_app_notification_type = "flow_in_app_notification"
+    flow = SubFactory(FlowFactory)

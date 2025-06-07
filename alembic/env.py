@@ -1,5 +1,6 @@
 import asyncio
 from contextvars import ContextVar
+from logging.config import fileConfig
 from typing import Any
 
 from sqlalchemy import pool
@@ -10,7 +11,7 @@ import app.database  # noqa: F401 # type: ignore
 from alembic import context
 from alembic.environment import EnvironmentContext
 from app.base import Base
-from app.config import settings
+from app.config import Environment, settings
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -18,9 +19,9 @@ config = context.config
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
-if config.config_file_name is not None:
-    # fileConfig(config.config_file_name)
-    pass
+if config.config_file_name is not None and settings.environment != Environment.TEST:
+    fileConfig(config.config_file_name)
+
 
 current_url = config.get_main_option("sqlalchemy.url", None)
 if not current_url:

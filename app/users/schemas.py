@@ -156,8 +156,8 @@ class OtherUserOut(UserBase):
             )
             if user.intended_education
             else None,
-            social_score=user.social_score,
-            xp_score=user.xp_score,
+            social_score=user.profile.social_score,
+            xp_score=user.profile.xp_score,
         )
 
 

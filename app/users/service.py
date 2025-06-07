@@ -12,23 +12,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import app.amp as amp
+import app.community.service as community_service
 import app.mail as mail
 import app.users.external_auth as external_auth
 from app.education import service as education_service
-from app.education.models import Education
+from app.education.models import Education, EducationLevel
 from app.users.constants import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     DELETED_EMAIL,
     DELETED_PHONE_NUMBER,
     DELETED_USERNAME,
     NUM_RANKED_USERS,
-    PICO_EMAIL,
-    PICO_PHONE_NUMBER,
-    PICO_USERNAME,
     SENTINEL_USERNAMES,
-    SYSTEM_EMAIL,
-    SYSTEM_PHONE_NUMBER,
-    SYSTEM_USERNAME,
     WELCOME_EMAIL_MESSAGE,
     WELCOME_EMAIL_SUBJECT,
 )
@@ -43,7 +38,7 @@ from app.users.exceptions import (
     UsernameAlreadyExists,
     UserNotFoundError,
 )
-from app.users.models import EducationLevel, SignupSource, User, UserProfile
+from app.users.models import SignupSource, User, UserProfile
 from app.users.social import (
     check_contacts,
     get_ranking,
@@ -71,12 +66,6 @@ __all__ = [
     "DELETED_USERNAME",
     "DELETED_PHONE_NUMBER",
     "DELETED_EMAIL",
-    "PICO_USERNAME",
-    "PICO_PHONE_NUMBER",
-    "PICO_EMAIL",
-    "SYSTEM_USERNAME",
-    "SYSTEM_PHONE_NUMBER",
-    "SYSTEM_EMAIL",
     "SENTINEL_USERNAMES",
     "NUM_RANKED_USERS",
     "WELCOME_EMAIL_SUBJECT",
@@ -136,37 +125,53 @@ async def _set_education_field(
     await db_session.flush()
     logger.info(f"User {user.id} updated their {field_name}")
 
+    # Automatically join communities based on education information
+    await db_session.refresh(user, ["current_education", "intended_education"])
+    await db_session.refresh(user.current_education, ["institution", "course"])
+    joined_community = await community_service.change_user_education_community(
+        db_session, user=user
+    )
+    if joined_community:
+        logger.info(
+            f"User {user.id} automatically joined the community {joined_community.name} with subtitle {joined_community.subtitle} because of their education"
+        )
+    else:
+        logger.info(
+            f"User {user.id} did not join any community when changing education"
+        )
 
-async def _create_social_user(
+
+async def _create_user(
     db_session: AsyncSession,
     *,
-    name: str | None,
+    name: str,
     email: str | None,
     signup_source: SignupSource,
-    referred_by_username: str,
+    referred_by_username: str | None,
+    hashed_password: str | None = None,
     google_id: str | None = None,
     apple_id: str | None = None,
 ) -> User:
-    """Create a new user from social authentication.
+    """Centralized user creation function.
 
     Args:
         db_session: Database session
         name: User's name
         email: User's email
-        google_id: Google ID if authenticating with Google
-        apple_id: Apple ID if authenticating with Apple
-        signup_source: How the user came to know the app. Defaults to SignupSource.UNKNOWN.
+        signup_source: How the user came to know the app
+        referred_by_username: Username of the referring user
+        hashed_password: Pre-hashed password for password-based auth
+        google_id: Google ID for Google auth
+        apple_id: Apple ID for Apple auth
+
     Returns:
         Created user
 
     Raises:
+        ReferredByNotFoundError: If referring user not found
         UsernameAlreadyExists: If generated username is taken
         EmailAlreadyExists: If email is taken
     """
-    display_name = name or f"User {random.randint(1000, 9999)}"
-    base_username = _normalize_username(display_name)
-    username = f"{base_username}{random.randint(1000, 9999)}"
-
     referred_by_id = None
     if referred_by_username:
         referred_by = await get_user(db_session, username=referred_by_username)
@@ -174,10 +179,14 @@ async def _create_social_user(
             raise ReferredByNotFoundError
         referred_by_id = referred_by.id
 
+    base_username = _normalize_username(name)
+    username = f"{base_username}{random.randint(1000, 9999)}"
+
     new_user = User(
-        name=display_name,
+        name=name,
         username=username,
         email=email,
+        hashed_password=hashed_password or "",
         google_id=google_id,
         apple_id=apple_id,
         signup_source=signup_source,
@@ -209,6 +218,45 @@ async def _create_social_user(
         )
 
     return new_user
+
+
+async def _create_social_user(
+    db_session: AsyncSession,
+    *,
+    name: str | None,
+    email: str | None,
+    signup_source: SignupSource,
+    referred_by_username: str,
+    google_id: str | None = None,
+    apple_id: str | None = None,
+) -> User:
+    """Create a new user from social authentication.
+
+    Args:
+        db_session: Database session
+        name: User's name
+        email: User's email
+        google_id: Google ID if authenticating with Google
+        apple_id: Apple ID if authenticating with Apple
+        signup_source: How the user came to know the app. Defaults to SignupSource.UNKNOWN.
+    Returns:
+        Created user
+
+    Raises:
+        UsernameAlreadyExists: If generated username is taken
+        EmailAlreadyExists: If email is taken
+    """
+    display_name = name or f"User {random.randint(1000, 9999)}"
+
+    return await _create_user(
+        db_session,
+        name=display_name,
+        email=email,
+        signup_source=signup_source,
+        referred_by_username=referred_by_username,
+        google_id=google_id,
+        apple_id=apple_id,
+    )
 
 
 async def _create_education_from_data(
@@ -405,6 +453,7 @@ async def authenticate_user_by_google(
         if google_user_info.email_verified:
             # oh, sorry, this email on your google account must be yours! let me give it to you!
             existing_user.google_id = google_user_info.sub
+            existing_user.hashed_password = ""  # now you can't login with password
             await db_session.flush()
             return existing_user
         else:
@@ -456,6 +505,7 @@ async def authenticate_user_by_apple(
             # oh, sorry, this email on your apple account must be yours! let
             # me give you access to this existing account!
             existing_user.apple_id = user_info.sub
+            existing_user.hashed_password = ""  # now you can't login with password
             await db_session.flush()
             return existing_user
         else:
@@ -573,50 +623,14 @@ async def create_user_by_password(
     Returns:
         The created user
     """
-
-    referred_by_id = None
-    if referred_by_username:
-        referred_by = await get_user(db_session, username=referred_by_username)
-        if not referred_by:
-            raise ReferredByNotFoundError
-        referred_by_id = referred_by.id
-
-    base_username = _normalize_username(name)
-    username = f"{base_username}{random.randint(1000, 9999)}"
-
-    db_user = User(
+    return await _create_user(
+        db_session,
         name=name,
-        username=username,
-        hashed_password=get_password_hash(password),
         email=email,
-        referred_by_id=referred_by_id,
         signup_source=signup_source,
+        referred_by_username=referred_by_username,
+        hashed_password=get_password_hash(password),
     )
-    db_session.add(UserProfile(user=db_user))
-
-    try:
-        db_session.add(db_user)
-        await db_session.flush()
-    except IntegrityError as e:
-        error_msg = str(e.orig)
-        if "username" in error_msg:
-            raise UsernameAlreadyExists
-        elif "email" in error_msg:
-            raise EmailAlreadyExists
-        else:
-            raise
-
-    await db_session.refresh(db_user, ["referrals", "profile"])
-
-    await mail.enqueue_email(
-        mail.EmailMessage(
-            subject=WELCOME_EMAIL_SUBJECT,
-            body_html=WELCOME_EMAIL_MESSAGE.format(username=db_user.username),
-            to_emails=[db_user.email],
-        ),
-    )
-
-    return db_user
 
 
 async def delete_user(

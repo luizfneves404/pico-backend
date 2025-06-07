@@ -6,6 +6,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 import app.users.jwt_token as jwt_token
 from app.deps import CurrentUserAnnotated, CurrentUserDep, DBSessionAnnotated
+from app.education.models import EducationLevel
 from app.pagination import (
     PaginatedResponse,
     PaginationParams,
@@ -14,7 +15,6 @@ from app.pagination import (
 )
 from app.users import service
 from app.users.jwt_token import TokenError
-from app.users.models import EducationLevel
 from app.users.schemas import (
     AppleAuthRequest,
     GoogleAuthRequest,

@@ -2,8 +2,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.education.models import College, Course, Education, Institution, School
-from app.users.models import EducationLevel
+from app.education.models import (
+    College,
+    Course,
+    Education,
+    EducationLevel,
+    Institution,
+    School,
+)
 
 
 class SchoolNotFoundError(Exception):
