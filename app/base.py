@@ -2,10 +2,9 @@ import datetime
 import enum
 import logging
 import re
-from typing import Annotated, Any, Callable, Literal, cast
+from typing import Annotated, Any, Callable, cast
 
 import sqlalchemy
-from pydantic import BaseModel, Field, TypeAdapter
 from sqlalchemy import TIMESTAMP, MetaData, event, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import (
@@ -16,8 +15,6 @@ from sqlalchemy.orm import (
     has_inherited_table,
     mapped_column,
 )
-from sqlalchemy.sql.operators import OperatorType
-from sqlalchemy.types import JSON, TypeDecorator
 
 ASYNC_PARENT_FOREIGN_KEY_OPTIONS = "save-update, merge, expunge, delete, delete-orphan"
 
@@ -37,64 +34,10 @@ auto_now_update_timestamp = Annotated[
 ]
 
 
-class RichText(BaseModel):
-    text: str
-    bold: bool
-    italic: bool
-    underline: bool
-    strikethrough: bool
-    link: str | None = None
-
-
-class TextBlock(BaseModel):
-    block_type: Literal["text"] = "text"
-    style: Literal[
-        "paragraph",
-        "heading1",
-        "heading2",
-        "heading3",
-        "heading4",
-        "heading5",
-        "heading6",
-    ]
-    content: list[RichText]
-
-
-class ImageBlock(BaseModel):
-    block_type: Literal["image"] = "image"
-    file_id: str
-    alt: str | None = None
-
-
-ContentBlock = Annotated[TextBlock | ImageBlock, Field(discriminator="block_type")]
-
-
 def camel_to_snake(name: str) -> str:
     name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
     name = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", name)
     return name.lower()
-
-
-class ContentBlockListType(TypeDecorator[list[ContentBlock]]):
-    """Stores a list of ContentBlock models as JSONB in the DB"""
-
-    impl = JSON
-    cache_ok = True
-
-    def process_bind_param(self, value: list[ContentBlock] | None, dialect: Any) -> Any:
-        if value is None:
-            return None
-        return [block.model_dump() for block in value]  # Serialize each block
-
-    def process_result_value(
-        self, value: Any, dialect: Any
-    ) -> list[ContentBlock] | None:
-        if value is None:
-            return None
-        return TypeAdapter(list[ContentBlock]).validate_python(value)
-
-    def coerce_compared_value(self, op: OperatorType | None, value: Any) -> Any:
-        return self.impl.coerce_compared_value(op, value)  # type: ignore
 
 
 class Base(DeclarativeBase):

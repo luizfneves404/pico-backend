@@ -6,7 +6,6 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 import app.users.jwt_token as jwt_token
 from app.deps import CurrentUserAnnotated, CurrentUserDep, DBSessionAnnotated
-from app.education.models import EducationLevel
 from app.pagination import (
     PaginatedResponse,
     PaginationParams,
@@ -186,7 +185,7 @@ async def create_user(
         # Refresh relationships for UserOut response
         await db_session.refresh(
             db_user,
-            ["current_education", "intended_education", "profile"],
+            ["current_education", "intended_education"],
         )
     except service.UsernameAlreadyExists:
         raise HTTPException(
@@ -219,7 +218,7 @@ async def read_users_me(
 ) -> UserOut:
     await db_session.refresh(
         current_user,
-        ["current_education", "intended_education", "profile"],
+        ["current_education", "intended_education"],
     )
     return UserOut.from_orm_model(current_user)
 
@@ -236,7 +235,7 @@ async def read_other_user(
         )
     await db_session.refresh(
         user,
-        ["current_education", "intended_education", "profile"],
+        ["current_education", "intended_education"],
     )
     return OtherUserOut.from_orm_model(user)
 
@@ -252,46 +251,44 @@ async def update_user(
     """Update multiple user fields in a single request.
 
     This endpoint allows updating multiple user fields atomically.
-    Sensitive fields (username, phone_number, email) require password verification.
-    Non-sensitive fields (education) can be updated without password.
+    Sensitive fields (username, password, phone_number, email) require password verification.
+    Non-sensitive fields can be updated without password.
 
-    Only fields included in the request will be updated. Null values are ignored.
+    Only fields included in the request will be updated.
     """
     try:
-        # Convert Pydantic model to dict, excluding unset fields
-        updates_dict = request.updates.model_dump(exclude_unset=True)
-
-        if not updates_dict:
-            # No fields to update
-            await db_session.refresh(
-                current_user,
-                ["current_education", "intended_education", "profile"],
-            )
-            return UserPartialUpdateResponse(
-                updated_fields=[], user=UserOut.from_orm_model(current_user)
-            )
-
+        # Get current password if provided
         current_password = None
         if request.current_password:
             current_password = request.current_password.get_secret_value()
 
-        # Load education relationships before updating
-        await db_session.refresh(
-            current_user,
-            ["current_education", "intended_education"],
-        )
+        # Validate that we have update data
+        if not request.updates:
+            await db_session.refresh(
+                current_user,
+                ["current_education", "intended_education"],
+            )
+            return UserPartialUpdateResponse(
+                updated_fields=[], user=UserOut.from_orm_model(current_user)
+            )
+        else:
+            # Load education relationships before updating
+            await db_session.refresh(
+                current_user,
+                ["current_education", "intended_education"],
+            )
 
         updated_user, updated_fields = await service.update_user_fields(
             db_session,
             user=current_user,
-            updates=updates_dict,
+            updates=request.updates,
             current_password=current_password,
         )
 
         # Refresh relationships for response
         await db_session.refresh(
             updated_user,
-            ["current_education", "intended_education", "referrals", "profile"],
+            ["current_education", "intended_education", "referrals"],
         )
 
         return UserPartialUpdateResponse(
@@ -320,6 +317,26 @@ async def update_user(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already exists",
         )
+    except service.InvalidLevelIdError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid level id",
+        )
+    except service.InvalidStageIdError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid stage id",
+        )
+    except service.InvalidInstitutionIdError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid institution id",
+        )
+    except service.InvalidCourseIdError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid course id",
+        )
 
 
 @user_authenticated_router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
@@ -327,7 +344,7 @@ async def delete_user(
     request: PasswordRequest,
     current_user: CurrentUserAnnotated,
     db_session: DBSessionAnnotated,
-):
+) -> None:
     try:
         await service.delete_user(
             db_session,
@@ -365,7 +382,7 @@ async def search_username(
     username: str,
     pagination: Annotated[PaginationParams, Depends(get_pagination_params)],
     db_session: DBSessionAnnotated,
-):
+) -> PaginatedResponse[OtherUserOut]:
     users = await service.search_username(db_session, username)
     user_outs = await service.to_other_user_out(db_session, [user.id for user in users])
     other_user_outs = [OtherUserOut.from_orm_model(user) for user in user_outs]
@@ -399,26 +416,27 @@ async def user_ranking(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
     score_type: Literal["xp", "social"],
-    school_filter: int | None = None,
-    intended_course_filter: str | None = None,
-    intended_college_filter: int | None = None,
-    education_level_filter: EducationLevel | None = None,
     subject: str | None = None,
-):
+    institution_id: int | None = None,
+    course_id: int | None = None,
+    education_level_id: int | None = None,
+) -> list[UserInRanking]:
+    """Get user ranking based on various filters. If you pass null, it is not filtered by that criteria."""
     if score_type == "xp" and subject is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Subject is not allowed for xp score type",
         )
-    return await service.get_ranking(
+    users = await service.get_ranking(
         db_session,
-        current_user.id,
+        asking_user_id=current_user.id,
         score_type=score_type,
-        school_filter=school_filter,
-        course_filter=intended_course_filter,
-        education_level_filter=education_level_filter,
         subject=subject,
+        institution_id=institution_id,
+        education_level_id=education_level_id,
+        course_id=course_id,
     )
+    return [UserInRanking.from_orm_model(user) for user in users]
 
 
 @user_authenticated_router.post(

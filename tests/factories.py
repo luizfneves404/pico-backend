@@ -22,11 +22,12 @@ from factory.faker import Faker
 from sqlalchemy.ext.asyncio import AsyncSession, async_scoped_session
 
 import app.database as database
-from app.base import Base, ContentBlock, ImageBlock, RichText, TextBlock
+from app.base import Base
 from app.community.models import Community
-from app.education.models import College, Course, Education, EducationLevel, School
+from app.education.models import College, Course, EducationInfo, EducationLevel, School
 from app.files.models import File
 from app.files.storage import storage
+from app.flows.db_types import ContentBlock, ImageBlock, RichText, TextBlock
 from app.flows.models import (
     ENEM_AREAS,
     Choice,
@@ -46,7 +47,7 @@ from app.in_app_notifications.models import (
     ExternalInAppNotification,
     FlowInAppNotification,
 )
-from app.users.models import User, UserProfile
+from app.users.models import User
 from app.users.service import get_password_hash
 
 logger = logging.getLogger(__name__)
@@ -119,6 +120,10 @@ def flow_title_sequence(n: int) -> str:
     return f"Flow {n}"
 
 
+def education_level_name_sequence(n: int) -> str:
+    return f"Education Level {n}"
+
+
 def create_file_data() -> dict[str, Any]:
     """Create a real file in storage and return the file metadata."""
     # Generate unique content and filename
@@ -184,29 +189,18 @@ class AsyncSQLAlchemyFactory(Factory[T]):
 
     @classmethod
     async def create(cls, session: AsyncSession, **kwargs: Any) -> T:
-        if cls._meta.model is User:
-            logger.info(f"CREATING USER {kwargs}")
         instance = super().create(**kwargs)
         session.add(instance)
         await session.flush()
-        if cls._meta.model is User:
-            logger.info(f"CREATED USER {instance.id} {instance.username}")
         return instance
 
     @classmethod
     async def create_batch(
         cls, size: int, session: AsyncSession, **kwargs: Any
     ) -> list[T]:
-        if cls._meta.model is User:
-            logger.info(f"CREATING BATCH OF USERS {kwargs}")
         instances = [super().create(**kwargs) for _ in range(size)]
         session.add_all(instances)
         await session.flush()
-        if cls._meta.model is User:
-            logger.info(
-                f"CREATED BATCH OF USERS {len(instances)}",
-                [instance.id for instance in instances],
-            )
         return instances
 
 
@@ -250,23 +244,22 @@ class CommunityFactory(AsyncSQLAlchemyFactory[Community]):
     subtitle = Sequence(community_subtitle_sequence)
 
 
-class EducationFactory(AsyncSQLAlchemyFactory[Education]):
+class EducationLevelFactory(AsyncSQLAlchemyFactory[EducationLevel]):
+    class Meta:
+        model = EducationLevel
+
+    name = Sequence(education_level_name_sequence)
+
+
+class EducationFactory(AsyncSQLAlchemyFactory[EducationInfo]):
     """Factory for creating Education instances."""
 
     class Meta:
-        model = Education
+        model = EducationInfo
 
-    level = EducationLevel.THIRD_GRADE_HIGH_SCHOOL
+    level = SubFactory(EducationLevelFactory)
     institution = SubFactory(SchoolFactory)
     course = SubFactory(CourseFactory)
-
-
-class UserProfileFactory(AsyncSQLAlchemyFactory[UserProfile]):
-    class Meta:
-        model = UserProfile
-
-    social_score = 0
-    xp_score = 0
 
 
 class UserFactory(AsyncSQLAlchemyFactory[User]):
@@ -287,7 +280,6 @@ class UserFactory(AsyncSQLAlchemyFactory[User]):
     signup_source = "social"
     current_education = SubFactory(EducationFactory)
     intended_education = SubFactory(EducationFactory)
-    profile = SubFactory(UserProfileFactory)
 
 
 class FileFactory(AsyncSQLAlchemyFactory[File]):
@@ -306,6 +298,7 @@ class FileFactory(AsyncSQLAlchemyFactory[File]):
 def get_content_blocks() -> list[ContentBlock]:
     return [
         TextBlock(
+            block_type="text",
             style="paragraph",
             content=[
                 RichText(
@@ -318,6 +311,7 @@ def get_content_blocks() -> list[ContentBlock]:
             ],
         ),
         ImageBlock(
+            block_type="image",
             file_id="file1",
             alt="This is a sample image for testing purposes.",
         ),

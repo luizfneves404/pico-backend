@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.users import service as user_service
 from app.users.constants import WELCOME_EMAIL_SUBJECT
-from app.users.models import SignupSource, UserProfile
+from app.users.models import SignupSource
 from app.users.service import (
     EmailAlreadyExists,
     ReferredByNotFoundError,
@@ -62,10 +62,6 @@ class TestCreateUserByPassword:
         # Password should be hashed
         assert user.hashed_password != password
         assert user_service.verify_password(password, user.hashed_password)
-
-        # User should have a profile
-        assert user.profile is not None
-        assert isinstance(user.profile, UserProfile)
 
         # Welcome email should be sent
         assert len(dummy_ses_client.sent_emails) == 1
@@ -262,37 +258,6 @@ class TestCreateUserByPassword:
         # Process email queue for all users
         await arq_worker.async_run()
 
-    async def test_create_user_profile_creation(
-        self,
-        session: AsyncSession,
-        dummy_ses_client: DummySESClient,
-        arq_worker: Worker,
-    ) -> None:
-        """Test that UserProfile is created along with User."""
-        # Arrange
-        name = "Profile Test User"
-        password = "password123"
-        email = "profile.test@example.com"
-
-        # Act
-        async with session.begin():
-            user = await create_user_by_password(
-                session,
-                name=name,
-                password=password,
-                email=email,
-                referred_by_username=None,
-                signup_source=SignupSource.SOCIAL,
-            )
-
-        # Process email queue
-        await arq_worker.async_run()
-
-        # Assert
-        assert user.profile is not None
-        assert isinstance(user.profile, UserProfile)
-        assert user.profile.user_id == user.id
-
     async def test_create_user_database_persistence(
         self,
         session: AsyncSession,
@@ -371,7 +336,7 @@ class TestCreateUserByPassword:
         dummy_ses_client: DummySESClient,
         arq_worker: Worker,
     ) -> None:
-        """Test that user referrals and profile are properly refreshed after creation."""
+        """Test that user referrals are properly refreshed after creation."""
         # Arrange
         name = "Refresh Test"
         password = "password123"
@@ -392,9 +357,8 @@ class TestCreateUserByPassword:
         await arq_worker.async_run()
 
         # Assert - These attributes should be accessible after refresh
-        assert hasattr(user, "referrals")
-        assert hasattr(user, "profile")
-        assert user.profile is not None
+        assert user.referrals is not None
+        assert len(user.referrals) == 0
 
     async def test_create_user_default_values(
         self,
@@ -431,34 +395,3 @@ class TestCreateUserByPassword:
         assert user.apple_id == ""
         assert user.current_education_id is None
         assert user.intended_education_id is None
-
-    async def test_create_user_profile_default_values(
-        self,
-        session: AsyncSession,
-        dummy_ses_client: DummySESClient,
-        arq_worker: Worker,
-    ) -> None:
-        """Test that UserProfile is created with correct default values."""
-        # Arrange
-        name = "Profile Defaults Test"
-        password = "password123"
-        email = "profile.defaults@example.com"
-
-        # Act
-        async with session.begin():
-            user = await create_user_by_password(
-                session,
-                name=name,
-                password=password,
-                email=email,
-                referred_by_username=None,
-                signup_source=SignupSource.SOCIAL,
-            )
-
-        # Process email queue
-        await arq_worker.async_run()
-
-        # Assert profile default values
-        assert user.profile.social_score == 0
-        assert user.profile.xp_score == 0
-        assert user.profile.user_id == user.id

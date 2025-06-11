@@ -3,6 +3,7 @@ import logging.config
 import os
 import sys
 
+from app.localization import locale_dispatch
 from app.logging_config import get_logging_config
 
 sys.path.insert(
@@ -35,7 +36,7 @@ from app.deps import CurrentUserDep
 from app.education.routers import router as education_router
 from app.fcm.fcm_service import init_firebase
 from app.files.routers import router as files_router
-from app.flows.routers import router as flows_router
+from app.flows.routers import areas_router, exam_router, flows_router
 from app.in_app_notifications.routers import router as in_app_notifications_router
 from app.redis_client import use_redis
 from app.users.routers import token_router, user_router
@@ -104,6 +105,13 @@ async def analytics_middleware(
 
 
 @fastapi_app.middleware("http")
+async def locale_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    return await locale_dispatch(request, call_next)
+
+
+@fastapi_app.middleware("http")
 async def logging_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ):
@@ -167,6 +175,8 @@ authenticated_routers = APIRouter(dependencies=[CurrentUserDep])
 authenticated_routers.include_router(community_router)
 authenticated_routers.include_router(files_router)
 authenticated_routers.include_router(flows_router)
+authenticated_routers.include_router(exam_router)
+authenticated_routers.include_router(areas_router)
 authenticated_routers.include_router(in_app_notifications_router)
 
 # including base routers

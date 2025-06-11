@@ -5,13 +5,11 @@ from fastapi import APIRouter, HTTPException, status
 from app.deps import DBSessionAnnotated
 from app.education import service as education_service
 from app.education.schemas import (
-    CollegeIn,
-    CollegeOut,
-    CourseIn,
     CourseOut,
+    EducationLevelOut,
+    InstitutionIn,
     InstitutionOut,
-    SchoolIn,
-    SchoolOut,
+    SearchInstitutionsRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -19,98 +17,64 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/education", tags=["education"])
 
 
-# School endpoints
-@router.post("/schools", response_model=SchoolOut, status_code=status.HTTP_201_CREATED)
-async def create_school(db_session: DBSessionAnnotated, school_in: SchoolIn):
-    new_school = await education_service.create_school(
-        db_session,
-        name=school_in.name,
-        inep_code=school_in.inep_code,
-        user_submitted=True,
-    )
-    return new_school
-
-
-@router.get("/schools", response_model=list[SchoolOut])
-async def list_schools(db_session: DBSessionAnnotated):
-    schools = await education_service.list_schools(db_session)
-    return schools
-
-
-@router.get("/schools/{school_id}", response_model=SchoolOut)
-async def get_school_detail(db_session: DBSessionAnnotated, school_id: int):
-    try:
-        school = await education_service.get_school(db_session, school_id)
-        return school
-    except education_service.SchoolNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="School not found"
-        )
-
-
-# College endpoints
-@router.post(
-    "/colleges", response_model=CollegeOut, status_code=status.HTTP_201_CREATED
-)
-async def create_college(db_session: DBSessionAnnotated, college_in: CollegeIn):
-    new_college = await education_service.create_college(
-        db_session,
-        name=college_in.name,
-        user_submitted=True,
-    )
-    return new_college
-
-
-@router.get("/colleges", response_model=list[CollegeOut])
-async def list_colleges(db_session: DBSessionAnnotated):
-    colleges = await education_service.list_colleges(db_session)
-    return colleges
-
-
-@router.get("/colleges/{college_id}", response_model=CollegeOut)
-async def get_college_detail(db_session: DBSessionAnnotated, college_id: int):
-    try:
-        college = await education_service.get_college(db_session, college_id)
-        return college
-    except education_service.InstitutionNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="College not found"
-        )
-
-
-# Course endpoints
-@router.post("/courses", response_model=CourseOut, status_code=status.HTTP_201_CREATED)
-async def create_course(db_session: DBSessionAnnotated, course_in: CourseIn):
-    new_course = await education_service.create_course(
-        db_session,
-        name=course_in.name,
-        user_submitted=True,
-    )
-    return new_course
+@router.get("/levels", response_model=list[EducationLevelOut])
+async def list_levels(
+    db_session: DBSessionAnnotated, country_code: str | None = None
+) -> list[EducationLevelOut]:
+    levels = await education_service.list_levels(db_session, country_code=country_code)
+    return [EducationLevelOut.from_orm_model(level) for level in levels]
 
 
 @router.get("/courses", response_model=list[CourseOut])
-async def list_courses(db_session: DBSessionAnnotated):
-    courses = await education_service.list_courses(db_session)
-    return courses
+async def list_courses(
+    db_session: DBSessionAnnotated,
+    level_id: int | None = None,
+) -> list[CourseOut]:
+    courses = await education_service.list_courses(db_session, level_id=level_id)
+    return [CourseOut.from_orm_model(course) for course in courses]
 
 
-@router.get("/courses/{course_id}", response_model=CourseOut)
-async def get_course_detail(db_session: DBSessionAnnotated, course_id: int):
+@router.get("/courses/{id}", response_model=CourseOut)
+async def get_course_detail(db_session: DBSessionAnnotated, id: int) -> CourseOut:
     try:
-        course = await education_service.get_course(db_session, course_id)
-        return course
+        course = await education_service.get_course(db_session, id=id)
+        return CourseOut.from_orm_model(course)
     except education_service.CourseNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Course not found"
         )
 
 
-# Institution endpoints
-@router.get("/institutions", response_model=list[InstitutionOut])
-async def list_institutions(db_session: DBSessionAnnotated):
-    institutions = await education_service.list_institutions(db_session)
-    return institutions
+@router.post("/institutions/create", response_model=InstitutionOut)
+async def create_institution(
+    db_session: DBSessionAnnotated, institution_in: InstitutionIn
+) -> InstitutionOut:
+    new_institution = await education_service.create_institution(
+        db_session,
+        name=institution_in.name,
+        institution_type=institution_in.institution_type,
+        user_submitted=True,
+        country_code=institution_in.country_code,
+    )
+    return InstitutionOut.from_orm_model(new_institution)
+
+
+@router.post("/institutions/search", response_model=list[InstitutionOut])
+async def search_institutions(
+    db_session: DBSessionAnnotated, search_institutions: SearchInstitutionsRequest
+) -> list[InstitutionOut]:
+    institutions = await education_service.search_institutions(
+        db_session,
+        name=search_institutions.name,
+        institution_type=search_institutions.institution_type,
+        latitude=search_institutions.location.latitude
+        if search_institutions.location
+        else None,
+        longitude=search_institutions.location.longitude
+        if search_institutions.location
+        else None,
+    )
+    return [InstitutionOut.from_orm_model(institution) for institution in institutions]
 
 
 @router.get("/institutions/{institution_id}", response_model=InstitutionOut)

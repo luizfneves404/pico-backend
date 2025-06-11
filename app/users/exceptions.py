@@ -38,3 +38,25 @@ class AccountExistsError(SocialAuthError):
     """Raised when an account already exists with different auth method."""
 
     pass
+
+
+class InvalidCountryCodeError(Exception):
+    """Raised when an invalid country code is provided."""
+
+    pass
+
+
+class InvalidLevelIdError(Exception):
+    pass
+
+
+class InvalidInstitutionIdError(Exception):
+    pass
+
+
+class InvalidCourseIdError(Exception):
+    pass
+
+
+class InvalidStageIdError(Exception):
+    pass

@@ -254,7 +254,7 @@ async def list_essay_topics(db_session: AsyncSession, user_id: int) -> list[Essa
         .options(*get_essay_topic_loader(user_id))
         .distinct()
     )
-    return list(essay_topics.scalars().all())
+    return list(essay_topics.scalars())
 
 
 async def start_essay_topic(

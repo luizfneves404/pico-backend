@@ -1,18 +1,20 @@
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, Field
 
-from app.base import ContentBlock
+from app.flows.db_types import ContentBlock
 from app.flows.models import (
     Campaign,
     Choice,
+    Exam,
     Flow,
     FlowDifficulty,
     FlowQuestion,
     FlowQuestionUser,
     QuestionAnswerType,
+    QuestionArea,
     QuestionDifficulty,
     QuestionSourceType,
 )
@@ -59,13 +61,14 @@ class FlowQuestionInFeed(BaseModel):
     id: int
     element_type: Literal["flow_question"]
     content_blocks: list[ContentBlock]
+    answer_content_blocks: list[ContentBlock]
     relevant_answers: list[AnswerInFeed]  # all answers for now
     num_total_answers: int
     choices: list[ChoiceInFeed]
 
-    subject: str
-    category: str
-    subcategory: str
+    is_quantitative: bool
+    major_tags: list[str]
+    minor_tags: list[str]
     difficulty: QuestionDifficulty
 
     source_type: QuestionSourceType
@@ -80,6 +83,7 @@ class FlowQuestionInFeed(BaseModel):
             id=flow_question.id,
             element_type="flow_question",
             content_blocks=flow_question.question.content_blocks,
+            answer_content_blocks=flow_question.question.answer_content_blocks,
             relevant_answers=[
                 AnswerInFeed.from_orm_model(answer)
                 for answer in flow_question.flow_question_users
@@ -89,9 +93,9 @@ class FlowQuestionInFeed(BaseModel):
                 ChoiceInFeed.from_orm_model(choice)
                 for choice in flow_question.question.choices
             ],
-            subject=flow_question.question.subject,
-            category=flow_question.question.category,
-            subcategory=flow_question.question.subcategory,
+            is_quantitative=flow_question.question.is_quantitative,
+            major_tags=flow_question.question.major_tags,
+            minor_tags=flow_question.question.minor_tags,
             difficulty=flow_question.question.difficulty,
             source_type=flow_question.question.source_type,
             official_source=flow_question.question.official_source.exam.name
@@ -118,10 +122,8 @@ class FlowInFeed(BaseModel):
     action_text: str
     created_by: SimpleUser
 
-    query: str
-    area: str
-    source_filter: str
     difficulty: FlowDifficulty
+    max_num_questions: int
 
     elements: list[FlowQuestionInFeed]  # first 5 questions? ask gpt if this is needed
     num_total_elements: int
@@ -139,14 +141,13 @@ class FlowInFeed(BaseModel):
             created_by=SimpleUser(
                 id=flow.created_by.id, username=flow.created_by.username
             ),
-            query=flow.query,
-            area=flow.area,
-            source_filter=flow.source_filter,
             difficulty=flow.difficulty,
+            max_num_questions=flow.max_num_questions,
             elements=[
                 FlowQuestionInFeed.from_orm_model(element)
-                for element in flow.elements
+                for i, element in enumerate(flow.elements)
                 if isinstance(element, FlowQuestion)
+                and (i == 0 or flow.elements[i - 1].order == flow.elements[i].order - 1)
             ],
             num_total_elements=flow.num_total_elements,
         )
@@ -159,27 +160,20 @@ class FlowDetail(FlowInFeed):
 
     @classmethod
     def from_orm_model_for_user(cls, flow: Flow, *, user_id: int) -> "FlowDetail":
+        flow_in_feed = FlowInFeed.from_orm_model(flow)
         return cls(
-            id=flow.id,
-            code=flow.code,
-            created_at=flow.created_at,
-            title=flow.title,
-            cover_image=flow.cover_image.url if flow.cover_image else None,
-            action_link=flow.action_link,
-            action_text=flow.action_text,
-            created_by=SimpleUser(
-                id=flow.created_by.id, username=flow.created_by.username
-            ),
-            query=flow.query,
-            area=flow.area,
-            source_filter=flow.source_filter,
-            difficulty=flow.difficulty,
-            elements=[
-                FlowQuestionInFeed.from_orm_model(element)
-                for element in flow.elements
-                if isinstance(element, FlowQuestion)
-            ],
-            num_total_elements=flow.num_total_elements,
+            id=flow_in_feed.id,
+            code=flow_in_feed.code,
+            created_at=flow_in_feed.created_at,
+            title=flow_in_feed.title,
+            cover_image=flow_in_feed.cover_image,
+            action_link=flow_in_feed.action_link,
+            action_text=flow_in_feed.action_text,
+            created_by=flow_in_feed.created_by,
+            max_num_questions=flow_in_feed.max_num_questions,
+            difficulty=flow_in_feed.difficulty,
+            elements=flow_in_feed.elements,
+            num_total_elements=flow_in_feed.num_total_elements,
             num_user_total_answers=flow.num_user_total_answers(user_id),
             num_user_correct_answers=flow.num_user_correct_answers(user_id),
         )
@@ -188,30 +182,22 @@ class FlowDetail(FlowInFeed):
 class FlowInSearch(FlowDetail):
     @classmethod
     def from_orm_model_for_user(cls, flow: Flow, *, user_id: int) -> "FlowInSearch":
+        flow_detail = FlowDetail.from_orm_model_for_user(flow, user_id=user_id)
         return cls(
-            id=flow.id,
-            code=flow.code,
-            created_at=flow.created_at,
-            title=flow.title,
-            cover_image=flow.cover_image.url if flow.cover_image else None,
-            action_link=flow.action_link,
-            action_text=flow.action_text,
-            created_by=SimpleUser(
-                id=flow.created_by.id, username=flow.created_by.username
-            ),
-            query=flow.query,
-            area=flow.area,
-            subject=flow.subject,
-            source_filter=flow.source_filter,
-            difficulty=flow.difficulty,
-            elements=[
-                FlowQuestionInFeed.from_orm_model(element)
-                for element in flow.elements
-                if isinstance(element, FlowQuestion)
-            ],
-            num_total_elements=flow.num_total_elements,
-            num_user_total_answers=flow.num_user_total_answers(user_id),
-            num_user_correct_answers=flow.num_user_correct_answers(user_id),
+            id=flow_detail.id,
+            code=flow_detail.code,
+            created_at=flow_detail.created_at,
+            title=flow_detail.title,
+            cover_image=flow_detail.cover_image,
+            action_link=flow_detail.action_link,
+            action_text=flow_detail.action_text,
+            created_by=flow_detail.created_by,
+            max_num_questions=flow_detail.max_num_questions,
+            difficulty=flow_detail.difficulty,
+            elements=flow_detail.elements,
+            num_total_elements=flow_detail.num_total_elements,
+            num_user_total_answers=flow_detail.num_user_total_answers,
+            num_user_correct_answers=flow_detail.num_user_correct_answers,
         )
 
 
@@ -273,4 +259,47 @@ class CampaignInFeed(BaseModel):
             external_link_text=campaign.external_link_text,
             image1=campaign.image1.url if campaign.image1 else None,
             image2=campaign.image2.url if campaign.image2 else None,
+        )
+
+
+class FlowFeedItem(BaseModel):
+    item_type: Literal[
+        "flow"
+    ]  # didn't add as default because OpenAPI will render it as optional
+    item: FlowInFeed
+
+
+class CampaignFeedItem(BaseModel):
+    item_type: Literal[
+        "campaign"
+    ]  # didn't add as default because OpenAPI will render it as optional
+    item: CampaignInFeed
+
+
+FeedItem = Annotated[FlowFeedItem | CampaignFeedItem, Field(discriminator="item_type")]
+
+
+class ExamOut(BaseModel):
+    id: int
+    name: str
+    country_code: str
+    education_level_id: int
+
+    @classmethod
+    def from_orm_model(cls, exam: Exam) -> "ExamOut":
+        return cls(
+            id=exam.id,
+            name=exam.name,
+            country_code=exam.country_code,
+            education_level_id=exam.education_level_id,
+        )
+
+
+class QuestionAreaOut(BaseModel):
+    name: str
+
+    @classmethod
+    def from_orm_model(cls, question_area: QuestionArea) -> "QuestionAreaOut":
+        return cls(
+            name=question_area.name,
         )

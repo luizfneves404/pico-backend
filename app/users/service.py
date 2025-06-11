@@ -2,11 +2,12 @@ import logging
 import random
 import re
 import unicodedata
-from typing import Any, Literal
+from typing import Literal
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from sqlalchemy import select
+from geoalchemy2 import WKTElement
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -16,7 +17,8 @@ import app.community.service as community_service
 import app.mail as mail
 import app.users.external_auth as external_auth
 from app.education import service as education_service
-from app.education.models import Education, EducationLevel
+from app.education.models import EducationInfo
+from app.shared.validation import UNSET
 from app.users.constants import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     DELETED_EMAIL,
@@ -24,13 +26,19 @@ from app.users.constants import (
     DELETED_USERNAME,
     NUM_RANKED_USERS,
     SENTINEL_USERNAMES,
+    SOCIAL_SCORE_INCREMENT_BY_REFERRAL,
     WELCOME_EMAIL_MESSAGE,
     WELCOME_EMAIL_SUBJECT,
 )
 from app.users.exceptions import (
     AccountExistsError,
     EmailAlreadyExists,
+    InvalidCountryCodeError,
+    InvalidCourseIdError,
     InvalidCredentialsError,
+    InvalidInstitutionIdError,
+    InvalidLevelIdError,
+    InvalidStageIdError,
     InvalidTokenError,
     PhoneNumberAlreadyExists,
     ReferredByNotFoundError,
@@ -38,7 +46,8 @@ from app.users.exceptions import (
     UsernameAlreadyExists,
     UserNotFoundError,
 )
-from app.users.models import SignupSource, User, UserProfile
+from app.users.models import SignupSource, User
+from app.users.schemas import EducationInfoIn, UserUpdate
 from app.users.social import (
     check_contacts,
     get_ranking,
@@ -61,6 +70,7 @@ __all__ = [
     "SocialAuthError",
     "InvalidTokenError",
     "AccountExistsError",
+    "InvalidCountryCodeError",
     # Constants
     "ACCESS_TOKEN_EXPIRE_MINUTES",
     "DELETED_USERNAME",
@@ -93,11 +103,13 @@ __all__ = [
     "get_streak_info",
 ]
 
+PASSWORD_REQUIRED_FIELDS = {"username", "phone_number", "email", "password"}
+
 
 async def _set_education_field(
     db_session: AsyncSession,
     user: User,
-    education_data: dict[str, Any],
+    education_data: EducationInfoIn,
     field_name: Literal["current_education", "intended_education"],
 ) -> None:
     """Set either current or intended education for a user.
@@ -108,37 +120,72 @@ async def _set_education_field(
         education_data: Education data to set
         field_name: Which education field to update
     """
-    current_education = getattr(user, field_name)
+    education_info: EducationInfo | None = getattr(user, field_name)
 
-    if current_education:
-        await education_service.update_education(
-            db_session,
-            current_education,
-            level=education_data.get("level"),
-            institution_id=education_data.get("institution_id"),
-            course_id=education_data.get("course_id"),
-        )
+    if education_info:
+        # Update existing education
+        if education_data.level_id is not UNSET:
+            education_info.level_id = education_data.level_id
+
+        if education_data.institution_id is not UNSET:
+            education_info.institution_id = education_data.institution_id
+
+        if education_data.course_id is not UNSET:
+            education_info.course_id = education_data.course_id
+        try:
+            await db_session.flush()
+        except IntegrityError as e:
+            if "level_id" in str(e.orig):
+                raise InvalidLevelIdError
+            elif "institution_id" in str(e.orig):
+                raise InvalidInstitutionIdError
+            elif "course_id" in str(e.orig):
+                raise InvalidCourseIdError
+        await db_session.refresh(education_info)
     else:
-        new_education = await _create_education_from_data(db_session, education_data)
-        setattr(user, field_name, new_education)
+        # Create new education
+        try:
+            new_education = await _create_education_from_data(
+                db_session, education_data
+            )
+            setattr(user, field_name, new_education)
+            await db_session.flush()
+        except IntegrityError as e:
+            if "level_id" in str(e.orig):
+                raise InvalidLevelIdError
+            elif "stage_id" in str(e.orig):
+                raise InvalidStageIdError
+            elif "institution_id" in str(e.orig):
+                raise InvalidInstitutionIdError
+            elif "course_id" in str(e.orig):
+                raise InvalidCourseIdError
 
-    await db_session.flush()
     logger.info(f"User {user.id} updated their {field_name}")
 
     # Automatically join communities based on education information
     await db_session.refresh(user, ["current_education", "intended_education"])
-    await db_session.refresh(user.current_education, ["institution", "course"])
-    joined_community = await community_service.change_user_education_community(
-        db_session, user=user
-    )
-    if joined_community:
-        logger.info(
-            f"User {user.id} automatically joined the community {joined_community.name} with subtitle {joined_community.subtitle} because of their education"
+    if user.current_education:
+        await db_session.refresh(
+            user.current_education, ["institution", "course", "stage"]
         )
-    else:
-        logger.info(
-            f"User {user.id} did not join any community when changing education"
-        )
+        if user.current_education.institution and (
+            user.current_education.course or user.current_education.stage
+        ):
+            joined_community = await community_service.change_user_education_community(
+                db_session,
+                user=user,
+                institution=user.current_education.institution,
+                course=user.current_education.course,
+                stage=user.current_education.stage,
+            )
+            if joined_community:
+                logger.info(
+                    f"User {user.id} automatically joined the community {joined_community.name} with subtitle {joined_community.subtitle} because of their education, leaving the previous community"
+                )
+            else:
+                logger.info(
+                    f"User {user.id} was already in the community when changing education"
+                )
 
 
 async def _create_user(
@@ -148,9 +195,9 @@ async def _create_user(
     email: str | None,
     signup_source: SignupSource,
     referred_by_username: str | None,
-    hashed_password: str | None = None,
-    google_id: str | None = None,
-    apple_id: str | None = None,
+    hashed_password: str | None,
+    google_id: str | None,
+    apple_id: str | None,
 ) -> User:
     """Centralized user creation function.
 
@@ -192,7 +239,6 @@ async def _create_user(
         signup_source=signup_source,
         referred_by_id=referred_by_id,
     )
-    db_session.add(UserProfile(user=new_user))
 
     try:
         db_session.add(new_user)
@@ -206,7 +252,14 @@ async def _create_user(
         else:
             raise
 
-    await db_session.refresh(new_user, ["referrals", "profile"])
+    if referred_by_id:
+        await db_session.execute(
+            update(User)
+            .where(User.id == new_user.referred_by_id)
+            .values(social_score=User.social_score + SOCIAL_SCORE_INCREMENT_BY_REFERRAL)
+        )
+
+    await db_session.refresh(new_user, ["referrals"])
 
     if new_user.email:
         await mail.enqueue_email(
@@ -254,6 +307,7 @@ async def _create_social_user(
         email=email,
         signup_source=signup_source,
         referred_by_username=referred_by_username,
+        hashed_password="",
         google_id=google_id,
         apple_id=apple_id,
     )
@@ -261,8 +315,8 @@ async def _create_social_user(
 
 async def _create_education_from_data(
     db_session: AsyncSession,
-    education_data: dict[str, Any] | None,
-) -> Education | None:
+    education_data: EducationInfoIn,
+) -> EducationInfo:
     """Create an Education object from input data.
 
     Args:
@@ -272,16 +326,23 @@ async def _create_education_from_data(
     Returns:
         Created Education object or None if no data provided
     """
-    if not education_data:
-        return None
+    if education_data.level_id is UNSET:
+        raise ValueError("Level id is required if creating education")
 
-    level = education_data.get("level", EducationLevel.UNKNOWN)
-    institution_id = education_data.get("institution_id")
-    course_id = education_data.get("course_id")
+    institution_id = (
+        education_data.institution_id
+        if education_data.institution_id is not UNSET
+        else None
+    )
+    course_id = (
+        education_data.course_id if education_data.course_id is not UNSET else None
+    )
+    stage_id = education_data.stage_id if education_data.stage_id is not UNSET else None
 
-    return await education_service.create_education(
+    return await education_service.build_education(
         db_session,
-        level=level,
+        level_id=education_data.level_id,
+        stage_id=stage_id,
         institution_id=institution_id,
         course_id=course_id,
     )
@@ -291,7 +352,7 @@ async def update_user_fields(
     db_session: AsyncSession,
     *,
     user: User,
-    updates: dict[str, Any],
+    updates: UserUpdate,
     current_password: str | None = None,
 ) -> tuple[User, list[str]]:
     """Update multiple user fields atomically with field-specific validation.
@@ -299,7 +360,7 @@ async def update_user_fields(
     Args:
         db_session: Database session
         user: User to update
-        updates: Dictionary of field names to new values
+        updates: Typed update data
         current_password: Current password for sensitive field updates
 
     Returns:
@@ -310,11 +371,14 @@ async def update_user_fields(
         UsernameAlreadyExists: If username already taken
         PhoneNumberAlreadyExists: If phone number already taken
         EmailAlreadyExists: If email already taken
+        InvalidCountryCodeError: If country code is invalid
     """
-    password_required_fields = {"username", "phone_number", "email", "password"}
-    sensitive_updates = password_required_fields.intersection(updates.keys())
+    # Check if any sensitive fields are being updated
+    sensitive_fields_to_update = PASSWORD_REQUIRED_FIELDS.intersection(
+        updates.model_fields_set
+    )
 
-    if sensitive_updates:
+    if sensitive_fields_to_update:
         if not current_password:
             raise InvalidCredentialsError(
                 "Password required for sensitive field updates"
@@ -324,71 +388,90 @@ async def update_user_fields(
 
     updated_fields: list[str] = []
 
-    for field_name, new_value in updates.items():
-        # Handle education fields that can be set to None
-        if field_name in ("current_education", "intended_education"):
-            if new_value is None:
-                setattr(user, field_name, None)
-                setattr(user, f"{field_name}_id", None)
-                updated_fields.append(field_name)
-                continue
+    # Handle current_education field explicitly
+    if updates.current_education is not UNSET:
+        await _set_education_field(
+            db_session, user, updates.current_education, "current_education"
+        )
+        updated_fields.append("current_education")
 
-            education_data = new_value
-            if hasattr(new_value, "model_dump"):
-                education_data = new_value.model_dump()
-            elif hasattr(new_value, "dict"):
-                education_data = new_value.dict()
+    # Handle intended_education field explicitly
+    if updates.intended_education is not UNSET:
+        await _set_education_field(
+            db_session, user, updates.intended_education, "intended_education"
+        )
+        updated_fields.append("intended_education")
 
-            await _set_education_field(db_session, user, education_data, field_name)
-            updated_fields.append(field_name)
-            continue
-
-        if new_value is None:
-            continue
-
-        if field_name == "username":
-            if new_value.strip().lower() != user.username.lower():
-                try:
-                    user.username = str(new_value).strip()
-                    await db_session.flush()
-                    updated_fields.append(field_name)
-                except IntegrityError as e:
-                    await db_session.rollback()
-                    if "username" in str(e.orig):
-                        raise UsernameAlreadyExists
-                    raise
-
-        elif field_name == "name":
-            if new_value != user.name:
-                user.name = str(new_value).strip()
+    # Handle username field explicitly
+    if updates.username is not UNSET:
+        if updates.username.strip().lower() != user.username.lower():
+            try:
+                user.username = updates.username.strip()
                 await db_session.flush()
-                updated_fields.append(field_name)
+                updated_fields.append("username")
+            except IntegrityError as e:
+                await db_session.rollback()
+                if "username" in str(e.orig):
+                    raise UsernameAlreadyExists
+                raise
 
-        elif field_name == "password":
-            password_value = (
-                new_value.get_secret_value()
-                if hasattr(new_value, "get_secret_value")
-                else str(new_value)
-            )
-            user.hashed_password = get_password_hash(password_value)
-            await db_session.flush()
-            updated_fields.append(field_name)
+    # Handle name field explicitly
+    if updates.name is not UNSET:
+        if updates.name != user.name:
+            user.name = updates.name.strip()
+            updated_fields.append("name")
 
-        elif field_name in ("phone_number", "email"):
-            if str(new_value) != getattr(user, field_name):
-                try:
-                    setattr(user, field_name, str(new_value))
-                    await db_session.flush()
-                    updated_fields.append(field_name)
-                except IntegrityError as e:
-                    await db_session.rollback()
-                    error_msg = str(e.orig)
-                    if field_name in error_msg:
-                        if field_name == "phone_number":
-                            raise PhoneNumberAlreadyExists
-                        else:  # email
-                            raise EmailAlreadyExists
-                    raise
+    # Handle password field explicitly
+    if updates.password is not UNSET:
+        user.hashed_password = get_password_hash(updates.password.get_secret_value())
+        updated_fields.append("password")
+
+    # Handle phone_number field explicitly
+    if updates.phone_number is not UNSET:
+        if updates.phone_number != user.phone_number:
+            try:
+                user.phone_number = updates.phone_number
+                await db_session.flush()
+                updated_fields.append("phone_number")
+            except IntegrityError as e:
+                await db_session.rollback()
+                if "phone_number" in str(e.orig):
+                    raise PhoneNumberAlreadyExists
+                raise
+
+    # Handle email field explicitly
+    if updates.email is not UNSET:
+        if updates.email != user.email:
+            try:
+                user.email = updates.email
+                await db_session.flush()
+                updated_fields.append("email")
+            except IntegrityError as e:
+                await db_session.rollback()
+                if "email" in str(e.orig):
+                    raise EmailAlreadyExists
+                raise
+
+    # Handle country_code field explicitly
+    if updates.country_code is not UNSET:
+        if updates.country_code != user.country_code:
+            user.country_code = updates.country_code
+            try:
+                await db_session.flush()
+                updated_fields.append("country_code")
+            except IntegrityError:
+                raise InvalidCountryCodeError(
+                    f"Invalid country code: {updates.country_code}"
+                )
+
+    if updates.location is not UNSET:
+        new_location = WKTElement(
+            f"POINT({updates.location.longitude} {updates.location.latitude})",
+            srid=4326,
+        )
+        user.location = new_location  # type: ignore # this should work according to geoalchemy2
+        await db_session.flush()
+        updated_fields.append("location")
 
     if updated_fields:
         await db_session.flush()
@@ -434,7 +517,10 @@ async def authenticate_user_by_google(
     Args:
         db_session: Database session
         id_token: Google ID token
-        signup_source: How the user came to know the app. Defaults to SignupSource.UNKNOWN.
+        signup_source: How the user came to know the app
+        referred_by_username: Username of referring user
+        country_code: Country code for the user
+
     Returns:
         Authenticated user
 
@@ -630,6 +716,8 @@ async def create_user_by_password(
         signup_source=signup_source,
         referred_by_username=referred_by_username,
         hashed_password=get_password_hash(password),
+        google_id=None,
+        apple_id=None,
     )
 
 
@@ -691,7 +779,6 @@ async def to_other_user_out(
         .options(
             selectinload(User.current_education),
             selectinload(User.intended_education),
-            selectinload(User.profile),
         )
     )
     users = list(result.all())

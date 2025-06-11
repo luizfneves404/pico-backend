@@ -1,27 +1,45 @@
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from geoalchemy2 import Geography, WKBElement
-from sqlalchemy import ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.base import Base
+from app.localization import TranslatableJSON, TranslatedString
+
+if TYPE_CHECKING:
+    from app.countries.models import Country
 
 
 class AdministrativeCategory(StrEnum):
     PUBLIC = "PUBLIC"
     PRIVATE = "PRIVATE"
+    OTHER = "OTHER"
+    UNKNOWN = "UNKNOWN"
 
 
 class Institution(Base):
+    """Represents an institution offering an education level."""
+
     name: Mapped[str] = mapped_column(String(120))
     user_submitted: Mapped[bool] = mapped_column(default=False)
     institution_type: Mapped[str] = mapped_column(String(50))  # discriminator column
-    inep_code: Mapped[str] = mapped_column(String(40), default="")
+    government_issued_code: Mapped[str] = mapped_column(String(50), default="")
+    country_code: Mapped[str] = mapped_column(ForeignKey("country.code"))
+    country: Mapped["Country"] = relationship(lazy="raise_on_sql")
     location: Mapped[WKBElement | None] = mapped_column(
         Geography(geometry_type="POINT", srid=4326)
     )
-    administrative_category: Mapped[AdministrativeCategory | None] = mapped_column(
-        String(50)
+    address: Mapped[str] = mapped_column(Text, default="")
+    city: Mapped[str] = mapped_column(Text, default="")
+    administrative_category: Mapped[AdministrativeCategory] = mapped_column(
+        String(50), default=AdministrativeCategory.UNKNOWN
+    )
+    level_id: Mapped[int] = mapped_column(ForeignKey("education_level.id"))
+    level: Mapped["EducationLevel"] = relationship(
+        lazy="raise_on_sql",
+        back_populates="institutions",
     )
 
     __mapper_args__ = {
@@ -31,10 +49,11 @@ class Institution(Base):
 
     __table_args__ = (
         Index(
-            "unique_inep_code",
-            "inep_code",
+            "unique_government_code_per_country",
+            "government_issued_code",
+            "country_code",
             unique=True,
-            postgresql_where=inep_code != "",
+            postgresql_where=government_issued_code != "",
         ),
     )
 
@@ -49,51 +68,81 @@ class School(Institution):
 
 
 class College(Institution):
-    courses: Mapped[list["Course"]] = relationship(
-        back_populates="colleges", secondary="course_college", lazy="raise_on_sql"
-    )
-
     __mapper_args__ = {
         "polymorphic_identity": "college",
     }
 
 
-class CourseCollege(Base):
-    __table_args__ = (UniqueConstraint("course_id", "college_id"),)
-
-    course_id: Mapped[int] = mapped_column(ForeignKey("course.id", ondelete="CASCADE"))
-    college_id: Mapped[int] = mapped_column(
-        ForeignKey("institution.id", ondelete="CASCADE")
-    )
-
-
 class Course(Base):
-    name: Mapped[str] = mapped_column(String(120))
+    name: Mapped[TranslatedString] = mapped_column(TranslatableJSON)
     user_submitted: Mapped[bool] = mapped_column(default=False)
-    colleges: Mapped[list["College"]] = relationship(
-        back_populates="courses", secondary="course_college", lazy="raise_on_sql"
+
+    level_id: Mapped[int] = mapped_column(ForeignKey("education_level.id"))
+    level: Mapped["EducationLevel"] = relationship(
+        lazy="raise_on_sql",
+        back_populates="courses",
     )
 
     def __str__(self) -> str:
-        return self.name
+        return str(self.name)
 
 
-class EducationLevel(StrEnum):
-    MIDDLE_SCHOOL = "MS"
-    FIRST_GRADE_HIGH_SCHOOL = "FGHS"
-    SECOND_GRADE_HIGH_SCHOOL = "SGHS"
-    THIRD_GRADE_HIGH_SCHOOL = "TGHS"
-    HIGH_SCHOOL_COMPLETE = "HSG"
-    COLLEGE = "COL"
-    OTHER = "OTHER"
-    UNKNOWN = ""
+class LevelStage(Base):
+    """Represents a stage of an education level.
+    For example, "First grade" would be a stage of the "High School" level.
+    """
+
+    name: Mapped[str] = mapped_column(String(120))
+
+    country_code: Mapped[str | None] = mapped_column(ForeignKey("country.code"))
+    country: Mapped["Country | None"] = relationship(lazy="raise_on_sql")
+
+    level_id: Mapped[int] = mapped_column(ForeignKey("education_level.id"))
+    level: Mapped["EducationLevel"] = relationship(
+        lazy="raise_on_sql",
+        back_populates="stages",
+    )
+
+    is_default: Mapped[bool] = mapped_column(default=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "name",
+            "level_id",
+            "country_code",
+            name="unique_level_stage_per_country",
+        ),
+    )
 
 
-class Education(Base):
-    level: Mapped[EducationLevel] = mapped_column(default=EducationLevel.UNKNOWN)
+class EducationLevel(Base):
+    name: Mapped[TranslatedString] = mapped_column(TranslatableJSON)
+    stages: Mapped[list["LevelStage"]] = relationship(
+        back_populates="level",
+        lazy="raise_on_sql",
+    )
+    courses: Mapped[list["Course"]] = relationship(
+        back_populates="level",
+        lazy="raise_on_sql",
+    )
+
+    institutions: Mapped[list["Institution"]] = relationship(
+        back_populates="level",
+        lazy="raise_on_sql",
+    )
+
+
+class EducationInfo(Base):
+    level_id: Mapped[int] = mapped_column(
+        ForeignKey("education_level.id", ondelete="SET NULL")
+    )
+    level: Mapped["EducationLevel"] = relationship(lazy="raise_on_sql")
 
     institution_id: Mapped[int | None] = mapped_column(ForeignKey("institution.id"))
     institution: Mapped["Institution | None"] = relationship(lazy="raise_on_sql")
+
+    stage_id: Mapped[int | None] = mapped_column(ForeignKey("level_stage.id"))
+    stage: Mapped["LevelStage | None"] = relationship(lazy="raise_on_sql")
 
     course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"))
     course: Mapped["Course | None"] = relationship(lazy="raise_on_sql")

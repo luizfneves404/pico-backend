@@ -13,11 +13,13 @@ from pydantic import (
     computed_field,
 )
 
-from app.education.schemas import EducationIn, EducationOut
+from app.education.schemas import Location
 from app.shared.validation import (
+    UNSET,
     CustomPhoneNumber,
     LowercaseEmailStr,
     StripWhitespaceStr,
+    type_UNSET,
 )
 from app.users.models import SignupSource, User
 
@@ -125,14 +127,24 @@ class UserIn(BaseModel):
     password: PasswordStr
     referred_by_username: UsernameStr | Literal[""]
     signup_source: SignupSource = Field(default=SignupSource.UNKNOWN)
+    country_code: str = Field(default="", max_length=2)
+
+
+class EducationInfoOut(BaseModel):
+    level_id: int
+    stage_id: int | None
+    institution_id: int | None
+    course_id: int | None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class OtherUserOut(UserBase):
     id: int
     social_score: int
     xp_score: int
-    current_education: EducationOut | None
-    intended_education: EducationOut | None
+    current_education: EducationInfoOut | None
+    intended_education: EducationInfoOut | None
 
     @classmethod
     def from_orm_model(cls, user: User) -> "OtherUserOut":
@@ -142,22 +154,28 @@ class OtherUserOut(UserBase):
             username=user.username,
             phone_number=user.phone_number,
             email=user.email,
-            current_education=EducationOut(
-                level=user.current_education.level,
+            current_education=EducationInfoOut(
+                level_id=user.current_education.level.id,
+                stage_id=user.current_education.stage.id
+                if user.current_education.stage
+                else None,
                 institution_id=user.current_education.institution_id,
                 course_id=user.current_education.course_id,
             )
             if user.current_education
             else None,
-            intended_education=EducationOut(
-                level=user.intended_education.level,
+            intended_education=EducationInfoOut(
+                level_id=user.intended_education.level.id,
+                stage_id=user.intended_education.stage.id
+                if user.intended_education.stage
+                else None,
                 institution_id=user.intended_education.institution_id,
                 course_id=user.intended_education.course_id,
             )
             if user.intended_education
             else None,
-            social_score=user.profile.social_score,
-            xp_score=user.profile.xp_score,
+            social_score=user.social_score,
+            xp_score=user.xp_score,
         )
 
 
@@ -189,43 +207,6 @@ class PasswordRequest(BaseModel):
     current_password: PasswordStr
 
 
-class UserStatsResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    username: StripWhitespaceStr
-    current_education: EducationOut | None
-    intended_education: EducationOut | None
-    streak: int
-    done_today: bool
-    total_answers: int
-    correct_answers: int
-    area_expected_scores: dict[
-        Literal["Matemática", "Linguagem", "Ciências Humanas", "Ciências da Natureza"],
-        RoundedFloat,
-    ]
-    score: RoundedFloat
-    percentage_score: RoundedFloat
-
-
-class SubcategoryPerformance(BaseModel):
-    total_answers: int
-    correct_answers: int
-
-
-class UserStatsMeResponse(UserStatsResponse):
-    subject_performance: dict[
-        Literal[
-            "Matemática",
-            "Linguagens",
-            "Ciências Humanas",
-            "Ciências da Natureza",
-            "Outros",
-        ],
-        dict[str, dict[str, dict[str, SubcategoryPerformance]]],
-    ]
-
-
 class RawPhoneNumbersIn(BaseModel):
     phone_numbers: list[str]
 
@@ -234,7 +215,7 @@ class UserInRanking(BaseModel):
     id: int
     username: str
     rank: int
-    current_education: EducationOut | None
+    current_education: EducationInfoOut | None
     score: RoundedFloat
     total_answers: int
     correct_answers: int
@@ -250,19 +231,28 @@ class OnlineInfo(BaseModel):
     last_online: AwareDatetime | None
 
 
+class EducationInfoIn(BaseModel):
+    level_id: int | type_UNSET = UNSET
+    stage_id: int | type_UNSET = UNSET
+    institution_id: int | type_UNSET = UNSET
+    course_id: int | type_UNSET = UNSET
+
+
 # New unified update schemas
 class UserUpdate(BaseModel):
     """Unified user update schema with optional fields."""
 
     model_config = ConfigDict(coerce_numbers_to_str=True)
 
-    name: StripWhitespaceStr | None = Field(None, min_length=1, max_length=150)
-    username: UsernameStr | None = Field(None, min_length=1, max_length=50)
-    password: PasswordStr | None = None
-    phone_number: CustomPhoneNumber | None = None
-    email: LowercaseEmailStr | None = None
-    current_education: EducationIn | None = None
-    intended_education: EducationIn | None = None
+    name: StripWhitespaceStr | type_UNSET = Field(UNSET, min_length=1, max_length=150)
+    username: UsernameStr | type_UNSET = Field(UNSET, min_length=1, max_length=50)
+    password: PasswordStr | type_UNSET = UNSET
+    phone_number: CustomPhoneNumber | type_UNSET = UNSET
+    email: LowercaseEmailStr | type_UNSET = UNSET
+    current_education: EducationInfoIn | type_UNSET = UNSET
+    intended_education: EducationInfoIn | type_UNSET = UNSET
+    country_code: str | type_UNSET = Field(UNSET, max_length=2)
+    location: Location | type_UNSET = UNSET
 
 
 class UserUpdateRequest(BaseModel):

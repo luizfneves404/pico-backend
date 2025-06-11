@@ -9,24 +9,25 @@ from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
     Index,
-    String,
     Text,
     UniqueConstraint,
     func,
     select,
 )
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.base import (
     ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
     Base,
-    ContentBlock,
-    ContentBlockListType,
 )
+from app.countries.models import Country
 from app.files.models import File
+from app.flows.db_types import ContentBlock, ContentBlockListType
 
 if TYPE_CHECKING:
+    from app.education.models import Course, EducationLevel
     from app.users.models import User
 
 
@@ -69,6 +70,7 @@ class FlowTranscriptionBlock(Base):
 
     block_text: Mapped[str] = mapped_column(Text, default="")
     block_number: Mapped[int] = mapped_column()
+    title: Mapped[str] = mapped_column(Text, default="")
 
     __table_args__ = (UniqueConstraint("flow_id", "block_number"),)
 
@@ -97,6 +99,12 @@ class FlowDifficulty(StrEnum):
     HARD = "Difícil"
 
 
+class FlowSourceType(StrEnum):
+    OFFICIAL = "official"
+    AI_GENERATED = "ai_generated"
+    FULL = "full"
+
+
 class Flow(Base):
     code: Mapped[uuid.UUID] = mapped_column(server_default=func.gen_random_uuid())
     title: Mapped[str] = mapped_column(Text)
@@ -108,14 +116,23 @@ class Flow(Base):
     action_link: Mapped[str] = mapped_column(Text, default="")
     action_text: Mapped[str] = mapped_column(Text, default="")
 
-    query: Mapped[str] = mapped_column(Text)
-    area: Mapped[str] = mapped_column(Text)
-    source_filter: Mapped[str] = mapped_column(Text)
+    max_num_questions: Mapped[int] = mapped_column(
+        default=0
+    )  # because we need to tell the frontend the total, in case we still havent finished doing all of them
+
     difficulty: Mapped[FlowDifficulty] = mapped_column()
     question_answer_type: Mapped[QuestionAnswerType] = mapped_column()
 
-    flow_input_type: Mapped[FlowInputType] = mapped_column()
+    source_type: Mapped[FlowSourceType] = mapped_column()
+    flow_input_type: Mapped[FlowInputType] = (
+        mapped_column()
+    )  # determines input_topic vs transcription_blocks
     input_topic: Mapped[str] = mapped_column(Text, default="")
+
+    major_tags: Mapped[list[str]] = mapped_column(
+        postgresql.ARRAY(Text), default=[]
+    )  # should be derived from questions tags + questions official source
+    minor_tags: Mapped[list[str]] = mapped_column(postgresql.ARRAY(Text), default=[])
 
     transcription_blocks: Mapped[list["FlowTranscriptionBlock"]] = relationship(
         back_populates="flow",
@@ -311,22 +328,21 @@ class Question(Base):
 
     is_active: Mapped[bool] = mapped_column(default=True)
 
-    subject: Mapped[str] = mapped_column(String(255), default="")
-    category: Mapped[str] = mapped_column(String(100), default="")
-    subcategory: Mapped[str] = mapped_column(String(100), default="")
+    is_quantitative: Mapped[bool] = mapped_column(default=False)
 
-    caderno: Mapped[str] = mapped_column(String(255), default="")
-    caderno_number: Mapped[int | None] = mapped_column()
+    major_tags: Mapped[list[str]] = mapped_column(postgresql.ARRAY(Text), default=[])
+    minor_tags: Mapped[list[str]] = mapped_column(postgresql.ARRAY(Text), default=[])
+
     difficulty: Mapped[QuestionDifficulty] = mapped_column()
+
     parameter_a: Mapped[float | None] = mapped_column()
     parameter_b: Mapped[float | None] = mapped_column()
     parameter_c: Mapped[float | None] = mapped_column()
 
-    answer_text: Mapped[str] = mapped_column(Text, default="")
-    answer_image_id: Mapped[int | None] = mapped_column(ForeignKey("file.id"))
-    answer_image: Mapped["File | None"] = relationship(
-        lazy="raise_on_sql", foreign_keys=[answer_image_id]
+    answer_content_blocks: Mapped[list[ContentBlock]] = mapped_column(
+        ContentBlockListType, default=[]
     )
+
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(NUM_QUESTION_EMBEDDING_DIMENSIONS)
     )
@@ -377,10 +393,6 @@ class Question(Base):
     )
 
     @property
-    def area(self) -> str | None:
-        return SUBJECT_TO_AREA.get(self.subject, None)
-
-    @property
     def choices_text(self) -> str:
         choices_text: list[str] = []
         for j, choice in enumerate(self.choices):
@@ -395,9 +407,32 @@ class Question(Base):
         return next(choice.id for choice in self.choices if choice.is_correct)
 
 
-class Exam(Base):
+class QuestionArea(Base):
     name: Mapped[str] = mapped_column(Text)
-    country: Mapped[str] = mapped_column(Text)
+    tags: Mapped[list[str]] = mapped_column(postgresql.ARRAY(Text), default=[])
+    education_level_id: Mapped[int] = mapped_column(ForeignKey("education_level.id"))
+    education_level: Mapped["EducationLevel"] = relationship(lazy="raise_on_sql")
+    country_code: Mapped[str] = mapped_column(ForeignKey("country.code"))
+    country: Mapped["Country"] = relationship(lazy="raise_on_sql")
+    course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"))
+    course: Mapped["Course | None"] = relationship(lazy="raise_on_sql")
+
+
+class Exam(Base):
+    """
+    Represents an exam (bancada in portuguese)
+    """
+
+    name: Mapped[str] = mapped_column(Text)
+
+    country_code: Mapped[str] = mapped_column(ForeignKey("country.code"))
+    country: Mapped["Country"] = relationship(lazy="raise_on_sql")
+
+    education_level_id: Mapped[int] = mapped_column(ForeignKey("education_level.id"))
+    education_level: Mapped["EducationLevel"] = relationship(lazy="raise_on_sql")
+
+    course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"))
+    course: Mapped["Course | None"] = relationship(lazy="raise_on_sql")
 
 
 class OfficialQuestionSource(Base):
@@ -552,7 +587,7 @@ class FlowUserFeed(Base):
 
 class CampaignType(StrEnum):
     EXTERNAL = "external"
-    SCHOOL = "school"
+    INSTITUTION = "institution"
     INTENDED_EDUCATION = "intended_education"
     REFERRALS = "referrals"
     FLOW = "flow"
@@ -597,4 +632,4 @@ class Campaign(Base):
 
     probability: Mapped[float] = mapped_column(default=0.0)
 
-    campaign_type: Mapped[str] = mapped_column(String(50))
+    campaign_type: Mapped[CampaignType]

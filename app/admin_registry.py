@@ -6,7 +6,7 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 
 from app.config import settings
 from app.database import db_manager
-from app.education.admin import CollegeAdmin, CourseAdmin, SchoolAdmin
+from app.education.admin import CourseAdmin, SchoolAdmin
 from app.files.admin import FileAdmin
 from app.flows.admin import (
     ChoiceAdmin,
@@ -22,7 +22,7 @@ from app.logging_admin import (
     SetSqlLoggingLevelView,
 )
 from app.users import service as user_service
-from app.users.admin import UserAdmin, UserProfileAdmin
+from app.users.admin import UserAdmin
 from app.users.jwt_token import TokenError, generate_tokens, process_token
 
 admin_views: list[type[BaseView]] = []
@@ -31,7 +31,6 @@ admin_views.append(SetSqlLoggingLevelView)
 admin_views.append(GetCurrentLevelsView)
 admin_views.append(LoggingControlView)
 admin_views.append(UserAdmin)
-admin_views.append(CollegeAdmin)
 admin_views.append(CourseAdmin)
 admin_views.append(SchoolAdmin)
 admin_views.append(FlowAdmin)
@@ -40,20 +39,19 @@ admin_views.append(FlowQuestionAdmin)
 admin_views.append(FlowQuestionUserAdmin)
 admin_views.append(QuestionAdmin)
 admin_views.append(ChoiceAdmin)
-admin_views.append(UserProfileAdmin)
 admin_views.append(FileAdmin)
 
 
 class AdminAuth(AuthenticationBackend):
     async def login(self, request: Request) -> bool:
         form = await request.form()
-        username, password = form["username"], form["password"]
+        email, password = form["username"], form["password"]
 
         # Create a database session
         async with db_manager.session_with_transaction() as db_session:
             # Authenticate the user using the existing authentication system
             user = await user_service.authenticate_user_by_password(
-                db_session, str(username), str(password)
+                db_session, str(email), str(password)
             )
 
             # Check if user exists and is a superuser

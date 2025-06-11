@@ -1,4 +1,5 @@
 import datetime
+from typing import TypedDict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,10 +65,16 @@ def get_streak_info(answer_timestamps: list[datetime.datetime]) -> tuple[bool, i
     return done_today, streak
 
 
+class OnlineInfo(TypedDict):
+    id: int
+    is_online: bool
+    last_online: datetime.datetime | None
+
+
 async def get_online_info(
     db_session: AsyncSession,
     user_ids: list[int],
-) -> list[dict[str, int | bool | datetime.datetime | None]]:
+) -> list[OnlineInfo]:
     """Get online status and last online time for a list of users.
 
     Args:
@@ -93,12 +100,10 @@ async def get_online_info(
 
     # Build response combining status and last online time
     return [
-        {
-            "id": user_id,
-            "is_online": status == "online",  # Convert to boolean
-            "last_online": last_online_users.get(user_id)
-            if status != "online"
-            else None,
-        }
+        OnlineInfo(
+            id=user_id,
+            is_online=status == "online",
+            last_online=last_online_users.get(user_id) if status != "online" else None,
+        )
         for user_id, status in zip(user_ids, statuses)
     ]

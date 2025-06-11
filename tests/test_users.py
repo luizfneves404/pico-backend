@@ -3,7 +3,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import jwt
-import pytest
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -692,7 +691,7 @@ class TestUserRetrieval:
 
 
 class TestUserUpdates:
-    """Test user profile update operations."""
+    """Test user update operations."""
 
     async def test_update_basic_fields(self, user_client: AsyncClient, user: User):
         """Test updating basic user fields that don't require password."""
@@ -1065,13 +1064,6 @@ class TestSocialFeatures:
         assert len(response.json()["items"]) == 20
         assert response.json()["total"] == 30
 
-    @pytest.mark.parametrize(
-        "level,expected_community_subtitle",
-        [
-            (EducationLevel.THIRD_GRADE_HIGH_SCHOOL, "3° Ano do Ensino Médio"),
-            (EducationLevel.COLLEGE, "Ensino Superior"),
-        ],
-    )
     async def test_user_auto_joins_communities_on_education_change(
         self,
         user: User,
@@ -1085,7 +1077,7 @@ class TestSocialFeatures:
         async with session.begin():
             institution = (
                 await SchoolFactory.create(session=session)
-                if level == EducationLevel.THIRD_GRADE_HIGH_SCHOOL
+                if level_id == 1
                 else await CollegeFactory.create(session=session)
             )
             course = await CourseFactory.create(session=session)

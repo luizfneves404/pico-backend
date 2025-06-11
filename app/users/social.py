@@ -1,11 +1,10 @@
 import logging
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.education.models import EducationLevel
 from app.shared.validation import CustomPhoneNumber
 from app.users.models import User
 
@@ -70,22 +69,23 @@ async def search_username(db_session: AsyncSession, username: str) -> list[User]
 
 async def get_ranking(
     db_session: AsyncSession,
+    *,
     asking_user_id: int,
-    score_type: Literal["dynamic", "percentage"],
-    school_filter: int | None,
-    course_filter: str | None,
-    education_level_filter: EducationLevel | None,
+    score_type: Literal["xp", "social"],
+    institution_id: int | None,
+    course_id: int | None,
+    education_level_id: int | None,
     subject: str | None = None,
-) -> list[dict[str, Any]]:
+) -> list[User]:
     """Get user ranking based on various filters.
 
     Args:
         db_session: The database session
         asking_user_id: ID of the user asking for the ranking
         score_type: Type of scoring to use
-        school_filter: Filter by school ID
-        course_filter: Filter by course name
-        education_level_filter: Filter by education level
+        institution_id: Filter by institution ID
+        course_id: Filter by course ID
+        education_level_id: Filter by education level ID
         subject: Subject for percentage-based ranking
 
     Returns:
@@ -98,21 +98,20 @@ async def get_ranking(
     # Note: This function needs to be updated to work with the new education structure
     # For now, keeping the basic structure but this will need more work
     stmt = select(User.id)
-    # TODO: Update filtering logic to work with new education structure
-    # if school_filter:
-    #     stmt = stmt.where(User.school_id == school_filter)
-    # if course_filter:
-    #     stmt = stmt.join(User.chosen_course).where(Course.name == course_filter)
-    # if education_level_filter:
-    #     stmt = stmt.where(User.education_level == education_level_filter)
+    if institution_id:
+        stmt = stmt.where(User.institution_id == institution_id)
+    if course_id:
+        stmt = stmt.where(User.course_id == course_id)
+    if education_level_id:
+        stmt = stmt.where(User.education_level_id == education_level_id)
 
-    # users_ids = await db_session.scalars(stmt)
+    users_ids = await db_session.scalars(stmt)
     # Note: quiz_service is not imported, this will need to be fixed
-    # if score_type == "dynamic":
+    # if score_type == "xp":
     #     return await quiz_service.get_ranked_users_stats_by_dynamic_score(
     #         users_ids, NUM_RANKED_USERS, asking_user_id
     #     )
-    # elif score_type == "percentage":
+    # elif score_type == "social":
     #     return await quiz_service.get_ranked_users_stats_by_percentage(
     #         users_ids, NUM_RANKED_USERS, asking_user_id, subject
     #     )

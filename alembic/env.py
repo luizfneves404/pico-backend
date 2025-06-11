@@ -42,6 +42,28 @@ target_metadata = Base.metadata
 # ... etc.
 
 
+def include_object(
+    object: Any, name: str, type_: str, reflected: bool, compare_to: Any
+) -> bool:
+    # 1) skip the built-in PostGIS table
+    if type_ == "table" and name == "spatial_ref_sys":
+        return False
+
+    # 2) skip any Index that was declared/reflects with USING='gist'
+    #    this covers op.create_index(..., postgresql_using='gist')
+    #    and the corresponding drops in autogenerate.
+    if type_ == "index":
+        # Alembic passes you the Index object; dialect_options holds
+        # any dialect-specific args (like postgresql_using)
+        dialect_opts = getattr(object, "dialect_options", {})
+        pg_opts = dialect_opts.get("postgresql", {})
+        if pg_opts.get("using") == "gist":
+            return False
+
+    # otherwise include everything
+    return True
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -60,6 +82,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -68,7 +91,11 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     try:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            include_object=include_object,
+        )
 
         with context.begin_transaction():
             context.run_migrations()
@@ -79,7 +106,11 @@ def do_run_migrations(connection: Connection) -> None:
             script=context_data["script"],
             **context_data["opts"],
         ):
-            context.configure(connection=connection, target_metadata=target_metadata)
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+                include_object=include_object,
+            )
             with context.begin_transaction():
                 context.run_migrations()
 

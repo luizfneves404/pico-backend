@@ -10,6 +10,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 import app.base
+import app.localization
 import pgvector.sqlalchemy
 import geoalchemy2.types
 ${imports if imports else ""}
@@ -24,15 +25,18 @@ def upgrade() -> None:
     # Only execute this code if it's the first migration
     if not down_revision:
         op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
+        op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS postgis"))
 
     ${upgrades if upgrades else "pass"}
     
     # Only execute this code if it's the first migration
     if not down_revision:
+        with open("app/countries/countries.sql", "r") as f:
+            op.execute(f.read())
         op.execute(
             """
-            INSERT INTO "user" (username, name, email, phone_number, hashed_password, is_superuser, is_bot, bot_difficulty, signup_source)
-            VALUES ('deleted', 'deleted', 'deleted@example.com', '21999202124', '', false, false, NULL, 'OTHER');
+            INSERT INTO "user" (username, name, email, phone_number, hashed_password, is_superuser, is_bot, bot_difficulty, signup_source, country_code, social_score, xp_score)
+            VALUES ('deleted', 'deleted', 'deleted@example.com', '21999202124', '', false, false, NULL, 'OTHER', 'BR', 0, 0);
             """
         )
 

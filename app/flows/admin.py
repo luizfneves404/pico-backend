@@ -15,19 +15,25 @@ class FlowAdmin(Admin, model=Flow):
         Flow.code,
         Flow.created_at,
         Flow.title,
-        Flow.query,
-        Flow.area,
+        Flow.flow_input_type,
+        Flow.input_topic,
+        Flow.difficulty,
     ]
-    column_searchable_list = [Flow.id, Flow.code, Flow.title, Flow.query, Flow.area]
-    column_sortable_list = [Flow.id, Flow.created_at, Flow.area]
+    column_searchable_list = [
+        Flow.id,
+        Flow.code,
+        Flow.title,
+        Flow.flow_input_type,
+        Flow.input_topic,
+    ]
+    column_sortable_list = [Flow.id, Flow.created_at]
     column_details_list = [
         Flow.id,
         Flow.code,
         Flow.title,
         Flow.created_at,
-        Flow.query,
-        Flow.area,
-        Flow.source_filter,
+        Flow.flow_input_type,
+        Flow.input_topic,
         Flow.difficulty,
         Flow.question_answer_type,
     ]
@@ -60,7 +66,9 @@ class FlowElementAdmin(Admin, model=FlowElement):
 class QuestionAdmin(Admin, model=Question):
     column_list = [
         Question.id,
-        Question.subject,
+        Question.is_quantitative,
+        Question.major_tags,
+        Question.minor_tags,
         Question.difficulty,
         Question.is_active,
         Question.source_type,
@@ -68,22 +76,23 @@ class QuestionAdmin(Admin, model=Question):
     ]
     column_searchable_list = [
         Question.id,
-        Question.subject,
-        Question.category,
-        Question.subcategory,
+        Question.is_quantitative,
+        Question.major_tags,
+        Question.minor_tags,
     ]
     column_sortable_list = [
         Question.id,
         Question.created_at,
-        Question.subject,
+        Question.is_quantitative,
         Question.difficulty,
         Question.source_type,
     ]
     column_details_list = [
         Question.id,
-        Question.subject,
-        Question.category,
-        Question.subcategory,
+        Question.is_quantitative,
+        Question.major_tags,
+        Question.minor_tags,
+        Question.content_blocks,
         Question.difficulty,
         Question.is_active,
         Question.source_type,

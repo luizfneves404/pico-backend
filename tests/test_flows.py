@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.flows.models import FlowInputType, FlowQuestionUser, FlowUserFeed, Question
-from app.users.models import User, UserProfile
+from app.users.models import User
 from tests.factories import (
     ChoiceFactory,
     FlowFactory,
@@ -385,17 +385,15 @@ async def test_submit_flow_question_answer_correct_first_time(
         )
 
         # Get initial scores
-        user_profile_result = await session.execute(
-            select(UserProfile).where(UserProfile.user_id == user.id)
-        )
-        user_profile = user_profile_result.scalar_one()
-        initial_user_xp = user_profile.xp_score
+        user_result = await session.execute(select(User).where(User.id == user.id))
+        user = user_result.scalar_one()
+        initial_user_xp = user.xp_score
 
-        creator_profile_result = await session.execute(
-            select(UserProfile).where(UserProfile.user_id == another_user.id)
+        creator_result = await session.execute(
+            select(User).where(User.id == another_user.id)
         )
-        creator_profile = creator_profile_result.scalar_one()
-        initial_creator_social_score = creator_profile.social_score
+        creator = creator_result.scalar_one()
+        initial_creator_social_score = creator.social_score
 
     # Submit a correct answer
     answer_data = {
@@ -421,21 +419,19 @@ async def test_submit_flow_question_answer_correct_first_time(
         assert user_answer.submitted_text == ""
 
         # Check that user's XP increased (should be full XP since it's correct and first time)
-        user_profile_result = await session.execute(
-            select(UserProfile).where(UserProfile.user_id == user.id)
-        )
-        user_profile = user_profile_result.scalar_one()
-        await session.refresh(user_profile)
-        xp_increase = user_profile.xp_score - initial_user_xp
+        user_result = await session.execute(select(User).where(User.id == user.id))
+        user = user_result.scalar_one()
+        await session.refresh(user)
+        xp_increase = user.xp_score - initial_user_xp
         assert xp_increase == xp_increase_response
 
         # Check that creator's social score increased by 1
-        creator_profile_result = await session.execute(
-            select(UserProfile).where(UserProfile.user_id == another_user.id)
+        creator_result = await session.execute(
+            select(User).where(User.id == another_user.id)
         )
-        creator_profile = creator_profile_result.scalar_one()
-        await session.refresh(creator_profile)
-        assert creator_profile.social_score == initial_creator_social_score + 1
+        creator = creator_result.scalar_one()
+        await session.refresh(creator)
+        assert creator.social_score == initial_creator_social_score + 1
 
 
 async def test_submit_flow_question_answer_wrong_answer(
@@ -457,17 +453,15 @@ async def test_submit_flow_question_answer_wrong_answer(
         )
 
         # Get initial scores
-        user_profile_result = await session.execute(
-            select(UserProfile).where(UserProfile.user_id == user.id)
-        )
-        user_profile = user_profile_result.scalar_one()
-        initial_user_xp = user_profile.xp_score
+        user_result = await session.execute(select(User).where(User.id == user.id))
+        user = user_result.scalar_one()
+        initial_user_xp = user.xp_score
 
-        creator_profile_result = await session.execute(
-            select(UserProfile).where(UserProfile.user_id == another_user.id)
+        creator_result = await session.execute(
+            select(User).where(User.id == another_user.id)
         )
-        creator_profile = creator_profile_result.scalar_one()
-        initial_creator_social_score = creator_profile.social_score
+        creator = creator_result.scalar_one()
+        initial_creator_social_score = creator.social_score
 
     # Submit a wrong answer
     answer_data = {
@@ -492,21 +486,19 @@ async def test_submit_flow_question_answer_wrong_answer(
         assert user_answer.choice_id == wrong_choice.id
 
         # Check that user's XP increased but with wrong answer multiplier (0.5)
-        user_profile_result = await session.execute(
-            select(UserProfile).where(UserProfile.user_id == user.id)
-        )
-        user_profile = user_profile_result.scalar_one()
-        await session.refresh(user_profile)
-        xp_increase = user_profile.xp_score - initial_user_xp
+        user_result = await session.execute(select(User).where(User.id == user.id))
+        user = user_result.scalar_one()
+        await session.refresh(user)
+        xp_increase = user.xp_score - initial_user_xp
         assert xp_increase == xp_increase_response
 
         # Check that creator's social score still increased
-        creator_profile_result = await session.execute(
-            select(UserProfile).where(UserProfile.user_id == another_user.id)
+        creator_result = await session.execute(
+            select(User).where(User.id == another_user.id)
         )
-        creator_profile = creator_profile_result.scalar_one()
-        await session.refresh(creator_profile)
-        assert creator_profile.social_score == initial_creator_social_score + 1
+        creator = creator_result.scalar_one()
+        await session.refresh(creator)
+        assert creator.social_score == initial_creator_social_score + 1
 
 
 async def test_submit_flow_question_answer_repeated_flow_question(
@@ -535,11 +527,9 @@ async def test_submit_flow_question_answer_repeated_flow_question(
         session.add(previous_answer)
 
         # Get initial scores
-        user_profile_result = await session.execute(
-            select(UserProfile).where(UserProfile.user_id == user.id)
-        )
-        user_profile = user_profile_result.scalar_one()
-        initial_user_xp = user_profile.xp_score
+        user_result = await session.execute(select(User).where(User.id == user.id))
+        user = user_result.scalar_one()
+        initial_user_xp = user.xp_score
 
     # Submit another correct answer (should be treated as repeated)
     answer_data = {
@@ -550,12 +540,10 @@ async def test_submit_flow_question_answer_repeated_flow_question(
     assert response.status_code == 400
     # Verify the repeated correct answer gets no XP
     async with session.begin():
-        user_profile_result = await session.execute(
-            select(UserProfile).where(UserProfile.user_id == user.id)
-        )
-        user_profile = user_profile_result.scalar_one()
-        await session.refresh(user_profile)
-        xp_increase = user_profile.xp_score - initial_user_xp
+        user_result = await session.execute(select(User).where(User.id == user.id))
+        user = user_result.scalar_one()
+        await session.refresh(user)
+        xp_increase = user.xp_score - initial_user_xp
         assert xp_increase == 0
 
 
@@ -589,11 +577,9 @@ async def test_submit_flow_question_answer_repeated_question(
         session.add(previous_answer)
 
         # Get initial scores
-        user_profile_result = await session.execute(
-            select(UserProfile).where(UserProfile.user_id == user.id)
-        )
-        user_profile = user_profile_result.scalar_one()
-        initial_user_xp = user_profile.xp_score
+        user_result = await session.execute(select(User).where(User.id == user.id))
+        user = user_result.scalar_one()
+        initial_user_xp = user.xp_score
 
     # Submit another correct answer (should be treated as repeated)
     answer_data = {
@@ -607,12 +593,10 @@ async def test_submit_flow_question_answer_repeated_question(
     assert 2 <= xp_increase_response <= 5
     # Verify the repeated correct answer gets reduced XP
     async with session.begin():
-        user_profile_result = await session.execute(
-            select(UserProfile).where(UserProfile.user_id == user.id)
-        )
-        user_profile = user_profile_result.scalar_one()
-        await session.refresh(user_profile)
-        xp_increase = user_profile.xp_score - initial_user_xp
+        user_result = await session.execute(select(User).where(User.id == user.id))
+        user = user_result.scalar_one()
+        await session.refresh(user)
+        xp_increase = user.xp_score - initial_user_xp
         assert xp_increase == xp_increase_response
 
 
@@ -630,11 +614,9 @@ async def test_submit_flow_question_answer_same_user_as_creator(
         )
 
         # Get initial social score
-        user_profile_result = await session.execute(
-            select(UserProfile).where(UserProfile.user_id == user.id)
-        )
-        user_profile = user_profile_result.scalar_one()
-        initial_social_score = user_profile.social_score
+        user_result = await session.execute(select(User).where(User.id == user.id))
+        user = user_result.scalar_one()
+        initial_social_score = user.social_score
 
     # Submit answer to own flow
     answer_data = {
@@ -648,12 +630,10 @@ async def test_submit_flow_question_answer_same_user_as_creator(
     assert 20 <= xp_increase_response <= 50
     # Verify social score did NOT increase
     async with session.begin():
-        user_profile_result = await session.execute(
-            select(UserProfile).where(UserProfile.user_id == user.id)
-        )
-        user_profile = user_profile_result.scalar_one()
-        await session.refresh(user_profile)
-        assert user_profile.social_score == initial_social_score
+        user_result = await session.execute(select(User).where(User.id == user.id))
+        user = user_result.scalar_one()
+        await session.refresh(user)
+        assert user.social_score == initial_social_score
 
 
 async def test_submit_flow_question_answer_multiple_answers_same_question(

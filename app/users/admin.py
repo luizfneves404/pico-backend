@@ -6,7 +6,7 @@ from sqlalchemy.orm import InstrumentedAttribute, selectinload
 
 from app.shared.admin import Admin
 from app.users import service as user_service
-from app.users.models import User, UserProfile
+from app.users.models import User
 
 
 def format_string(value: Any) -> Any:
@@ -21,17 +21,27 @@ class UserAdmin(Admin, model=User):
         Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
     ] = [
         User.id,
+        User.name,
         User.username,
         User.email,
         User.phone_number,
         User.is_superuser,
         User.is_bot,
         User.signup_source,
+        User.social_score,
+        User.xp_score,
         "referral_count",
     ]
-    column_searchable_list = [User.id, User.username, User.email, User.phone_number]
+    column_searchable_list = [
+        User.id,
+        User.username,
+        User.email,
+        User.phone_number,
+        User.name,
+    ]
     column_sortable_list = [
         User.id,
+        User.name,
         User.username,
         User.email,
         User.is_superuser,
@@ -39,12 +49,15 @@ class UserAdmin(Admin, model=User):
         User.signup_source,
         User.current_education,
         User.intended_education,
+        User.social_score,
+        User.xp_score,
     ]
     column_details_list: ClassVar[
         Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
     ] = [
         User.id,
         User.created_at,
+        User.name,
         User.username,
         User.email,
         User.phone_number,
@@ -55,6 +68,8 @@ class UserAdmin(Admin, model=User):
         User.is_bot,
         User.bot_difficulty,
         User.signup_source,
+        User.social_score,
+        User.xp_score,
         "referral_count",
     ]
     column_labels: ClassVar[dict[str | InstrumentedAttribute[Any], str]] = {
@@ -74,6 +89,7 @@ class UserAdmin(Admin, model=User):
     }
 
     form_columns = [
+        "name",
         "username",
         "email",
         "phone_number",
@@ -85,6 +101,8 @@ class UserAdmin(Admin, model=User):
         "current_education",
         "intended_education",
         "referred_by",
+        "social_score",
+        "xp_score",
     ]
 
     def list_query(self, request: Request) -> Select[tuple[User]]:
@@ -128,17 +146,3 @@ class UserAdmin(Admin, model=User):
                 "bot_difficulty" not in data or data["bot_difficulty"] is None
             ):
                 data["bot_difficulty"] = 0.5  # Default difficulty
-
-
-class UserProfileAdmin(Admin, model=UserProfile):
-    column_list = [
-        UserProfile.id,
-        UserProfile.user_id,
-        UserProfile.social_score,
-        UserProfile.xp_score,
-    ]
-    column_sortable_list = [
-        UserProfile.id,
-        UserProfile.social_score,
-        UserProfile.xp_score,
-    ]

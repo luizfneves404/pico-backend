@@ -1,19 +1,20 @@
-from sqlalchemy import select
+from geoalchemy2 import WKTElement
+from geoalchemy2.functions import ST_Distance, ST_DWithin
+from geoalchemy2.types import Geography
+from sqlalchemy import ColumnElement, case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.education.models import (
-    College,
     Course,
-    Education,
+    EducationInfo,
     EducationLevel,
     Institution,
-    School,
+    LevelStage,
 )
 
-
-class SchoolNotFoundError(Exception):
-    pass
+MAX_DISTANCE_INSTITUTION_SEARCH = 10_000
+MAX_INSTITUTIONS_SEARCH_LIMIT = 50
 
 
 class InstitutionNotFoundError(Exception):
@@ -24,83 +25,8 @@ class CourseNotFoundError(Exception):
     pass
 
 
-class EducationNotFoundError(Exception):
+class StageNotFoundError(Exception):
     pass
-
-
-async def list_schools(db_session: AsyncSession) -> list[School]:
-    """List all schools.
-
-    Args:
-        db_session: The database session
-
-    Returns:
-        List of all schools
-    """
-    result = await db_session.scalars(select(School))
-    return list(result.all())
-
-
-async def create_school(
-    db_session: AsyncSession,
-    *,
-    name: str,
-    inep_code: str,
-    user_submitted: bool,
-) -> School:
-    """Create a new school.
-
-    Args:
-        db_session: The database session
-        name: Name of the school to create
-        inep_code: INEP code for the school
-
-    Returns:
-        The created school
-    """
-    school = School(
-        name=name,
-        inep_code=inep_code,
-        institution_type="school",
-        user_submitted=user_submitted,
-    )
-    db_session.add(school)
-    await db_session.flush()
-    await db_session.refresh(school)
-    return school
-
-
-async def list_schools_ranking(db_session: AsyncSession) -> list[School]:
-    """List schools ordered by score.
-
-    Args:
-        db_session: The database session
-
-    Returns:
-        List of schools ordered by score descending
-    """
-    # TODO: Add score attribute to School model
-    result = await db_session.scalars(select(School).order_by(School.name))
-    return list(result.all())
-
-
-async def get_school(db_session: AsyncSession, school_id: int) -> School:
-    """Get a school by ID.
-
-    Args:
-        db_session: The database session
-        school_id: ID of the school to get
-
-    Returns:
-        The found school
-
-    Raises:
-        SchoolNotFoundError: If no school is found with the given ID
-    """
-    school = await db_session.get(School, school_id)
-    if not school:
-        raise SchoolNotFoundError
-    return school
 
 
 async def list_institutions(db_session: AsyncSession) -> list[Institution]:
@@ -113,7 +39,7 @@ async def list_institutions(db_session: AsyncSession) -> list[Institution]:
         List of all institutions
     """
     result = await db_session.scalars(select(Institution))
-    return list(result.all())
+    return list(result)
 
 
 async def get_institution(db_session: AsyncSession, institution_id: int) -> Institution:
@@ -135,72 +61,104 @@ async def get_institution(db_session: AsyncSession, institution_id: int) -> Inst
     return institution
 
 
-async def list_colleges(db_session: AsyncSession) -> list[College]:
-    """List all colleges.
+async def search_institutions(
+    db: AsyncSession,
+    *,
+    name: str | None,
+    institution_type: str,
+    latitude: float | None,
+    longitude: float | None,
+) -> list[Institution]:
+    filters: list[ColumnElement[bool]] = []
+    if name:
+        filters.append(Institution.name.ilike(f"%{name}%"))
+    if institution_type:
+        filters.append(Institution.institution_type == institution_type)
+
+    # Build user point once
+    user_geom = (
+        WKTElement(f"POINT({longitude} {latitude})", srid=4326)
+        if latitude is not None and longitude is not None
+        else None
+    )
+
+    stmt = select(Institution)
+
+    if user_geom:
+        # allow null-location but push to end
+        null_last = case((Institution.location.is_(None), 1), else_=0)
+
+        filters.append(
+            # either no location (we’ll include later) OR within radius
+            (Institution.location.is_(None))
+            | ST_DWithin(
+                Institution.location,
+                user_geom,
+                MAX_DISTANCE_INSTITUTION_SEARCH,
+                type_=Geography,
+            )
+        )
+
+        stmt = stmt.order_by(
+            null_last,
+            ST_Distance(Institution.location, user_geom, type_=Geography),
+        ).limit(MAX_INSTITUTIONS_SEARCH_LIMIT)
+
+    stmt = stmt.where(*filters)
+
+    result = await db.execute(stmt)
+    return list(result.scalars())
+
+
+async def create_institution(
+    db_session: AsyncSession,
+    *,
+    name: str,
+    institution_type: str,
+    user_submitted: bool,
+    country_code: str,
+) -> Institution:
+    """Create a new institution.
 
     Args:
         db_session: The database session
+        name: The name of the institution to create
+        institution_type: The type of the institution to create
+        user_submitted: Whether the institution is user-submitted
 
     Returns:
-        List of all colleges
+        The created institution
     """
-    result = await db_session.scalars(
-        select(College).options(selectinload(College.courses))
+    institution = Institution(
+        name=name,
+        institution_type=institution_type,
+        user_submitted=user_submitted,
+        country_code=country_code,
     )
-    return list(result.all())
-
-
-async def create_college(
-    db_session: AsyncSession, *, name: str, user_submitted: bool
-) -> College:
-    """Create a new college.
-
-    Args:
-        db_session: The database session
-        name: Name of the college to create
-
-    Returns:
-        The created college
-    """
-    college = College(
-        name=name, institution_type="college", user_submitted=user_submitted
-    )
-    db_session.add(college)
+    db_session.add(institution)
     await db_session.flush()
-    await db_session.refresh(college)
-    return college
+    return institution
 
 
-async def get_college(db_session: AsyncSession, college_id: int) -> College:
-    """Get a college by ID.
-
-    Args:
-        db_session: The database session
-        college_id: ID of the college to get
-
-    Returns:
-        The found college
-
-    Raises:
-        InstitutionNotFoundError: If no college is found with the given ID
-    """
-    college = await db_session.get(College, college_id)
-    if not college:
-        raise InstitutionNotFoundError
-    return college
-
-
-async def list_courses(db_session: AsyncSession) -> list[Course]:
-    """List all courses.
+async def list_courses(
+    db_session: AsyncSession, *, level_id: int | None
+) -> list[Course]:
+    """List all courses, limiting courses to the given level.
 
     Args:
         db_session: The database session
+        level_id: The level id to limit the courses to
 
     Returns:
         List of all courses
     """
-    result = await db_session.scalars(select(Course))
-    return list(result.all())
+
+    filters: list[ColumnElement[bool]] = []
+    if level_id:
+        filters.append(Course.level_id == level_id)
+
+    result = await db_session.scalars(select(Course).where(*filters))
+    return list(result)
 
 
 async def create_course(
@@ -222,12 +180,12 @@ async def create_course(
     return course
 
 
-async def get_course(db_session: AsyncSession, course_id: int) -> Course:
+async def get_course(db_session: AsyncSession, id: int) -> Course:
     """Get a course by ID.
 
     Args:
         db_session: The database session
-        course_id: ID of the course to get
+        id: ID of the course to get
 
     Returns:
         The found course
@@ -235,87 +193,58 @@ async def get_course(db_session: AsyncSession, course_id: int) -> Course:
     Raises:
         CourseNotFoundError: If no course is found with the given ID
     """
-    course = await db_session.get(Course, course_id)
+    course = await db_session.get(Course, id)
     if not course:
         raise CourseNotFoundError
     return course
 
 
-async def create_education(
+async def build_education(
     db_session: AsyncSession,
     *,
-    level: EducationLevel = EducationLevel.UNKNOWN,
-    institution_id: int | None = None,
-    course_id: int | None = None,
-) -> Education:
-    """Create a new education record.
+    level_id: int,
+    stage_id: int | None,
+    institution_id: int | None,
+    course_id: int | None,
+) -> EducationInfo:
+    """Create a new education record without flushing the session.
 
     Args:
         db_session: The database session
-        level: The education level
+        level_id: The education level id
+        stage_id: ID of the stage
         institution_id: ID of the institution
         course_id: ID of the course
 
     Returns:
         The created education record
     """
-    education = Education(
-        level=level,
+    education = EducationInfo(
+        level_id=level_id,
+        stage_id=stage_id,
         institution_id=institution_id,
         course_id=course_id,
     )
     db_session.add(education)
-    await db_session.flush()
-    await db_session.refresh(education)
     return education
 
 
-async def update_education(
-    db_session: AsyncSession,
-    education: Education,
-    *,
-    level: EducationLevel | None = None,
-    institution_id: int | None = None,
-    course_id: int | None = None,
-) -> Education:
-    """Update an education record.
+async def list_levels(
+    db_session: AsyncSession, *, country_code: str | None
+) -> list[EducationLevel]:
+    """List all education levels with their stages, limiting stages to the given country.
 
     Args:
         db_session: The database session
-        education: The education record to update
-        level: The new education level
-        institution_id: The new institution ID
-        course_id: The new course ID
-
+        country_code: The country code to limit the stages to
     Returns:
-        The updated education record
+        List of all education levels with their stages
     """
-    if level is not None:
-        education.level = level
-    if institution_id is not None:
-        education.institution_id = institution_id
-    if course_id is not None:
-        education.course_id = course_id
+    stages_loader = EducationLevel.stages
+    if country_code:
+        stages_loader = stages_loader.and_(LevelStage.country_code == country_code)
 
-    await db_session.flush()
-    await db_session.refresh(education)
-    return education
-
-
-async def get_education(db_session: AsyncSession, education_id: int) -> Education:
-    """Get an education record by ID.
-
-    Args:
-        db_session: The database session
-        education_id: ID of the education record to get
-
-    Returns:
-        The found education record
-
-    Raises:
-        EducationNotFoundError: If no education record is found with the given ID
-    """
-    education = await db_session.get(Education, education_id)
-    if not education:
-        raise EducationNotFoundError
-    return education
+    result = await db_session.scalars(
+        select(EducationLevel).options(selectinload(stages_loader))
+    )
+    return list(result)

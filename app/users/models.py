@@ -1,6 +1,7 @@
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from geoalchemy2 import Geography, WKBElement
 from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
@@ -18,7 +19,8 @@ from app.flows.models import Flow
 
 if TYPE_CHECKING:
     from app.community.models import Community
-    from app.education.models import Education
+    from app.countries.models import Country
+    from app.education.models import EducationInfo
     from app.fcm.models import FCMDevice
     from app.ws.models import UserWebsocketInfo
 
@@ -49,17 +51,31 @@ class User(Base):
 
     signup_source: Mapped[SignupSource] = mapped_column(default=SignupSource.UNKNOWN)
 
-    current_education_id: Mapped[int | None] = mapped_column(ForeignKey("education.id"))
-    current_education: Mapped["Education | None"] = relationship(
+    current_education_id: Mapped[int | None] = mapped_column(
+        ForeignKey("education_info.id")
+    )
+    current_education: Mapped["EducationInfo | None"] = relationship(
         foreign_keys=[current_education_id], lazy="raise_on_sql"
     )
 
     intended_education_id: Mapped[int | None] = mapped_column(
-        ForeignKey("education.id")
+        ForeignKey("education_info.id"),
     )
-    intended_education: Mapped["Education | None"] = relationship(
+    intended_education: Mapped["EducationInfo | None"] = relationship(
         foreign_keys=[intended_education_id], lazy="raise_on_sql"
     )
+
+    country_code: Mapped[str] = mapped_column(ForeignKey("country.code"))
+    country: Mapped["Country"] = relationship(
+        foreign_keys=[country_code], lazy="raise_on_sql"
+    )
+
+    location: Mapped[WKBElement | None] = mapped_column(
+        Geography(geometry_type="POINT", srid=4326)
+    )
+
+    social_score: Mapped[int] = mapped_column(default=0)
+    xp_score: Mapped[int] = mapped_column(default=0)
 
     # referral fields
     referred_by_id: Mapped[int | None] = mapped_column(
@@ -77,12 +93,6 @@ class User(Base):
         lazy="raise_on_sql",
     )
 
-    profile: Mapped["UserProfile"] = relationship(
-        back_populates="user",
-        lazy="raise_on_sql",
-        cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
-        passive_deletes=True,
-    )
     flows_created: Mapped[list["Flow"]] = relationship(
         back_populates="created_by",
         foreign_keys=[Flow.created_by_id],
@@ -137,6 +147,18 @@ class User(Base):
             unique=True,
             postgresql_where=apple_id != "",
         ),
+        Index(
+            "unique_current_education_id",
+            "current_education_id",
+            unique=True,
+            postgresql_where=current_education_id.is_(None),
+        ),
+        Index(
+            "unique_intended_education_id",
+            "intended_education_id",
+            unique=True,
+            postgresql_where=intended_education_id.is_(None),
+        ),
     )
 
     @hybrid_property
@@ -162,14 +184,3 @@ class User(Base):
 
     def __str__(self):
         return self.username
-
-
-class UserProfile(Base):
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("user.id", ondelete="CASCADE"), unique=True
-    )
-    user: Mapped["User"] = relationship(
-        back_populates="profile",
-    )
-    social_score: Mapped[int] = mapped_column(default=0)
-    xp_score: Mapped[int] = mapped_column(default=0)

@@ -96,7 +96,7 @@ class TestCommunityUserRelationships:
             result = await session.execute(
                 select(CommunityUser).where(CommunityUser.community_id == community.id)
             )
-            community_users = list(result.scalars().all())
+            community_users = list(result.scalars())
             assert len(community_users) == 3
 
             user_ids = {cu.user_id for cu in community_users}
@@ -324,7 +324,7 @@ class TestCommunityDeletion:
             result = await session.execute(
                 select(CommunityUser).where(CommunityUser.community_id == community.id)
             )
-            community_users = list(result.scalars().all())
+            community_users = list(result.scalars())
             assert len(community_users) == 2
 
         # Delete the community
@@ -337,7 +337,7 @@ class TestCommunityDeletion:
             result = await session.execute(
                 select(CommunityUser).where(CommunityUser.community_id == community.id)
             )
-            community_users = list(result.scalars().all())
+            community_users = list(result.scalars())
             assert len(community_users) == 0
 
         # Verify users still exist
@@ -438,5 +438,5 @@ class TestCommunityBoundaryConditions:
             result = await session.execute(
                 select(CommunityUser).where(CommunityUser.community_id == community.id)
             )
-            community_users = list(result.scalars().all())
+            community_users = list(result.scalars())
             assert len(community_users) == 50
