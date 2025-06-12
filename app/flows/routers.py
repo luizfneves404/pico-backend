@@ -96,17 +96,12 @@ async def search_flows(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
     query: str,
-    area: str,
-    source_filter: str,
     pagination: Annotated[PaginationParams, Depends(get_pagination_params)],
 ) -> PaginatedResponse[FlowInSearch]:
     """Search flows for the current user"""
-    # TODO: implement search flows correctly, using new flow stuff
     flows = await flow_service.search_flows(
         db_session,
         query=query,
-        area=area,
-        source_filter=source_filter,
         pagination=pagination,
     )
     flows_in_search = [

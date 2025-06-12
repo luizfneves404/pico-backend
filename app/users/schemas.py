@@ -127,7 +127,6 @@ class UserIn(BaseModel):
     password: PasswordStr
     referred_by_username: UsernameStr | Literal[""]
     signup_source: SignupSource = Field(default=SignupSource.UNKNOWN)
-    country_code: str = Field(default="", max_length=2)
 
 
 class EducationInfoOut(BaseModel):

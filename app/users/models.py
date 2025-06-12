@@ -65,8 +65,10 @@ class User(Base):
         foreign_keys=[intended_education_id], lazy="raise_on_sql"
     )
 
-    country_code: Mapped[str] = mapped_column(ForeignKey("country.code"))
-    country: Mapped["Country"] = relationship(
+    country_code: Mapped[str | None] = mapped_column(
+        ForeignKey("country.code"), default=None
+    )
+    country: Mapped["Country | None"] = relationship(
         foreign_keys=[country_code], lazy="raise_on_sql"
     )
 

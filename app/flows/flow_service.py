@@ -130,8 +130,6 @@ async def search_flows(
     db_session: AsyncSession,
     *,
     query: str,
-    area: str,
-    source_filter: str,
     pagination: PaginationParams,
 ) -> list[Flow]:
     """Search for flows based on a query"""
@@ -278,6 +276,32 @@ async def _generate_flow_questions(
     # In a real application, this would call a service to generate questions
     # based on the flow's input_topic or files
     pass
+
+
+async def community_feed(
+    db_session: AsyncSession, *, user_id: int, pagination: PaginationParams
+) -> list[Flow]:
+    """Get a list of flows from the community feed"""
+    query = (
+        select(Flow)
+        .join(FlowElement, Flow.id == FlowElement.flow_id)
+        .outerjoin(FlowQuestionUser, FlowElement.id == FlowQuestionUser.flow_element_id)
+        .group_by(Flow.id)
+        .order_by(Flow.created_at.desc())
+        .options(*get_flow_loader(num_elements=NUM_ELEMENTS_TO_LOAD_IN_FEED))
+        .limit(pagination.size)
+        .offset((pagination.page - 1) * pagination.size)
+    )
+    result = await db_session.execute(query)
+    flows = list(result.scalars())
+
+    # Mark these flows as seen by this user
+    for flow in flows:
+        flow_user_feed = FlowUserFeed(user_id=user_id, flow_id=flow.id)
+        db_session.add(flow_user_feed)
+
+    # Commit the seen records
+    await db_session.flush()
 
 
 async def submit_answer_multiple_choice(
