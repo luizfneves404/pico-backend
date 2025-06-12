@@ -75,14 +75,14 @@ pipeline-job:
 
       echo "Increasing desired capacity of ECS clusters to 2..."
       aws autoscaling set-desired-capacity --auto-scaling-group-name Infra-ECS-Cluster-celery-641e83ce-ECSAutoScalingGroup-ocuyjnL56bnz --desired-capacity 2
-      aws autoscaling set-desired-capacity --auto-scaling-group-name Infra-ECS-Cluster-pico-backend-web-f0fd6456-ECSAutoScalingGroup-pq5Glb6kvyFj --desired-capacity 2
+      aws autoscaling set-desired-capacity --auto-scaling-group-name Infra-ECS-Cluster-unrot-backend-web-f0fd6456-ECSAutoScalingGroup-pq5Glb6kvyFj --desired-capacity 2
 
-      echo "Building and pushing pico-backend image to AWS ECR..."
-      aws ecr get-login-password --region sa-east-1 | docker login --username "$CI_REGISTRY_USER" --password-stdin "$PICO_BACKEND_CI_REGISTRY"
-      docker pull "$PICO_BACKEND_CI_REGISTRY:latest" || true
-      docker build --cache-from "$PICO_BACKEND_CI_REGISTRY:latest" --build-arg BUILDKIT_INLINE_CACHE=1 --build-arg INSTALL_TEST=false -t pico-backend-fastapi -f ./docker/Dockerfile .
-      docker tag pico-backend-fastapi:latest "$PICO_BACKEND_CI_REGISTRY:latest"
-      docker push "$PICO_BACKEND_CI_REGISTRY:latest"
+      echo "Building and pushing backend image to AWS ECR..."
+      aws ecr get-login-password --region sa-east-1 | docker login --username "$CI_REGISTRY_USER" --password-stdin "$BACKEND_CI_REGISTRY"
+      docker pull "$BACKEND_CI_REGISTRY:latest" || true
+      docker build --cache-from "$BACKEND_CI_REGISTRY:latest" --build-arg BUILDKIT_INLINE_CACHE=1 --build-arg INSTALL_TEST=false -t backend -f ./docker/Dockerfile .
+      docker tag backend:latest "$BACKEND_CI_REGISTRY:latest"
+      docker push "$BACKEND_CI_REGISTRY:latest"
     else
       echo "Skipping build and push..."
     fi
@@ -102,4 +102,3 @@ pipeline-job:
     else
       echo "Skipping deploy..."
     fi
-
