@@ -5,6 +5,7 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.pagination import PaginationParams, paginate_query
 from app.shared.validation import CustomPhoneNumber
 from app.users.models import User
 
@@ -14,7 +15,9 @@ phone_number_adapter: TypeAdapter[CustomPhoneNumber] = TypeAdapter(CustomPhoneNu
 
 
 async def check_contacts(
-    db_session: AsyncSession, raw_phone_numbers: list[str]
+    db_session: AsyncSession,
+    raw_phone_numbers: list[str],
+    pagination: PaginationParams,
 ) -> list[User]:
     """Check which contacts are registered users.
 
@@ -34,18 +37,19 @@ async def check_contacts(
     logger.debug(
         f"Contacts checked! There were {len(phone_numbers)} valid phone numbers"
     )
-    matched_users = (
-        await db_session.scalars(
-            select(User)
-            .where(User.phone_number.in_(phone_numbers))
-            .order_by(User.username)
-        )
-    ).all()
-    logger.debug(f"Found {len(matched_users)} matching users after checking contacts")
+    stmt = (
+        select(User).where(User.phone_number.in_(phone_numbers)).order_by(User.username)
+    )
+    stmt = paginate_query(stmt, pagination)
+    matched_users = list(await db_session.scalars(stmt))
     return list(matched_users)
 
 
-async def search_username(db_session: AsyncSession, username: str) -> list[User]:
+async def search_username(
+    db_session: AsyncSession,
+    username: str,
+    pagination: PaginationParams,
+) -> list[User]:
     """Search for users by username.
 
     Args:
@@ -56,15 +60,11 @@ async def search_username(db_session: AsyncSession, username: str) -> list[User]
         List of users matching the search pattern
     """
     logger.debug(f"Searching for username containing '{username}'")
-    return list(
-        (
-            await db_session.scalars(
-                select(User)
-                .where(User.username.ilike(f"%{username}%"))
-                .order_by(User.username)
-            )
-        ).all()
+    stmt = (
+        select(User).where(User.username.ilike(f"%{username}%")).order_by(User.username)
     )
+    stmt = paginate_query(stmt, pagination)
+    return list(await db_session.scalars(stmt))
 
 
 async def get_ranking(

@@ -57,7 +57,6 @@ async def test_flow_feed(user_client: AsyncClient, user: User, session: AsyncSes
     response_data = response.json()
 
     # Check paginated response values
-    assert response_data["total"] == 3
     assert response_data["page"] == 1
     assert isinstance(response_data["size"], int)
     flows = response_data["items"]
@@ -150,7 +149,6 @@ async def test_discover_flows(
     response_data = response.json()
 
     # Check paginated response values
-    assert response_data["total"] == 3
     assert response_data["page"] == 1
     assert isinstance(response_data["size"], int)
     flows = response_data["items"]
@@ -768,3 +766,354 @@ async def test_get_user_flows(
         assert "max_num_questions" in flow
         assert "num_user_total_answers" in flow
         assert "num_user_correct_answers" in flow
+
+
+async def test_search_flows_basic_functionality(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test basic search functionality returns flows matching the query"""
+    async with session.begin():
+        # Create flows with specific tags for testing
+        flow1 = await FlowFactory.create(
+            created_by=user,
+            major_tags=["python", "programming"],
+            minor_tags=["beginner", "tutorial"],
+            session=session,
+        )
+        flow2 = await FlowFactory.create(
+            created_by=user,
+            major_tags=["javascript", "web"],
+            minor_tags=["frontend", "react"],
+            session=session,
+        )
+        flow3 = await FlowFactory.create(
+            created_by=user,
+            major_tags=["data", "science"],
+            minor_tags=["python", "analysis"],
+            session=session,
+        )
+
+    # Search for flows containing "python"
+    response = await user_client.get("/api/flows/search?query=python")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    # Check paginated response structure
+    assert "page" in response_data
+    assert "size" in response_data
+    assert "items" in response_data
+    assert response_data["page"] == 1
+    assert isinstance(response_data["size"], int)
+
+    flows = response_data["items"]
+    # Should find flow1 (python in major_tags) and flow3 (python in minor_tags)
+    assert len(flows) == 2
+
+    # Verify structure of returned flows matches FlowInSearch schema
+    for flow in flows:
+        assert "id" in flow
+        assert "code" in flow
+        assert "created_at" in flow
+        assert "title" in flow
+        assert "cover_image" in flow
+        assert "action_link" in flow
+        assert "action_text" in flow
+        assert "created_by" in flow
+        assert "difficulty" in flow
+        assert "max_num_questions" in flow
+        assert "elements" in flow
+        assert "num_total_elements" in flow
+        assert "num_user_total_answers" in flow
+        assert "num_user_correct_answers" in flow
+
+        # Check created_by structure
+        assert "id" in flow["created_by"]
+        assert "username" in flow["created_by"]
+
+    # Verify correct flows are returned
+    flow_ids = {flow["id"] for flow in flows}
+    assert flow1.id in flow_ids
+    assert flow3.id in flow_ids
+    assert flow2.id not in flow_ids
+
+
+async def test_search_flows_weighted_scoring(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test that flows with matches in major_tags rank higher than those with matches in minor_tags"""
+    async with session.begin():
+        # Create flows where search term appears in different tag types
+        flow_major = await FlowFactory.create(
+            created_by=user,
+            major_tags=["machine", "learning"],
+            minor_tags=["algorithms", "data"],
+            session=session,
+        )
+        flow_minor = await FlowFactory.create(
+            created_by=user,
+            major_tags=["statistics", "math"],
+            minor_tags=["machine", "probability"],
+            session=session,
+        )
+
+    # Search for "machine" - should find both flows but flow_major should rank higher
+    response = await user_client.get("/api/flows/search?query=machine")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    flows = response_data["items"]
+    assert len(flows) == 2
+
+    # Flow with "machine" in major_tags should be ranked first due to higher weight
+    assert flows[0]["id"] == flow_major.id
+    assert flows[1]["id"] == flow_minor.id
+
+
+async def test_search_flows_pagination(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test that pagination works correctly for search results"""
+    async with session.begin():
+        # Create multiple flows with the same searchable tag
+        await FlowFactory.create_batch(
+            5, created_by=user, major_tags=["testing"], session=session
+        )
+
+    # Test first page with size 2
+    response = await user_client.get("/api/flows/search?query=testing&page=1&size=2")
+    assert response.status_code == 200
+    response_data = response.json()
+    print("response_data", response_data)
+
+    assert response_data["page"] == 1
+    assert response_data["size"] == 2
+    assert len(response_data["items"]) == 2
+
+    # Test second page with size 2
+    response = await user_client.get("/api/flows/search?query=testing&page=2&size=2")
+    assert response.status_code == 200
+    response_data = response.json()
+    print("response_data", response_data)
+
+    assert response_data["page"] == 2
+    assert response_data["size"] == 2
+    assert len(response_data["items"]) == 2
+
+    # Test third page with size 2 (should have 1 item)
+    response = await user_client.get("/api/flows/search?query=testing&page=3&size=2")
+    assert response.status_code == 200
+    response_data = response.json()
+    print("response_data", response_data)
+    assert response_data["page"] == 3
+    assert response_data["size"] == 2
+    assert len(response_data["items"]) == 1
+
+    # Test page beyond available results
+    response = await user_client.get("/api/flows/search?query=testing&page=4&size=2")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    assert response_data["page"] == 4
+    assert response_data["size"] == 2
+    assert len(response_data["items"]) == 0
+
+
+async def test_search_flows_no_results(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test search with query that matches no flows"""
+    async with session.begin():
+        # Create some flows with known tags
+        await FlowFactory.create(
+            created_by=user,
+            major_tags=["python", "programming"],
+            minor_tags=["beginner"],
+            session=session,
+        )
+
+    # Search for something that doesn't exist
+    response = await user_client.get("/api/flows/search?query=nonexistentterm")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    assert response_data["page"] == 1
+    assert isinstance(response_data["size"], int)
+    assert response_data["items"] == []
+
+
+async def test_search_flows_empty_query(user_client: AsyncClient):
+    """Test search with empty query parameter"""
+    response = await user_client.get("/api/flows/search?query=")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    # Empty query should return no results
+    assert response_data["items"] == []
+
+
+async def test_search_flows_missing_query_parameter(user_client: AsyncClient):
+    """Test search endpoint without query parameter"""
+    response = await user_client.get("/api/flows/search")
+    # Should return 422 due to missing required query parameter
+    assert response.status_code == 422
+
+
+async def test_search_flows_case_insensitive(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test that search is case insensitive"""
+    async with session.begin():
+        flow = await FlowFactory.create(
+            created_by=user,
+            major_tags=["Python", "Programming"],
+            minor_tags=["BEGINNER"],
+            session=session,
+        )
+
+    # Search with different cases
+    test_queries = [
+        "python",
+        "PYTHON",
+        "Python",
+        "programming",
+        "PROGRAMMING",
+        "beginner",
+        "BEGINNER",
+    ]
+
+    for query in test_queries:
+        response = await user_client.get(f"/api/flows/search?query={query}")
+        assert response.status_code == 200
+        response_data = response.json()
+
+        # Should find the flow regardless of case
+        flow_ids = {flow["id"] for flow in response_data["items"]}
+        assert flow.id in flow_ids
+
+
+async def test_search_flows_partial_match(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test that search supports partial matching"""
+    async with session.begin():
+        flow = await FlowFactory.create(
+            created_by=user,
+            major_tags=["machine-learning", "artificial-intelligence"],
+            minor_tags=["deep-learning"],
+            session=session,
+        )
+
+    # Test partial matches
+    partial_queries = ["machine", "learning", "artificial", "intelligence", "deep"]
+
+    for query in partial_queries:
+        response = await user_client.get(f"/api/flows/search?query={query}")
+        assert response.status_code == 200
+        response_data = response.json()
+
+        # Should find the flow with partial match
+        flow_ids = {flow["id"] for flow in response_data["items"]}
+        assert flow.id in flow_ids
+
+
+async def test_search_flows_multiple_terms(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test search with multiple terms"""
+    async with session.begin():
+        flow1 = await FlowFactory.create(
+            created_by=user,
+            major_tags=["python", "web", "development"],
+            minor_tags=["flask", "django"],
+            session=session,
+        )
+        await FlowFactory.create(
+            created_by=user,
+            major_tags=["javascript", "web", "frontend"],
+            minor_tags=["react", "vue"],
+            session=session,
+        )
+        await FlowFactory.create(
+            created_by=user,
+            major_tags=["data", "science"],
+            minor_tags=["analysis", "visualization"],
+            session=session,
+        )
+
+    # Search for flows containing both "web" and "development"
+    response = await user_client.get("/api/flows/search?query=web development")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    flows = response_data["items"]
+    # Should find flows that match the search terms
+    assert len(flows) >= 1
+
+    # Verify we get relevant results
+    flow_ids = {flow["id"] for flow in flows}
+    # flow1 should definitely be found as it has both "web" and "development"
+    assert flow1.id in flow_ids
+
+
+async def test_search_flows_different_users(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test that search returns flows from different users"""
+    async with session.begin():
+        another_user = await UserFactory.create(session=session)
+
+        # Create flows from different users with same searchable content
+        flow1 = await FlowFactory.create(
+            created_by=user, major_tags=["shared", "topic"], session=session
+        )
+        flow2 = await FlowFactory.create(
+            created_by=another_user, major_tags=["shared", "content"], session=session
+        )
+
+    # Search should find flows from both users
+    response = await user_client.get("/api/flows/search?query=shared")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    flows = response_data["items"]
+    flow_ids = {flow["id"] for flow in flows}
+
+    assert flow1.id in flow_ids
+    assert flow2.id in flow_ids
+
+    # Verify creator information is included correctly
+    for flow in flows:
+        creator = flow["created_by"]
+        assert creator["id"] in {user.id, another_user.id}
+        if creator["id"] == user.id:
+            assert creator["username"] == user.username
+        else:
+            assert creator["username"] == another_user.username
+
+
+async def test_search_flows_with_flow_elements(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test that search works correctly for flows with elements"""
+    async with session.begin():
+        flow = await FlowFactory.create(
+            created_by=user,
+            major_tags=["algorithms"],
+            minor_tags=["sorting"],
+            session=session,
+        )
+
+        # Add some flow questions to the flow
+        await FlowQuestionFactory.create_batch(3, flow=flow, session=session)
+
+    response = await user_client.get("/api/flows/search?query=algorithms")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    found_flow = response_data["items"][0]
+
+    # Verify the flow data includes elements information
+    assert found_flow["id"] == flow.id
+    assert "elements" in found_flow
+    assert "num_total_elements" in found_flow
+    assert found_flow["num_total_elements"] == 3

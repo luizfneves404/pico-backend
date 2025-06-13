@@ -1,7 +1,15 @@
 import random
 
 from fastapi import UploadFile
-from sqlalchemy import exists, func, select, update
+from sqlalchemy import (
+    case,
+    desc,
+    exists,
+    func,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,13 +26,16 @@ from app.flows.models import (
     Question,
     QuestionAnswerType,
 )
-from app.pagination import PaginationParams
+from app.pagination import PaginationParams, paginate_query
 from app.users.models import User
 
 NUM_ELEMENTS_TO_LOAD_IN_FEED = 5
 
 REPEATED_CORRECT_ANSWER_XP_MULTIPLIER = 0.1
 WRONG_ANSWER_XP_MULTIPLIER = 0.1
+
+MAJOR_TAGS_WEIGHT = 2.0
+MINOR_TAGS_WEIGHT = 1.0
 
 
 class FlowNotFoundError(Exception):
@@ -132,16 +143,27 @@ async def search_flows(
     query: str,
     pagination: PaginationParams,
 ) -> list[Flow]:
-    """Search for flows based on a query"""
-    db_query = (
+    """
+    Simplified PGroonga-based search by major_tags and minor_tags.
+    Returns flows where either tag array matches the query.
+    """
+    match_major = Flow.major_tags.op("&@~")(query)
+    match_minor = Flow.minor_tags.op("&@~")(query)
+
+    # Define a simple relevance score: major match = 2, minor match = 1
+    relevance_score = case((match_major, 2), (match_minor, 1), else_=0)
+
+    stmt = (
         select(Flow)
-        .where(Flow.title.ilike(f"%{query}%"))
-        .order_by(relevance_score)
+        .where(or_(match_major, match_minor))
+        .order_by(
+            desc(relevance_score),
+            desc(Flow.id),
+        )  # Order by relevance, highest first
         .options(*get_flow_loader(num_elements=None))
-        .limit(pagination.size)
-        .offset((pagination.page - 1) * pagination.size)
     )
-    result = await db_session.execute(db_query)
+
+    result = await db_session.execute(paginate_query(stmt, pagination))
     return list(result.scalars())
 
 
@@ -302,6 +324,8 @@ async def community_feed(
 
     # Commit the seen records
     await db_session.flush()
+
+    return flows  # Fixed: added missing return statement
 
 
 async def submit_answer_multiple_choice(

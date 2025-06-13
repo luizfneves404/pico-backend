@@ -2,6 +2,7 @@ from typing import Generic, TypeVar
 
 from fastapi import Query
 from pydantic import BaseModel, Field
+from sqlalchemy import Select
 
 from app.config import settings
 
@@ -25,17 +26,7 @@ class PaginationParams(BaseModel):
 
 
 class PaginatedResponse(BaseModel, Generic[T]):
-    """Generic paginated response model.
-
-    Attributes:
-        items: List of items for the current page
-        total: Total number of items across all pages
-        page: Current page number
-        size: Number of items per page
-    """
-
     items: list[T]
-    total: int
     page: int
     size: int
 
@@ -44,7 +35,7 @@ def paginate(
     items: list[T],
     pagination: PaginationParams,
 ) -> PaginatedResponse[T]:
-    """Asynchronously paginate a list of items.
+    """Paginate a list of items.
 
     Args:
         items: List of items to paginate
@@ -53,13 +44,29 @@ def paginate(
     Returns:
         Dictionary containing paginated results and total count
     """
-    offset = (pagination.page - 1) * pagination.size
     return PaginatedResponse(
-        items=items[offset : offset + pagination.size],
-        total=len(items),
+        items=items,
         page=pagination.page,
         size=pagination.size,
     )
+
+
+def paginate_memory(
+    items: list[T],
+    pagination: PaginationParams,
+) -> PaginatedResponse[T]:
+    """Paginate a list of items in memory."""
+    offset = (pagination.page - 1) * pagination.size
+    items = items[offset : offset + pagination.size]
+    return PaginatedResponse(items=items, page=pagination.page, size=pagination.size)
+
+
+def paginate_query(
+    query: Select[tuple[T]],
+    pagination: PaginationParams,
+) -> Select[tuple[T]]:
+    """Paginate a database query."""
+    return query.offset((pagination.page - 1) * pagination.size).limit(pagination.size)
 
 
 def get_pagination_params(

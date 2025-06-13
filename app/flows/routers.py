@@ -1,3 +1,4 @@
+import logging
 import random
 from typing import Annotated
 
@@ -35,6 +36,7 @@ from app.pagination import (
 flows_router = APIRouter(prefix="/flows", tags=["flows"], dependencies=[CurrentUserDep])
 exam_router = APIRouter(prefix="/exams", tags=["exams"], dependencies=[CurrentUserDep])
 areas_router = APIRouter(prefix="/areas", tags=["areas"], dependencies=[CurrentUserDep])
+logger = logging.getLogger(__name__)
 
 
 @flows_router.get("/feed")

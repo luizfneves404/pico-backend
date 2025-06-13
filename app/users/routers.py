@@ -368,7 +368,7 @@ async def check_contacts(
     db_session: DBSessionAnnotated,
 ) -> PaginatedResponse[OtherUserOut]:
     raw_phone_numbers = raw_phone_numbers_schema.phone_numbers
-    users = await service.check_contacts(db_session, raw_phone_numbers)
+    users = await service.check_contacts(db_session, raw_phone_numbers, pagination)
     user_outs = await service.to_other_user_out(db_session, [user.id for user in users])
     other_user_outs = [OtherUserOut.from_orm_model(user) for user in user_outs]
     return paginate(other_user_outs, pagination)
@@ -383,7 +383,7 @@ async def search_username(
     pagination: Annotated[PaginationParams, Depends(get_pagination_params)],
     db_session: DBSessionAnnotated,
 ) -> PaginatedResponse[OtherUserOut]:
-    users = await service.search_username(db_session, username)
+    users = await service.search_username(db_session, username, pagination)
     user_outs = await service.to_other_user_out(db_session, [user.id for user in users])
     other_user_outs = [OtherUserOut.from_orm_model(user) for user in user_outs]
     return paginate(other_user_outs, pagination)

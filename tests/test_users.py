@@ -965,7 +965,6 @@ class TestSocialFeatures:
         results = response.json()["items"]
         response_ids = [user["id"] for user in results]
         assert len(response_ids) == 4
-        assert response.json()["total"] == 7
         assert response.json()["page"] == 1
         assert response.json()["size"] == 4
 
@@ -976,7 +975,6 @@ class TestSocialFeatures:
         new_results = new_response.json()["items"]
         new_response_ids = [user["id"] for user in new_results]
         assert len(new_response_ids) == 3
-        assert new_response.json()["total"] == 7
         assert new_response.json()["page"] == 2
         assert new_response.json()["size"] == 4
 
@@ -1017,7 +1015,6 @@ class TestSocialFeatures:
         results = response.json()["items"]
         response_ids = [user["id"] for user in results]
         assert len(response_ids) == 4
-        assert response.json()["total"] == 7
         assert response.json()["page"] == 1
         assert response.json()["size"] == 4
 
@@ -1028,7 +1025,6 @@ class TestSocialFeatures:
         new_results = new_response.json()["items"]
         new_response_ids = [user["id"] for user in new_results]
         assert len(new_response_ids) == 3
-        assert new_response.json()["total"] == 7
         assert new_response.json()["page"] == 2
         assert new_response.json()["size"] == 4
 
@@ -1062,7 +1058,6 @@ class TestSocialFeatures:
         )
         assert response.status_code == 200
         assert len(response.json()["items"]) == 20
-        assert response.json()["total"] == 30
 
     async def test_user_auto_joins_communities_on_education_change(
         self,
@@ -1077,7 +1072,7 @@ class TestSocialFeatures:
         async with session.begin():
             institution = (
                 await SchoolFactory.create(session=session)
-                if level_id == 1
+                if level == EducationLevel.HIGH_SCHOOL
                 else await CollegeFactory.create(session=session)
             )
             course = await CourseFactory.create(session=session)
