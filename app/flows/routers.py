@@ -1,8 +1,8 @@
 import logging
 import random
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import uuid4
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from fastapi import File as FastAPIFile
@@ -12,7 +12,6 @@ import app.flows.campaign_service as campaign_service
 import app.flows.exam_service as exam_service
 import app.flows.flow_service as flow_service
 from app.deps import CurrentUserAnnotated, CurrentUserDep, DBSessionAnnotated
-from app.flows.models import FlowInputType
 from app.flows.schemas import (
     AddQuestionsToFlowAI,
     AddQuestionsToFlowFull,
@@ -22,14 +21,14 @@ from app.flows.schemas import (
     ExamOut,
     FeedItem,
     FlowDetail,
+    FlowDifficulty,
     FlowFeedItem,
     FlowInFeed,
     FlowInSearch,
     QuestionAreaOut,
+    SimpleUser,
     SubmitAnswerMultipleChoiceRequest,
     SubmitAnswerMultipleChoiceResponse,
-    SimpleUser,
-    FlowDifficulty,
 )
 from app.pagination import (
     PaginatedResponse,
@@ -140,7 +139,7 @@ async def flow_detail(
 async def create_flow(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
-    topic: Annotated[str, Form()],
+    topic: Annotated[str, Form()] = "",
     input_files: list[UploadFile] = FastAPIFile(default=None),
 ):
     """Create a new flow from a topic with optional files"""
@@ -152,7 +151,7 @@ async def create_flow(
         #     topic=topic,
         #     files=input_files if input_files else [],
         # )
-        
+
         # Mock response
         return FlowDetail(
             id=1,
@@ -190,7 +189,7 @@ async def add_questions_to_flow_official(
         #     db_session, current_user.id, id, add_questions_to_flow_official
         # )
         # return FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
-        
+
         # Mock response
         return FlowDetail(
             id=id,
@@ -228,7 +227,7 @@ async def add_questions_to_flow_ai(
         #     db_session, current_user.id, id, add_questions_to_flow_ai
         # )
         # return FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
-        
+
         # Mock response
         return FlowDetail(
             id=id,
@@ -266,7 +265,7 @@ async def add_questions_to_flow_full(
         #     db_session, current_user.id, id, add_questions_to_flow_full
         # )
         # return FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
-        
+
         # Mock response
         return FlowDetail(
             id=id,
