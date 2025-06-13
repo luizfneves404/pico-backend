@@ -1,7 +1,7 @@
 import datetime
 import logging
 from enum import StrEnum
-from typing import Literal
+from typing import TypedDict
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.timezone as timezone
 from app.redis_client import get_redis
-from app.ws.models import UserWebsocketInfo
+from app.ws.models import UserOnlineInfo
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +25,27 @@ async def handle_user_connection_event(db_session: AsyncSession, user_id: int) -
     """
     Handles the user online event.
     """
-    await _update_connection_timestamp(db_session, user_id)
-    await _set_user_status(user_id, UserStatus.ONLINE)
+    now = timezone.localtime()
+
+    # Using PostgreSQL's "upsert" functionality via SQLAlchemy
+    stmt = (
+        pg_insert(UserOnlineInfo)
+        .values(
+            user_id=user_id,
+            last_websocket_connection=now,
+            last_websocket_disconnection=None,
+            is_online=True,
+        )
+        .on_conflict_do_update(
+            index_elements=["user_id"],
+            set_=dict(
+                last_websocket_connection=now,
+                is_online=True,
+            ),
+        )
+    )
+    await db_session.execute(stmt)
+    logger.debug(f"Updated connection timestamp for user {user_id}")
 
 
 async def handle_user_disconnection_event(
@@ -35,44 +54,15 @@ async def handle_user_disconnection_event(
     """
     Handles the user offline event.
     """
-    await _update_disconnection_timestamp(db_session, user_id)
-    await _set_user_status(user_id, UserStatus.OFFLINE)
-
-
-async def _update_connection_timestamp(db_session: AsyncSession, user_id: int) -> None:
-    """
-    Updates the websocket connection timestamp for a user.
-    """
     now = timezone.localtime()
 
-    # Using PostgreSQL's "upsert" functionality via SQLAlchemy
     stmt = (
-        pg_insert(UserWebsocketInfo)
+        update(UserOnlineInfo)
+        .where(UserOnlineInfo.user_id == user_id)
         .values(
-            user_id=user_id,
-            last_websocket_connection=now,
-            last_websocket_disconnection=None,
+            last_websocket_disconnection=now,
+            is_online=False,
         )
-        .on_conflict_do_update(
-            index_elements=["user_id"], set_=dict(last_websocket_connection=now)
-        )
-    )
-    await db_session.execute(stmt)
-    logger.debug(f"Updated connection timestamp for user {user_id}")
-
-
-async def _update_disconnection_timestamp(
-    db_session: AsyncSession, user_id: int
-) -> None:
-    """
-    Updates the websocket disconnection timestamp for a user. The UserWebsocketInfo object must exist (you should have called update_connection_timestamp before this) for anything to happen.
-    """
-    now = timezone.localtime()
-
-    stmt = (
-        update(UserWebsocketInfo)
-        .where(UserWebsocketInfo.user_id == user_id)
-        .values(last_websocket_disconnection=now)
     )
 
     await db_session.execute(stmt)
@@ -82,9 +72,15 @@ async def _update_disconnection_timestamp(
     )
 
 
-async def get_last_online_users(
+class OnlineInfo(TypedDict):
+    id: int
+    is_online: bool
+    last_online: datetime.datetime | None
+
+
+async def get_online_info(
     db_session: AsyncSession, user_ids: list[int]
-) -> dict[int, datetime.datetime]:
+) -> dict[int, OnlineInfo]:
     """
     Get the last online timestamp for a list of users.
 
@@ -93,29 +89,38 @@ async def get_last_online_users(
         user_ids: List of user IDs to check
 
     Returns:
-        Dictionary mapping user_id to last_websocket_disconnection
+        Dictionary mapping user_id to OnlineInfo.
+        For users not found in the DB (never logged in), is_online is False and last_online is None.
     """
-    # Get all websocket info records for the users in a single query
+    # Fetch existing user online info
     result = await db_session.execute(
         select(
-            UserWebsocketInfo.user_id, UserWebsocketInfo.last_websocket_disconnection
-        ).where(UserWebsocketInfo.user_id.in_(user_ids))
+            UserOnlineInfo.user_id,
+            UserOnlineInfo.last_websocket_disconnection,
+            UserOnlineInfo.is_online,
+        ).where(UserOnlineInfo.user_id.in_(user_ids))
     )
 
-    # Convert to dictionary mapping user_id to last_websocket_disconnection
-    return {user_id: last_disconnection for user_id, last_disconnection in result.all()}
+    # Build a partial result from DB
+    partial_info = {
+        user_id: OnlineInfo(
+            id=user_id,
+            is_online=is_online,
+            last_online=None if is_online else last_disconnection,
+        )
+        for user_id, last_disconnection, is_online in result.all()
+    }
 
+    # Fill in missing users (i.e., users never logged in)
+    full_info = {
+        user_id: partial_info.get(
+            user_id,
+            OnlineInfo(id=user_id, is_online=False, last_online=None),
+        )
+        for user_id in user_ids
+    }
 
-async def _set_user_status(user_id: int, status: UserStatus):
-    conn = get_redis()
-    await conn.set(f"user_status_{user_id}", status)
-    logger.debug(f"User {user_id} status in redis set to '{status}'")
-
-
-async def _clear_user_notifications(user_id: int):
-    conn = get_redis()
-    await conn.delete(f"notification_queue_{user_id}")
-    logger.debug(f"User {user_id} notifications in redis cleared")
+    return full_info
 
 
 async def count_queued_notifications(user_ids: list[int]) -> dict[int, int]:
@@ -143,19 +148,6 @@ async def count_queued_notifications(user_ids: list[int]) -> dict[int, int]:
             logger.debug(f"User notification counts: {batch_counts}")
 
     return notification_counts
-
-
-async def get_user_statuses(
-    user_ids: list[int],
-) -> list[UserStatus | None]:
-    conn = get_redis()
-    statuses: list[Literal["online", "offline"] | None] = await conn.mget(
-        [f"user_status_{id}" for id in user_ids]
-    )
-    logger.debug(
-        f"The status of the following users from redis {user_ids} are: {statuses}"
-    )
-    return list(UserStatus(status) for status in statuses)
 
 
 async def get_queued_notifications(user_id: int) -> list[str]:

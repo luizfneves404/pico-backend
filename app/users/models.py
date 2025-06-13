@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from app.countries.models import Country
     from app.education.models import EducationInfo
     from app.fcm.models import FCMDevice
-    from app.ws.models import UserWebsocketInfo
+    from app.ws.models import UserOnlineInfo
 
 
 class SignupSource(StrEnum):
@@ -101,7 +101,7 @@ class User(Base):
         lazy="raise_on_sql",
     )
 
-    user_websocket_info: Mapped["UserWebsocketInfo"] = relationship(
+    user_online_info: Mapped["UserOnlineInfo"] = relationship(
         back_populates="user",
         lazy="raise_on_sql",
         cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,

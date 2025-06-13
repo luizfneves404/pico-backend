@@ -44,7 +44,7 @@ from app.logging_admin import (
 from app.users import service as user_service
 from app.users.admin import UserAdmin
 from app.users.jwt_token import TokenError, generate_tokens, process_token
-from app.ws.admin import UserWebsocketInfoAdmin
+from app.ws.admin import UserOnlineInfoAdmin
 
 admin_views: list[type[BaseView]] = []
 
@@ -55,7 +55,7 @@ admin_views.append(LoggingControlView)
 
 # Users & Authentication
 admin_views.append(UserAdmin)
-admin_views.append(UserWebsocketInfoAdmin)
+admin_views.append(UserOnlineInfoAdmin)
 admin_views.append(FCMDeviceAdmin)
 
 # Countries

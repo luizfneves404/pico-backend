@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 import app.users.jwt_token as jwt_token
+import app.ws.service as ws_service
 from app.deps import CurrentUserAnnotated, CurrentUserDep, DBSessionAnnotated
 from app.pagination import (
     PaginatedResponse,
@@ -447,12 +448,14 @@ async def get_online_info(
     user_ids_in: UserIdsIn,
     db_session: DBSessionAnnotated,
 ) -> list[OnlineInfo]:
-    online_info = await service.get_online_info(db_session, user_ids_in.user_ids)
+    online_info = await ws_service.get_online_info(db_session, user_ids_in.user_ids)
     return [
         OnlineInfo(
-            id=info["id"], is_online=info["is_online"], last_online=info["last_online"]
+            id=info["id"],
+            is_online=info["is_online"],
+            last_online=info["last_online"],
         )
-        for info in online_info
+        for info in online_info.values()
     ]
 
 

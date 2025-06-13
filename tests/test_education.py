@@ -24,8 +24,8 @@ async def test_list_levels(
     assert len(levels) >= 1
 
     # Find our created level
-    level_names = [level["name"] for level in levels]
-    assert str(education_level.name) in level_names
+    level_names = [level["name_i18n"] for level in levels]
+    assert education_level.name_i18n in level_names
 
 
 async def test_list_levels_with_country_filter(
@@ -47,7 +47,7 @@ async def test_list_courses(
     async with session.begin():
         await create_course(
             session,
-            name="Computer Science",
+            name_i18n={"en": "Computer Science"},
             user_submitted=False,
             level_id=education_level.id,
         )
@@ -58,8 +58,8 @@ async def test_list_courses(
     courses = response.json()
     assert len(courses) >= 1
 
-    course_names = [course["name"] for course in courses]
-    assert "Computer Science" in course_names
+    course_names = [course["name_i18n"] for course in courses]
+    assert {"en": "Computer Science"} in course_names
 
 
 async def test_list_courses_with_level_filter(
@@ -70,7 +70,7 @@ async def test_list_courses_with_level_filter(
     async with session.begin():
         course = await create_course(
             session,
-            name="Mathematics",
+            name_i18n={"en": "Mathematics"},
             user_submitted=False,
             level_id=education_level.id,
         )
@@ -92,7 +92,10 @@ async def test_get_course_detail(
     # Create a course using the service layer
     async with session.begin():
         course = await create_course(
-            session, name="Physics", user_submitted=False, level_id=education_level.id
+            session,
+            name_i18n={"en": "Physics"},
+            user_submitted=False,
+            level_id=education_level.id,
         )
 
     # Get course details using the endpoint
@@ -100,7 +103,7 @@ async def test_get_course_detail(
     assert response.status_code == 200
     course_data = response.json()
     assert course_data["id"] == course.id
-    assert course_data["name"] == "Physics"
+    assert course_data["name_i18n"] == {"en": "Physics"}
     assert course_data["level_id"] == education_level.id
 
 

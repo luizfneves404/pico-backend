@@ -1,6 +1,7 @@
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.community.models import Community, CommunityUser
 from app.education.models import Course, Institution, LevelStage
@@ -10,18 +11,14 @@ from app.users.models import User
 async def get_user_communities(
     db_session: AsyncSession, *, user_id: int
 ) -> list[Community]:
-    communities = (
-        (
-            await db_session.execute(
-                select(Community)
-                .join(CommunityUser)
-                .where(CommunityUser.user_id == user_id)
-            )
-        )
-        .scalars()
-        .all()
+    stmt = (
+        select(Community)
+        .where(Community.users.any(id=user_id))
+        .options(selectinload(Community.users))
     )
-    return list(communities)
+
+    result = await db_session.scalars(stmt)
+    return list(result)
 
 
 async def find_or_create_education_community(

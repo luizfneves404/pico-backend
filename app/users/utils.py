@@ -1,10 +1,6 @@
 import datetime
-from typing import TypedDict
-
-from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.timezone as timezone
-import app.ws.service as ws_service
 
 
 def get_streak_info(answer_timestamps: list[datetime.datetime]) -> tuple[bool, int]:
@@ -63,47 +59,3 @@ def get_streak_info(answer_timestamps: list[datetime.datetime]) -> tuple[bool, i
                 break
 
     return done_today, streak
-
-
-class OnlineInfo(TypedDict):
-    id: int
-    is_online: bool
-    last_online: datetime.datetime | None
-
-
-async def get_online_info(
-    db_session: AsyncSession,
-    user_ids: list[int],
-) -> list[OnlineInfo]:
-    """Get online status and last online time for a list of users.
-
-    Args:
-        db_session: The database session
-        user_ids: List of user IDs to check status for
-
-    Returns:
-        List of dicts containing:
-            - id: user ID
-            - is_online: boolean indicating if the user is online
-            - last_online: last online time for offline users, None for online users
-    """
-    # Get current online/offline status for all users
-    statuses = await ws_service.get_user_statuses(user_ids)
-
-    # Get last online time for offline users
-    offline_user_ids = [
-        user_id for user_id, status in zip(user_ids, statuses) if status != "online"
-    ]
-    last_online_users = await ws_service.get_last_online_users(
-        db_session, offline_user_ids
-    )
-
-    # Build response combining status and last online time
-    return [
-        OnlineInfo(
-            id=user_id,
-            is_online=status == "online",
-            last_online=last_online_users.get(user_id) if status != "online" else None,
-        )
-        for user_id, status in zip(user_ids, statuses)
-    ]

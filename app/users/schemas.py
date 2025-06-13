@@ -220,12 +220,6 @@ class UserIdsIn(BaseModel):
     user_ids: list[int]
 
 
-class OnlineInfo(BaseModel):
-    id: int
-    is_online: bool
-    last_online: AwareDatetime | None
-
-
 class EducationInfoIn(BaseModel):
     level_id: int | type_UNSET = UNSET
     stage_id: int | type_UNSET = UNSET
@@ -262,3 +256,9 @@ class UserPartialUpdateResponse(BaseModel):
 
     updated_fields: list[str]
     user: UserOut
+
+
+class OnlineInfo(BaseModel):
+    id: int
+    is_online: bool
+    last_online: AwareDatetime | None

@@ -97,8 +97,8 @@ def school_name_sequence(n: int) -> str:
     return f"School {n}"
 
 
-def course_name_sequence(n: int) -> str:
-    return f"Course {n}"
+def course_name_i18n_sequence(n: int) -> dict[str, str]:
+    return {"en": f"Course {n}", "pt": f"Curso {n}"}
 
 
 def college_name_sequence(n: int) -> str:
@@ -121,8 +121,8 @@ def flow_title_sequence(n: int) -> str:
     return f"Flow {n}"
 
 
-def education_level_name_sequence(n: int) -> str:
-    return f"Education Level {n}"
+def education_level_name_i18n_sequence(n: int) -> dict[str, str]:
+    return {"en": f"Education Level {n}", "pt": f"Nível de Ensino {n}"}
 
 
 def level_stage_name_sequence(n: int) -> str:
@@ -213,7 +213,7 @@ class EducationLevelFactory(AsyncSQLAlchemyFactory[EducationLevel]):
     class Meta:
         model = EducationLevel
 
-    name = Sequence(education_level_name_sequence)
+    name_i18n = Sequence(education_level_name_i18n_sequence)
 
 
 class SchoolFactory(AsyncSQLAlchemyFactory[School]):
@@ -244,7 +244,7 @@ class CourseFactory(AsyncSQLAlchemyFactory[Course]):
         model = Course
         sqlalchemy_get_or_create = ("name",)
 
-    name = Sequence(course_name_sequence)
+    name_i18n = Sequence(course_name_i18n_sequence)
     level = SubFactory(EducationLevelFactory)
     user_submitted = False
 

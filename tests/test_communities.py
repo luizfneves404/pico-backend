@@ -3,7 +3,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.community.models import CommunityUser
-from app.community.schemas import CommunityOut
 from app.users.models import User
 from tests.factories import CommunityFactory, UserFactory
 
@@ -261,45 +260,11 @@ class TestCommunityAPI:
         assert community_data["id"] == community.id
         assert community_data["name"] == "Test Community"
         assert community_data["subtitle"] == "A test community for students"
-
-        # Verify no extra fields are present
-        expected_keys = {"id", "name", "subtitle"}
-        actual_keys = set(community_data.keys())
-        assert actual_keys == expected_keys
-
-
-class TestCommunitySchemas:
-    """Test community schema serialization."""
-
-    async def test_community_out_from_orm_model(self, session: AsyncSession):
-        """Test CommunityOut schema creation from ORM model."""
-        async with session.begin():
-            community = await CommunityFactory.create(
-                session=session,
-                name="Schema Test Community",
-                subtitle="Testing schema conversion",
-            )
-
-        community_out = CommunityOut.from_orm_model(community)
-
-        assert community_out.id == community.id
-        assert community_out.name == "Schema Test Community"
-        assert community_out.subtitle == "Testing schema conversion"
-
-    async def test_community_out_serialization(self, session: AsyncSession):
-        """Test CommunityOut schema JSON serialization."""
-        async with session.begin():
-            community = await CommunityFactory.create(session=session)
-
-        community_out = CommunityOut.from_orm_model(community)
-        community_dict = community_out.model_dump()
-
-        assert "id" in community_dict
-        assert "name" in community_dict
-        assert "subtitle" in community_dict
-        assert isinstance(community_dict["id"], int)
-        assert isinstance(community_dict["name"], str)
-        assert isinstance(community_dict["subtitle"], str)
+        assert len(community_data["users"]) == 1
+        assert community_data["users"][0]["id"] == user.id
+        assert community_data["users"][0]["username"] == user.username
+        assert community_data["users"][0]["online_info"]["is_online"] is False
+        assert community_data["users"][0]["online_info"]["last_online"] is None
 
 
 class TestCommunityDeletion:

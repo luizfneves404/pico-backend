@@ -53,10 +53,7 @@ from app.users.social import (
     get_ranking,
     search_username,
 )
-from app.users.utils import (
-    get_online_info,
-    get_streak_info,
-)
+from app.users.utils import get_streak_info
 
 logger = logging.getLogger(__name__)
 __all__ = [
@@ -99,7 +96,6 @@ __all__ = [
     "get_ranking",
     "search_username",
     # Utils
-    "get_online_info",
     "get_streak_info",
 ]
 

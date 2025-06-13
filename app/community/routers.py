@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+import app.ws.service as ws_service
 from app.community import service
 from app.community.schemas import CommunityOut
 from app.deps import CurrentUserAnnotated, DBSessionAnnotated
@@ -15,4 +16,9 @@ async def my_communities(
     communities = await service.get_user_communities(
         db_session, user_id=current_user.id
     )
-    return [CommunityOut.from_orm_model(community) for community in communities]
+    online_info = await ws_service.get_online_info(
+        db_session, [user.id for community in communities for user in community.users]
+    )
+    return [
+        CommunityOut.from_orm_model(community, online_info) for community in communities
+    ]

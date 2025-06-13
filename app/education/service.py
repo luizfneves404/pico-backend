@@ -186,7 +186,11 @@ async def list_courses(
 
 
 async def create_course(
-    db_session: AsyncSession, *, name: str, user_submitted: bool, level_id: int
+    db_session: AsyncSession,
+    *,
+    name_i18n: dict[str, str],
+    user_submitted: bool,
+    level_id: int,
 ) -> Course:
     """Create a new course.
 
@@ -199,7 +203,9 @@ async def create_course(
     Returns:
         The created course
     """
-    course = Course(name=name, user_submitted=user_submitted, level_id=level_id)
+    course = Course(
+        name_i18n=name_i18n, user_submitted=user_submitted, level_id=level_id
+    )
     db_session.add(course)
     await db_session.flush()
     await db_session.refresh(course)
