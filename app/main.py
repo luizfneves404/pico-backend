@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    logging.config.dictConfig(get_logging_config())
     init_firebase()
 
     async with db_manager.use_db(settings.database_url):
@@ -211,7 +212,6 @@ application = HostRouter(
 
 
 if __name__ == "__main__":
-    logging.config.dictConfig(get_logging_config())
     uvicorn.run(
         "app.main:application",
         host=settings.uvicorn_host,
