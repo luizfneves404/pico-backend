@@ -45,7 +45,7 @@ admin_views.append(FileAdmin)
 class AdminAuth(AuthenticationBackend):
     async def login(self, request: Request) -> bool:
         form = await request.form()
-        email, password = form["username"], form["password"]
+        email, password = form["email"], form["password"]
 
         # Create a database session
         async with db_manager.session_with_transaction() as db_session:
