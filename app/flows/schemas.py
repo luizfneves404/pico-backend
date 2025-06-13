@@ -13,6 +13,7 @@ from app.flows.models import (
     FlowDifficulty,
     FlowQuestion,
     FlowQuestionUser,
+    FlowSourceType,
     QuestionAnswerType,
     QuestionArea,
     QuestionDifficulty,
@@ -98,15 +99,19 @@ class FlowQuestionInFeed(BaseModel):
             minor_tags=flow_question.question.minor_tags,
             difficulty=flow_question.question.difficulty,
             source_type=flow_question.question.source_type,
-            official_source=flow_question.question.official_source.exam.name
-            if flow_question.question.official_source
-            else None,
-            source_user=SimpleUser(
-                id=flow_question.question.source_user.id,
-                username=flow_question.question.source_user.username,
-            )
-            if flow_question.question.source_user
-            else None,
+            official_source=(
+                flow_question.question.official_source.exam.name
+                if flow_question.question.official_source
+                else None
+            ),
+            source_user=(
+                SimpleUser(
+                    id=flow_question.question.source_user.id,
+                    username=flow_question.question.source_user.username,
+                )
+                if flow_question.question.source_user
+                else None
+            ),
             answer_type=flow_question.question.answer_type,
         )
 
@@ -216,8 +221,7 @@ class PromptType(StrEnum):
 
 
 class AddQuestionsToFlowAI(BaseModel):
-    question_density: QuestionDensity
-    subject: str = Field(default="", max_length=255)
+    question_density: QuestionDensity = QuestionDensity.MEDIUM
     prompt_type: PromptType = PromptType.DEFAULT
     extra_instructions: str = Field(
         default="", max_length=255
@@ -225,11 +229,25 @@ class AddQuestionsToFlowAI(BaseModel):
 
 
 class AddQuestionsToFlowOfficial(BaseModel):
-    question_density: QuestionDensity
-    area: str = Field(default="", max_length=255)
-    source_filter: str = Field(default="", max_length=255)
-    difficulty: FlowDifficulty = Field(default=FlowDifficulty.ALL)
+    question_density: QuestionDensity = QuestionDensity.MEDIUM
+    question_area_name: str = Field(default="", max_length=255)
+    exam_id: int | None = None
+    exam_country_code: str | None = None
+    exam_education_level_id: int | None = None
+    source_year: int | None = None
 
+
+class AddQuestionsToFlowFull(BaseModel):
+    question_density: QuestionDensity = QuestionDensity.MEDIUM
+    prompt_type: PromptType = PromptType.DEFAULT
+    extra_instructions: str = Field(
+        default="", max_length=255
+    )  # this should not go to system message!!! just user message
+    question_area_name: str = Field(default="", max_length=255)
+    exam_id: int | None = None
+    exam_country_code: str | None = None
+    exam_education_level_id: int | None = None
+    source_year: int | None = None
 
 class SubmitAnswerMultipleChoiceRequest(BaseModel):
     question_id: int

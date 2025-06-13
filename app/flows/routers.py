@@ -1,6 +1,8 @@
 import logging
 import random
 from typing import Annotated
+from uuid import uuid4
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from fastapi import File as FastAPIFile
@@ -13,6 +15,7 @@ from app.deps import CurrentUserAnnotated, CurrentUserDep, DBSessionAnnotated
 from app.flows.models import FlowInputType
 from app.flows.schemas import (
     AddQuestionsToFlowAI,
+    AddQuestionsToFlowFull,
     AddQuestionsToFlowOfficial,
     CampaignFeedItem,
     CampaignInFeed,
@@ -25,6 +28,8 @@ from app.flows.schemas import (
     QuestionAreaOut,
     SubmitAnswerMultipleChoiceRequest,
     SubmitAnswerMultipleChoiceResponse,
+    SimpleUser,
+    FlowDifficulty,
 )
 from app.pagination import (
     PaginatedResponse,
@@ -46,7 +51,8 @@ async def feed(
     pagination: Annotated[PaginationParams, Depends(get_pagination_params)],
 ) -> PaginatedResponse[FeedItem]:
     """Always needs to return different flows.
-    Needs to know always what i have returned before, never to return again to the same user"""
+    Needs to know always what i have returned before, never to return again to the same user
+    """
     # add the campaigns to the feed
     campaign = await campaign_service.select_one_campaign(
         db_session, user_id=current_user.id
@@ -134,20 +140,39 @@ async def flow_detail(
 async def create_flow(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
-    input_topic: Annotated[str, Form()],
-    input_files: list[UploadFile] = FastAPIFile(...),
+    topic: Annotated[str, Form()],
+    input_files: list[UploadFile] = FastAPIFile(default=None),
 ):
-    """Create a new flow from a topic"""
+    """Create a new flow from a topic with optional files"""
 
     try:
-        return await flow_service.create_flow(
-            db_session,
-            current_user,
-            input_topic,
-            input_files,
-            FlowInputType.TOPIC if not input_files else FlowInputType.FILES,
+        # flow = await flow_service.create_flow_with_optional_files(
+        #     db_session,
+        #     user=current_user,
+        #     topic=topic,
+        #     files=input_files if input_files else [],
+        # )
+        
+        # Mock response
+        return FlowDetail(
+            id=1,
+            code=uuid4(),
+            created_at=datetime.now(timezone.utc),
+            title=f"Flow sobre {topic}",
+            cover_image=None,
+            action_link="",
+            action_text="Continuar estudando",
+            created_by=SimpleUser(id=current_user.id, username=current_user.username),
+            difficulty=FlowDifficulty.MEDIUM,
+            max_num_questions=20,
+            elements=[],
+            num_total_elements=0,
+            num_user_total_answers=0,
+            num_user_correct_answers=0,
         )
     except flow_service.FlowValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except flow_service.InvalidFileTypeError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
@@ -161,8 +186,27 @@ async def add_questions_to_flow_official(
     """Add questions to a flow"""
 
     try:
-        return await flow_service.add_questions_to_flow_official(
-            db_session, current_user.id, id, add_questions_to_flow_official
+        # flow = await flow_service.add_questions_to_flow_official(
+        #     db_session, current_user.id, id, add_questions_to_flow_official
+        # )
+        # return FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
+        
+        # Mock response
+        return FlowDetail(
+            id=id,
+            code=uuid4(),
+            created_at=datetime.now(timezone.utc),
+            title="Flow com questões oficiais",
+            cover_image=None,
+            action_link="",
+            action_text="Continuar estudando",
+            created_by=SimpleUser(id=current_user.id, username=current_user.username),
+            difficulty=FlowDifficulty.MEDIUM,
+            max_num_questions=20,
+            elements=[],
+            num_total_elements=10,
+            num_user_total_answers=0,
+            num_user_correct_answers=0,
         )
     except flow_service.FlowNotFoundError:
         raise HTTPException(
@@ -180,8 +224,65 @@ async def add_questions_to_flow_ai(
     """Add questions to a flow"""
 
     try:
-        return await flow_service.add_questions_to_flow_ai(
-            db_session, current_user.id, id, add_questions_to_flow_ai
+        # flow = await flow_service.add_questions_to_flow_ai(
+        #     db_session, current_user.id, id, add_questions_to_flow_ai
+        # )
+        # return FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
+        
+        # Mock response
+        return FlowDetail(
+            id=id,
+            code=uuid4(),
+            created_at=datetime.now(timezone.utc),
+            title="Flow com questões de IA",
+            cover_image=None,
+            action_link="",
+            action_text="Continuar estudando",
+            created_by=SimpleUser(id=current_user.id, username=current_user.username),
+            difficulty=FlowDifficulty.MEDIUM,
+            max_num_questions=20,
+            elements=[],
+            num_total_elements=15,
+            num_user_total_answers=0,
+            num_user_correct_answers=0,
+        )
+    except flow_service.FlowNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
+        )
+
+
+@flows_router.post("/{id}/add-questions-full", response_model=FlowDetail)
+async def add_questions_to_flow_full(
+    db_session: DBSessionAnnotated,
+    current_user: CurrentUserAnnotated,
+    id: int,
+    add_questions_to_flow_full: AddQuestionsToFlowFull,
+):
+    """Add AI and official questions to a flow"""
+
+    try:
+        # flow = await flow_service.add_questions_to_flow_full(
+        #     db_session, current_user.id, id, add_questions_to_flow_full
+        # )
+        # return FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
+        
+        # Mock response
+        return FlowDetail(
+            id=id,
+            code=uuid4(),
+            created_at=datetime.now(timezone.utc),
+            title="Flow completo com questões oficiais e IA",
+            cover_image=None,
+            action_link="",
+            action_text="Continuar estudando",
+            created_by=SimpleUser(id=current_user.id, username=current_user.username),
+            difficulty=FlowDifficulty.MEDIUM,
+            max_num_questions=25,
+            elements=[],
+            num_total_elements=25,
+            num_user_total_answers=0,
+            num_user_correct_answers=0,
         )
     except flow_service.FlowNotFoundError:
         raise HTTPException(
