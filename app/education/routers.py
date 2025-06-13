@@ -79,12 +79,14 @@ async def search_institutions(
 
 
 @router.get("/institutions/{institution_id}", response_model=InstitutionOut)
-async def get_institution_detail(db_session: DBSessionAnnotated, institution_id: int):
+async def get_institution_detail(
+    db_session: DBSessionAnnotated, institution_id: int
+) -> InstitutionOut:
     try:
         institution = await education_service.get_institution(
             db_session, institution_id
         )
-        return institution
+        return InstitutionOut.from_orm_model(institution)
     except education_service.InstitutionNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Institution not found"

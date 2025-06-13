@@ -39,7 +39,6 @@ from app.files.models import File
 from app.files.storage import storage
 from app.flows.db_types import ContentBlock, ImageBlock, RichText, TextBlock
 from app.flows.models import (
-    ENEM_AREAS,
     Choice,
     Exam,
     Flow,
@@ -47,6 +46,7 @@ from app.flows.models import (
     FlowElement,
     FlowInputType,
     FlowQuestion,
+    FlowSourceType,
     OfficialQuestionSource,
     Question,
     QuestionAnswerType,
@@ -63,19 +63,6 @@ from app.users.service import get_password_hash
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=Base)
-
-QUERIES = [
-    "What is the capital of France?",
-    "Quem sou eu?",
-    "Como você é?",
-    "O que você acha?",
-    "minha história",
-    "minha vida",
-    "lesgoooooo",
-    "what is love",
-    "baby don't hurt me",
-    "no more",
-]
 
 # Module-level cache for file data to ensure consistency across fields
 _file_cache: dict[str, dict[str, Any]] = {}
@@ -359,6 +346,8 @@ class ExamFactory(AsyncSQLAlchemyFactory[Exam]):
 
     name = "ENEM"
     country_code = "BR"
+    education_level = SubFactory(EducationLevelFactory)
+    course = SubFactory(CourseFactory)
 
     class Meta:
         model = Exam
@@ -383,24 +372,21 @@ class QuestionFactory(AsyncSQLAlchemyFactory[Question]):
         sqlalchemy_get_or_create = ("content_blocks",)
 
     content_blocks = LazyFunction(get_content_blocks)
+    answer_content_blocks = LazyFunction(get_content_blocks)
 
     is_active = True
-    subject = "Matemática"
-    category = "Álgebra"
-    subcategory = "Equações"
-    caderno = "Azul"
-    caderno_number = 1
-    difficulty = QuestionDifficulty.EASY
+    is_quantitative = False
+    difficulty = Iterator(QuestionDifficulty)
+    major_tags = Faker("words", nb=3)
+    minor_tags = Faker("words", nb=3)
     parameter_a = 1.0
     parameter_b = 2.0
     parameter_c = 3.0
-    answer_text = "This is the correct answer"
     embedding = Faker("random_elements", elements=[0.0, 1.0], length=1024)
     source_type = QuestionSourceType.OFFICIAL
     official_source = SubFactory(OfficialQuestionSourceFactory)
     source_user_id = None
     answer_type = QuestionAnswerType.MULTIPLE_CHOICE
-    answer_image = SubFactory(FileFactory)
 
 
 class ChoiceFactory(AsyncSQLAlchemyFactory[Choice]):
@@ -435,14 +421,18 @@ class FlowFactory(AsyncSQLAlchemyFactory[Flow]):
         model = Flow
 
     title = Sequence(flow_title_sequence)
-    query = Iterator(QUERIES)
-    area = Iterator(ENEM_AREAS.keys())
-    source_filter = ""
+    cover_image = SubFactory(FileFactory)
     difficulty = FlowDifficulty.ALL
     flow_input_type = FlowInputType.TOPIC
     input_topic = Faker("paragraph")
-    created_by = None
+    created_by = SubFactory(UserFactory)
+    action_link = Faker("url")
+    action_text = Faker("sentence")
     question_answer_type = QuestionAnswerType.MULTIPLE_CHOICE
+    source_type = FlowSourceType.OFFICIAL
+    max_num_questions = 10
+    major_tags = Faker("words", nb=3)
+    minor_tags = Faker("words", nb=3)
 
 
 class FlowElementFactory(AsyncSQLAlchemyFactory[FlowElement]):

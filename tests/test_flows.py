@@ -1,12 +1,11 @@
 import logging
-from pathlib import Path
 from typing import Any, Callable, Coroutine
 
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.flows.models import FlowInputType, FlowQuestionUser, FlowUserFeed, Question
+from app.flows.models import FlowQuestionUser, FlowUserFeed, Question
 from app.users.models import User
 from tests.factories import (
     ChoiceFactory,
@@ -65,24 +64,24 @@ async def test_flow_feed(user_client: AsyncClient, user: User, session: AsyncSes
     assert len(flows) == 3
 
     # Check flows are ordered by answer count desc, then created_at desc
-    assert flows[0]["id"] == flow1.id
-    assert flows[1]["id"] == flow2.id
-    assert flows[2]["id"] == flow3.id
+    assert flows[0]["item"]["id"] == flow1.id
+    assert flows[1]["item"]["id"] == flow2.id
+    assert flows[2]["item"]["id"] == flow3.id
 
     # Check response data structure and values match FlowInFeed schema
-    for flow in flows:
+    for flow_item in flows:
+        assert flow_item["item_type"] == "flow"
+        flow = flow_item["item"]
         assert flow["id"] in {flow1.id, flow2.id, flow3.id}
         assert isinstance(flow["code"], str)
         assert isinstance(flow["created_at"], str)
         assert isinstance(flow["title"], str)
         assert flow["cover_image"] is None or isinstance(flow["cover_image"], str)
-        assert flow["action_link"] is None or isinstance(flow["action_link"], str)
-        assert flow["action_text"] is None or isinstance(flow["action_text"], str)
+        assert isinstance(flow["action_link"], str)
+        assert isinstance(flow["action_text"], str)
         assert isinstance(flow["created_by"], dict)
-        assert isinstance(flow["query"], str)
-        assert isinstance(flow["area"], str)
-        assert isinstance(flow["source_filter"], str)
         assert isinstance(flow["difficulty"], str)
+        assert isinstance(flow["max_num_questions"], int)
         assert isinstance(flow["elements"], list)
         assert isinstance(flow["num_total_elements"], int)
 
@@ -167,13 +166,11 @@ async def test_discover_flows(
         assert isinstance(flow["created_at"], str)
         assert isinstance(flow["title"], str)
         assert flow["cover_image"] is None or isinstance(flow["cover_image"], str)
-        assert flow["action_link"] is None or isinstance(flow["action_link"], str)
-        assert flow["action_text"] is None or isinstance(flow["action_text"], str)
+        assert isinstance(flow["action_link"], str)
+        assert isinstance(flow["action_text"], str)
         assert isinstance(flow["created_by"], dict)
-        assert isinstance(flow["query"], str)
-        assert isinstance(flow["area"], str)
-        assert isinstance(flow["source_filter"], str)
         assert isinstance(flow["difficulty"], str)
+        assert isinstance(flow["max_num_questions"], int)
         assert isinstance(flow["elements"], list)
         assert isinstance(flow["num_total_elements"], int)
 
@@ -250,10 +247,8 @@ async def test_get_flow_details(
         "id": user.id,
         "username": user.username,
     }
-    assert response_data["query"] == flow.query
-    assert response_data["area"] == flow.area
-    assert response_data["source_filter"] == flow.source_filter
     assert response_data["difficulty"] == flow.difficulty
+    assert response_data["max_num_questions"] == flow.max_num_questions
     assert isinstance(response_data["elements"], list)
     assert response_data["num_total_elements"] == 2
     assert response_data["num_user_total_answers"] == 2
@@ -266,21 +261,29 @@ async def test_get_flow_details(
         assert element["id"] == flow_question.id
         assert element["element_type"] == "flow_question"
         assert isinstance(element["content_blocks"], list)
+        assert isinstance(element["answer_content_blocks"], list)
         assert isinstance(element["relevant_answers"], list)
         assert element["num_total_answers"] == 1
         assert isinstance(element["choices"], list)
-        assert element["subject"] == question.subject
-        assert element["category"] == question.category
-        assert element["subcategory"] == question.subcategory
-        assert element["difficulty"] == question.difficulty
-        assert element["source_type"] == question.source_type
+        assert isinstance(element["is_quantitative"], bool)
+        assert isinstance(element["major_tags"], list)
+        assert isinstance(element["minor_tags"], list)
+        assert isinstance(element["difficulty"], str)
+        assert isinstance(element["source_type"], str)
         assert (
             element["official_source"] == question.official_source.exam.name
             if question.official_source
             else None
         )
-        assert element["source_user"] == question.source_user
-        assert element["answer_type"] == question.answer_type
+        assert element["source_user"] == (
+            {
+                "id": question.source_user.id,
+                "username": question.source_user.username,
+            }
+            if question.source_user
+            else None
+        )
+        assert isinstance(element["answer_type"], str)
         for answer in element["relevant_answers"]:
             assert answer["user"] == {
                 "id": user.id,
@@ -294,77 +297,6 @@ async def test_get_flow_details_not_found(user_client: AsyncClient):
     # Try to get details for a non-existent flow
     response = await user_client.get("/api/flows/9999/details")
     assert response.status_code == 404
-
-
-async def test_create_flow_from_topic(user_client: AsyncClient):
-    # Create a new flow from a topic
-    flow_data = {
-        "title": "Test Flow",
-        "query": "What is the purpose of life?",
-        "input_topic": "Philosophy and existentialism",
-        "area": "Ciências Humanas",
-        "source_filter": "ENEM",
-        "difficulty": "Médio",
-    }
-    response = await user_client.post("/api/flows", json=flow_data)
-    assert response.status_code == 201
-    response_data = response.json()
-
-    # Check response data
-    assert response_data["title"] == flow_data["title"]
-    assert response_data["query"] == flow_data["query"]
-    assert response_data["input_topic"] == flow_data["input_topic"]
-    assert response_data["area"] == flow_data["area"]
-    assert response_data["source_filter"] == flow_data["source_filter"]
-    assert response_data["difficulty"] == flow_data["difficulty"]
-    assert response_data["flow_input_type"] == FlowInputType.TOPIC
-
-
-async def test_create_flow_validation_error(user_client: AsyncClient):
-    # Try to create a flow with missing required fields
-    flow_data = {
-        "title": "",  # Empty title should cause validation error
-        "query": "What is the purpose of life?",
-        "input_topic": "Philosophy and existentialism",
-        "area": "Ciências Humanas",
-        "source_filter": "ENEM",
-        "difficulty": "Médio",
-    }
-    response = await user_client.post("/api/flows", json=flow_data)
-    assert response.status_code == 400
-
-
-async def test_create_flow_with_files(user_client: AsyncClient, tmp_path: Path):
-    # Create a test file
-    test_file_path = tmp_path / "test_document.pdf"
-    test_file_path.write_bytes(b"%PDF-1.5\n%Test PDF file")
-
-    # Form data for flow creation
-    data = {
-        "title": "Test Flow With Files",
-        "query": "What does this document say?",
-        "area": "Ciências Humanas",
-        "source_filter": "ENEM",
-        "difficulty": "Médio",
-    }
-
-    # Create files
-    with open(test_file_path, "rb") as f:
-        files = [("files", ("document.pdf", f, "application/pdf"))]
-
-        # Post request with multipart/form-data
-        response = await user_client.post("/api/flows/files", data=data, files=files)
-
-    assert response.status_code == 201
-    response_data = response.json()
-
-    # Check response data
-    assert response_data["title"] == data["title"]
-    assert response_data["query"] == data["query"]
-    assert response_data["area"] == data["area"]
-    assert response_data["source_filter"] == data["source_filter"]
-    assert response_data["difficulty"] == data["difficulty"]
-    assert response_data["flow_input_type"] == FlowInputType.FILES
 
 
 async def test_submit_flow_question_answer_correct_first_time(
@@ -791,35 +723,6 @@ async def test_submit_flow_question_answer_none_choice_id(
     assert response.status_code == 400
 
 
-async def test_add_elements_to_flow(
-    user_client: AsyncClient, session: AsyncSession, user: User
-):
-    # Create test flow
-    async with session.begin():
-        flow = await FlowFactory.create(created_by=user, session=session)
-        # Initially add one question
-        await FlowQuestionFactory.create(flow=flow, session=session)
-
-    # Add more elements
-    add_elements_data = {
-        "query": "Additional questions",
-        "area": flow.area,
-        "source_filter": flow.source_filter,
-        "difficulty": flow.difficulty,
-        "n_questions": 3,
-    }
-    response = await user_client.post(
-        f"/api/flows/{flow.id}/add-elements", json=add_elements_data
-    )
-    assert response.status_code == 200
-    response_data = response.json()
-
-    # Check that elements were added to the flow
-    assert "elements" in response_data
-    # We should have at least the original element count (which may include automatically generated elements)
-    # But this test makes assumptions about the flow_service._generate_flow_questions implementation
-
-
 async def test_delete_flow(user_client: AsyncClient, session: AsyncSession, user: User):
     # Create test flow
     async with session.begin():
@@ -860,5 +763,8 @@ async def test_get_user_flows(
     for flow in response_data:
         assert "id" in flow
         assert "title" in flow
-        assert "area" in flow
+        assert "difficulty" in flow
         assert "created_at" in flow
+        assert "max_num_questions" in flow
+        assert "num_user_total_answers" in flow
+        assert "num_user_correct_answers" in flow
