@@ -5,6 +5,7 @@
 import functools
 import logging
 import os
+import random
 import tempfile
 import uuid
 from typing import Any, TypeVar
@@ -13,6 +14,7 @@ from factory.alchemy import SQLAlchemyOptions
 from factory.base import Factory
 from factory.declarations import (
     Iterator,
+    LazyAttribute,
     LazyFunction,
     RelatedFactoryList,
     Sequence,
@@ -24,7 +26,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_scoped_session
 import app.database as database
 from app.base import Base
 from app.community.models import Community
-from app.education.models import College, Course, EducationInfo, EducationLevel, School
+from app.education.models import (
+    AdministrativeCategory,
+    College,
+    Course,
+    EducationInfo,
+    EducationLevel,
+    LevelStage,
+    School,
+)
 from app.files.models import File
 from app.files.storage import storage
 from app.flows.db_types import ContentBlock, ImageBlock, RichText, TextBlock
@@ -69,6 +79,10 @@ QUERIES = [
 
 # Module-level cache for file data to ensure consistency across fields
 _file_cache: dict[str, dict[str, Any]] = {}
+
+
+def random_country_code(_: object) -> str:
+    return random.choice(["BR", "US", "CA", "DE", "FR", "IT", "ES", "PT", "NL", "BE"])
 
 
 def name_sequence(n: int) -> str:
@@ -122,6 +136,10 @@ def flow_title_sequence(n: int) -> str:
 
 def education_level_name_sequence(n: int) -> str:
     return f"Education Level {n}"
+
+
+def level_stage_name_sequence(n: int) -> str:
+    return f"Level Stage {n}"
 
 
 def create_file_data() -> dict[str, Any]:
@@ -204,6 +222,13 @@ class AsyncSQLAlchemyFactory(Factory[T]):
         return instances
 
 
+class EducationLevelFactory(AsyncSQLAlchemyFactory[EducationLevel]):
+    class Meta:
+        model = EducationLevel
+
+    name = Sequence(education_level_name_sequence)
+
+
 class SchoolFactory(AsyncSQLAlchemyFactory[School]):
     class Meta:
         model = School
@@ -212,6 +237,19 @@ class SchoolFactory(AsyncSQLAlchemyFactory[School]):
     name = Sequence(school_name_sequence)
     institution_type = "school"
     user_submitted = False
+    country_code = LazyAttribute(random_country_code)
+    level = SubFactory(EducationLevelFactory)
+    administrative_category = AdministrativeCategory.UNKNOWN
+
+
+class LevelStageFactory(AsyncSQLAlchemyFactory[LevelStage]):
+    class Meta:
+        model = LevelStage
+        sqlalchemy_get_or_create = ("name",)
+
+    name = Sequence(level_stage_name_sequence)
+    country_code = LazyAttribute(random_country_code)
+    level = SubFactory(EducationLevelFactory)
 
 
 class CourseFactory(AsyncSQLAlchemyFactory[Course]):
@@ -220,6 +258,7 @@ class CourseFactory(AsyncSQLAlchemyFactory[Course]):
         sqlalchemy_get_or_create = ("name",)
 
     name = Sequence(course_name_sequence)
+    level = SubFactory(EducationLevelFactory)
     user_submitted = False
 
 
@@ -231,6 +270,9 @@ class CollegeFactory(AsyncSQLAlchemyFactory[College]):
     institution_type = "college"
     user_submitted = False
     courses = RelatedFactoryList(CourseFactory, size=3)
+    level = SubFactory(EducationLevelFactory)
+    country_code = LazyAttribute(random_country_code)
+    administrative_category = AdministrativeCategory.UNKNOWN
 
 
 class CommunityFactory(AsyncSQLAlchemyFactory[Community]):
@@ -242,13 +284,6 @@ class CommunityFactory(AsyncSQLAlchemyFactory[Community]):
 
     name = Sequence(community_name_sequence)
     subtitle = Sequence(community_subtitle_sequence)
-
-
-class EducationLevelFactory(AsyncSQLAlchemyFactory[EducationLevel]):
-    class Meta:
-        model = EducationLevel
-
-    name = Sequence(education_level_name_sequence)
 
 
 class EducationFactory(AsyncSQLAlchemyFactory[EducationInfo]):
@@ -280,6 +315,7 @@ class UserFactory(AsyncSQLAlchemyFactory[User]):
     signup_source = "social"
     current_education = SubFactory(EducationFactory)
     intended_education = SubFactory(EducationFactory)
+    country_code = LazyAttribute(random_country_code)
 
 
 class FileFactory(AsyncSQLAlchemyFactory[File]):
@@ -322,7 +358,7 @@ class ExamFactory(AsyncSQLAlchemyFactory[Exam]):
     """Factory for creating Exam instances."""
 
     name = "ENEM"
-    country = "Brazil"
+    country_code = "BR"
 
     class Meta:
         model = Exam

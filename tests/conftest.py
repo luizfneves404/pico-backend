@@ -31,6 +31,7 @@ from app.arq_worker import make_worker_settings
 from app.config import settings
 from app.database import DatabaseSessionManager, db_manager
 from app.deps import get_db_session
+from app.education.models import EducationLevel, LevelStage
 from app.fcm.fcm_service import init_firebase
 from app.logging_config import get_logging_config
 from app.main import fastapi_app
@@ -38,7 +39,7 @@ from app.redis_client import get_redis, use_redis
 from app.users.models import User
 from app.ws.routers import get_db_session_websocket
 from tests.db_utils import alembic_config_from_url, tmp_database
-from tests.factories import UserFactory
+from tests.factories import EducationLevelFactory, LevelStageFactory, UserFactory
 
 T = TypeVar("T")
 DEFAULT_TEST_PASSWORD = "defaultpassword"
@@ -340,3 +341,17 @@ def user_client_factory(
         return users, clients
 
     return factory
+
+
+@pytest.fixture
+async def education_level(session: AsyncSession) -> EducationLevel:
+    async with session.begin():
+        return await EducationLevelFactory.create(session)
+
+
+@pytest.fixture
+async def level_stage(
+    session: AsyncSession, education_level: EducationLevel
+) -> LevelStage:
+    async with session.begin():
+        return await LevelStageFactory.create(session, level_id=education_level.id)

@@ -9,19 +9,33 @@ This file contains tests for the education API endpoints:
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.education.service import create_college, create_course, create_school
+from app.education.models import EducationLevel
+from app.education.service import create_course, create_institution
 
 
 # School tests
-async def test_list_schools(client: AsyncClient, session: AsyncSession) -> None:
+async def test_list_schools(
+    client: AsyncClient, session: AsyncSession, education_level: EducationLevel
+) -> None:
     """Test listing schools using the education API."""
     # Create two schools using the service layer
+
     async with session.begin():
-        await create_school(
-            session, name="School 1", inep_code="INEP123456", user_submitted=False
+        await create_institution(
+            session,
+            institution_type="school",
+            country_code="BR",
+            name="School 1",
+            user_submitted=False,
+            level_id=education_level.id,
         )
-        await create_school(
-            session, name="School 2", inep_code="INEP123457", user_submitted=False
+        await create_institution(
+            session,
+            institution_type="school",
+            country_code="BR",
+            name="School 2",
+            user_submitted=False,
+            level_id=education_level.id,
         )
 
     # Get list of schools using the endpoint
@@ -36,12 +50,19 @@ async def test_list_schools(client: AsyncClient, session: AsyncSession) -> None:
     assert "School 2" in school_names
 
 
-async def test_get_school_detail(client: AsyncClient, session: AsyncSession) -> None:
+async def test_get_school_detail(
+    client: AsyncClient, session: AsyncSession, education_level: EducationLevel
+) -> None:
     """Test getting school details using the education API."""
     # Create a school using the service layer
     async with session.begin():
-        school = await create_school(
-            session, name="Test School", inep_code="INEP123456", user_submitted=False
+        school = await create_institution(
+            session,
+            institution_type="school",
+            country_code="BR",
+            name="Test School",
+            user_submitted=False,
+            level_id=education_level.id,
         )
 
     # Get school details using the endpoint
@@ -50,7 +71,6 @@ async def test_get_school_detail(client: AsyncClient, session: AsyncSession) -> 
     school_data = response.json()
     assert school_data["id"] == school.id
     assert school_data["name"] == "Test School"
-    assert school_data["inep_code"] == "INEP123456"
     assert school_data["institution_type"] == "school"
     assert school_data["user_submitted"] is False
 
@@ -65,12 +85,11 @@ async def test_create_school(client: AsyncClient) -> None:
     """Test creating a school via the API."""
     response = await client.post(
         "/api/education/schools",
-        json={"name": "New School", "inep_code": "INEP789", "user_submitted": False},
+        json={"name": "New School", "user_submitted": False},
     )
     assert response.status_code == 201
     school_data = response.json()
     assert school_data["name"] == "New School"
-    assert school_data["inep_code"] == "INEP789"
     assert school_data["institution_type"] == "school"
     assert (
         school_data["user_submitted"] is True
@@ -91,11 +110,20 @@ async def test_create_school_invalid(client: AsyncClient) -> None:
 
 
 # College tests
-async def test_list_colleges(client: AsyncClient, session: AsyncSession) -> None:
+async def test_list_colleges(
+    client: AsyncClient, session: AsyncSession, education_level: EducationLevel
+) -> None:
     """Test listing colleges using the education API."""
     # Create a college using the service layer
     async with session.begin():
-        await create_college(session, name="Test College", user_submitted=False)
+        await create_institution(
+            session,
+            institution_type="college",
+            country_code="BR",
+            name="Test College",
+            user_submitted=False,
+            level_id=education_level.id,
+        )
 
     # Get list of colleges
     response = await client.get("/api/education/colleges")
@@ -143,20 +171,27 @@ async def test_create_course(client: AsyncClient) -> None:
 
 
 # Institution tests (unified view)
-async def test_list_institutions(client: AsyncClient, session: AsyncSession) -> None:
+async def test_list_institutions(
+    client: AsyncClient, session: AsyncSession, education_level: EducationLevel
+) -> None:
     """Test listing all institutions (both schools and colleges)."""
     # Create both a school and a college
     async with session.begin():
-        await create_school(
+        await create_institution(
             session,
             name="Test School for Institutions",
-            inep_code="INEP123456",
+            institution_type="school",
+            country_code="BR",
             user_submitted=False,
+            level_id=education_level.id,
         )
-        await create_college(
+        await create_institution(
             session,
             name="Test College for Institutions",
+            institution_type="college",
+            country_code="BR",
             user_submitted=False,
+            level_id=education_level.id,
         )
 
     # Get list of all institutions

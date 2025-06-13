@@ -154,20 +154,16 @@ class OtherUserOut(UserBase):
             phone_number=user.phone_number,
             email=user.email,
             current_education=EducationInfoOut(
-                level_id=user.current_education.level.id,
-                stage_id=user.current_education.stage.id
-                if user.current_education.stage
-                else None,
+                level_id=user.current_education.level_id,
+                stage_id=user.current_education.stage_id,
                 institution_id=user.current_education.institution_id,
                 course_id=user.current_education.course_id,
             )
             if user.current_education
             else None,
             intended_education=EducationInfoOut(
-                level_id=user.intended_education.level.id,
-                stage_id=user.intended_education.stage.id
-                if user.intended_education.stage
-                else None,
+                level_id=user.intended_education.level_id,
+                stage_id=user.intended_education.stage_id,
                 institution_id=user.intended_education.institution_id,
                 course_id=user.intended_education.course_id,
             )

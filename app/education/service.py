@@ -2,6 +2,7 @@ from geoalchemy2 import WKTElement
 from geoalchemy2.functions import ST_Distance, ST_DWithin
 from geoalchemy2.types import Geography
 from sqlalchemy import ColumnElement, case, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -26,6 +27,18 @@ class CourseNotFoundError(Exception):
 
 
 class StageNotFoundError(Exception):
+    pass
+
+
+class LevelNotFoundError(Exception):
+    pass
+
+
+class InvalidInstitutionTypeError(Exception):
+    pass
+
+
+class InvalidCountryCodeError(Exception):
     pass
 
 
@@ -117,6 +130,7 @@ async def create_institution(
     institution_type: str,
     user_submitted: bool,
     country_code: str,
+    level_id: int,
 ) -> Institution:
     """Create a new institution.
 
@@ -134,9 +148,19 @@ async def create_institution(
         institution_type=institution_type,
         user_submitted=user_submitted,
         country_code=country_code,
+        level_id=level_id,
     )
     db_session.add(institution)
-    await db_session.flush()
+    try:
+        await db_session.flush()
+    except IntegrityError as e:
+        if "level_id" in str(e):
+            raise LevelNotFoundError(e)
+        elif "institution_type" in str(e):
+            raise InvalidInstitutionTypeError(e)
+        elif "country_code" in str(e):
+            raise InvalidCountryCodeError(e)
+        raise e
     return institution
 
 

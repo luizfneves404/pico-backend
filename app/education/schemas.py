@@ -35,6 +35,7 @@ class InstitutionIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     institution_type: InstitutionType = Field(..., min_length=1, max_length=50)
     country_code: str = Field(..., min_length=2, max_length=2)
+    level_id: int = Field(..., gt=0)
 
 
 class SearchInstitutionsRequest(BaseModel):

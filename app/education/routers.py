@@ -55,6 +55,7 @@ async def create_institution(
         institution_type=institution_in.institution_type,
         user_submitted=True,
         country_code=institution_in.country_code,
+        level_id=institution_in.level_id,
     )
     return InstitutionOut.from_orm_model(new_institution)
 
