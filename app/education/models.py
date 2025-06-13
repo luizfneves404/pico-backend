@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING
 from geoalchemy2 import Geography, WKBElement
 from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import JSON
 
 from app.base import Base
-from app.localization import TranslatableJSON, TranslatedString
 
 if TYPE_CHECKING:
     from app.countries.models import Country
@@ -74,7 +74,7 @@ class College(Institution):
 
 
 class Course(Base):
-    name: Mapped[TranslatedString] = mapped_column(TranslatableJSON)
+    name_i18n: Mapped[dict[str, str]] = mapped_column(JSON)
     user_submitted: Mapped[bool] = mapped_column(default=False)
 
     level_id: Mapped[int] = mapped_column(ForeignKey("education_level.id"))
@@ -84,7 +84,7 @@ class Course(Base):
     )
 
     def __str__(self) -> str:
-        return str(self.name)
+        return str(self.name_i18n)
 
 
 class LevelStage(Base):
@@ -116,7 +116,7 @@ class LevelStage(Base):
 
 
 class EducationLevel(Base):
-    name: Mapped[TranslatedString] = mapped_column(TranslatableJSON)
+    name_i18n: Mapped[dict[str, str]] = mapped_column(JSON)
     stages: Mapped[list["LevelStage"]] = relationship(
         back_populates="level",
         lazy="raise_on_sql",

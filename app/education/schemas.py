@@ -46,14 +46,14 @@ class SearchInstitutionsRequest(BaseModel):
 
 class CourseOut(BaseModel):
     id: int
-    name: str
+    name_i18n: dict[str, str]
     level_id: int
 
     @classmethod
     def from_orm_model(cls, model: Course) -> "CourseOut":
         return cls(
             id=model.id,
-            name=str(model.name),
+            name_i18n=model.name_i18n,
             level_id=model.level_id,
         )
 
@@ -76,13 +76,13 @@ class LevelStageOut(BaseModel):
 
 class EducationLevelOut(BaseModel):
     id: int
-    name: str
+    name_i18n: dict[str, str]
     stages: list[LevelStageOut]
 
     @classmethod
     def from_orm_model(cls, model: EducationLevel) -> "EducationLevelOut":
         return cls(
             id=model.id,
-            name=str(model.name),
+            name_i18n=model.name_i18n,
             stages=[LevelStageOut.from_orm_model(stage) for stage in model.stages],
         )

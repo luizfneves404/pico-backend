@@ -4,17 +4,37 @@ from sqladmin import BaseView
 from sqladmin.authentication import AuthenticationBackend
 from starlette.status import HTTP_401_UNAUTHORIZED
 
+from app.community.admin import CommunityAdmin, CommunityUserAdmin
 from app.config import settings
+from app.countries.admin import CountryAdmin
 from app.database import db_manager
-from app.education.admin import CourseAdmin, SchoolAdmin
+from app.education.admin import (
+    CourseModelAdmin,
+    EducationInfoAdmin,
+    EducationLevelAdmin,
+    InstitutionAdmin,
+    LevelStageAdmin,
+)
+from app.fcm.admin import FCMDeviceAdmin
 from app.files.admin import FileAdmin
 from app.flows.admin import (
+    CampaignAdmin,
     ChoiceAdmin,
+    ExamAdmin,
     FlowAdmin,
     FlowElementAdmin,
     FlowQuestionAdmin,
     FlowQuestionUserAdmin,
+    FlowTranscriptionBlockAdmin,
+    FlowUserFeedAdmin,
+    OfficialQuestionSourceAdmin,
     QuestionAdmin,
+    QuestionAreaAdmin,
+)
+from app.in_app_notifications.admin import (
+    ExternalInAppNotificationAdmin,
+    FlowInAppNotificationAdmin,
+    InAppNotificationAdmin,
 )
 from app.logging_admin import (
     GetCurrentLevelsView,
@@ -24,22 +44,54 @@ from app.logging_admin import (
 from app.users import service as user_service
 from app.users.admin import UserAdmin
 from app.users.jwt_token import TokenError, generate_tokens, process_token
+from app.ws.admin import UserWebsocketInfoAdmin
 
 admin_views: list[type[BaseView]] = []
 
+# System & Logging
 admin_views.append(SetSqlLoggingLevelView)
 admin_views.append(GetCurrentLevelsView)
 admin_views.append(LoggingControlView)
+
+# Users & Authentication
 admin_views.append(UserAdmin)
-admin_views.append(CourseAdmin)
-admin_views.append(SchoolAdmin)
+admin_views.append(UserWebsocketInfoAdmin)
+admin_views.append(FCMDeviceAdmin)
+
+# Countries
+admin_views.append(CountryAdmin)
+
+# Education
+admin_views.append(EducationLevelAdmin)
+admin_views.append(LevelStageAdmin)
+admin_views.append(CourseModelAdmin)
+admin_views.append(InstitutionAdmin)
+admin_views.append(EducationInfoAdmin)
+
+# Community
+admin_views.append(CommunityAdmin)
+admin_views.append(CommunityUserAdmin)
+
+# Files
+admin_views.append(FileAdmin)
+
+# Flows & Questions
 admin_views.append(FlowAdmin)
+admin_views.append(FlowTranscriptionBlockAdmin)
 admin_views.append(FlowElementAdmin)
 admin_views.append(FlowQuestionAdmin)
 admin_views.append(FlowQuestionUserAdmin)
+admin_views.append(FlowUserFeedAdmin)
 admin_views.append(QuestionAdmin)
+admin_views.append(QuestionAreaAdmin)
 admin_views.append(ChoiceAdmin)
-admin_views.append(FileAdmin)
+admin_views.append(ExamAdmin)
+admin_views.append(OfficialQuestionSourceAdmin)
+admin_views.append(CampaignAdmin)
+# Notifications
+admin_views.append(InAppNotificationAdmin)
+admin_views.append(ExternalInAppNotificationAdmin)
+admin_views.append(FlowInAppNotificationAdmin)
 
 
 class AdminAuth(AuthenticationBackend):

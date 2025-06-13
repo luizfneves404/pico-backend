@@ -3,7 +3,6 @@ import logging.config
 import os
 import sys
 
-from app.localization import locale_dispatch
 from app.logging_config import get_logging_config
 
 sys.path.insert(
@@ -103,13 +102,6 @@ async def analytics_middleware(
         logger.error(f"Error tracking amplitude event: {e}")
     finally:
         return response
-
-
-@fastapi_app.middleware("http")
-async def locale_middleware(
-    request: Request, call_next: Callable[[Request], Awaitable[Response]]
-) -> Response:
-    return await locale_dispatch(request, call_next)
 
 
 @fastapi_app.middleware("http")

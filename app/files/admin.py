@@ -13,6 +13,7 @@ from app.shared.admin import Admin
 
 
 class FileAdmin(Admin, model=File):
+    icon = "fa-solid fa-file"
     column_list = [
         File.id,
         File.file_id,
