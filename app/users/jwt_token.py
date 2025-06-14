@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 import jwt
@@ -36,7 +36,13 @@ class UserNotFoundError(TokenError):
     pass
 
 
-def generate_tokens(user: UserDB, auth_provider: str = "local") -> tuple[str, str]:
+def generate_tokens(
+    user: UserDB,
+    *,
+    auth_provider: str = "local",
+    access_token_exp: timedelta = settings.jwt_access_expiration_delta,
+    refresh_token_exp: timedelta = settings.jwt_refresh_expiration_delta,
+) -> tuple[str, str]:
     """Generate a pair of access and refresh tokens for a user.
 
     Args:
@@ -57,13 +63,13 @@ def generate_tokens(user: UserDB, auth_provider: str = "local") -> tuple[str, st
 
     access_payload = {
         **common_payload,
-        "exp": int((now + settings.jwt_access_expiration_delta).timestamp()),
+        "exp": int((now + access_token_exp).timestamp()),
         "token_type": "access",
     }
 
     refresh_payload = {
         **common_payload,
-        "exp": int((now + settings.jwt_refresh_expiration_delta).timestamp()),
+        "exp": int((now + refresh_token_exp).timestamp()),
         "token_type": "refresh",
     }
 

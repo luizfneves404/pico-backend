@@ -114,7 +114,11 @@ class AdminAuth(AuthenticationBackend):
                 return False
 
             # Generate tokens and store in session
-            access_token, _ = generate_tokens(user)
+            access_token, _ = generate_tokens(
+                user,
+                access_token_exp=settings.jwt_access_expiration_delta_admin,
+                refresh_token_exp=settings.jwt_refresh_expiration_delta_admin,
+            )
             request.session.update({"token": access_token, "user_id": user.id})
 
             return True

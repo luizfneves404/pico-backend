@@ -10,7 +10,6 @@ from pydantic import (
     Field,
     SecretStr,
     StringConstraints,
-    computed_field,
 )
 
 from app.education.schemas import Location
@@ -76,12 +75,7 @@ class TokenResponse(BaseModel):
     access: str
     refresh: str
     # oauth2 scheme expects these:
-    token_type: Literal["bearer"] = "bearer"
-
-    @computed_field
-    @property
-    def access_token(self) -> str:
-        return self.access
+    token_type: Literal["bearer"]
 
 
 class RefreshRequest(BaseModel):

@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     jwt_refresh_expiration_delta: TimedeltaInSeconds = Field(
         default=timedelta(days=180)
     )
+    jwt_access_expiration_delta_admin: TimedeltaInSeconds = Field(
+        default=timedelta(hours=2)
+    )
+    jwt_refresh_expiration_delta_admin: TimedeltaInSeconds = Field(
+        default=timedelta(days=180)
+    )
     local_timezone: str = Field(default="America/Sao_Paulo")
 
     database_url: str = Field(default=...)

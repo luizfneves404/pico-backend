@@ -62,7 +62,9 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token, refresh_token = jwt_token.generate_tokens(user)
-    return TokenResponse(access=access_token, refresh=refresh_token)
+    return TokenResponse(
+        access=access_token, refresh=refresh_token, token_type="bearer"
+    )
 
 
 @token_router.post("/refresh", response_model=TokenResponse)
@@ -74,7 +76,7 @@ async def refresh_token(
             db_session, refresh_request.refresh, "refresh"
         )
         access, refresh = jwt_token.generate_tokens(user)
-        return TokenResponse(access=access, refresh=refresh)
+        return TokenResponse(access=access, refresh=refresh, token_type="bearer")
     except TokenError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=e.message)
     except service.UserNotFoundError:
@@ -109,8 +111,12 @@ async def google_auth(
             signup_source=google_request.signup_source,
             referred_by_username=google_request.referred_by_username,
         )
-        access_token, refresh_token = jwt_token.generate_tokens(user, "google")
-        return TokenResponse(access=access_token, refresh=refresh_token)
+        access_token, refresh_token = jwt_token.generate_tokens(
+            user, auth_provider="google"
+        )
+        return TokenResponse(
+            access=access_token, refresh=refresh_token, token_type="bearer"
+        )
     except service.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid ID token"
@@ -147,8 +153,12 @@ async def apple_auth(
             signup_source=apple_request.signup_source,
             referred_by_username=apple_request.referred_by_username,
         )
-        access_token, refresh_token = jwt_token.generate_tokens(user, "apple")
-        return TokenResponse(access=access_token, refresh=refresh_token)
+        access_token, refresh_token = jwt_token.generate_tokens(
+            user, auth_provider="apple"
+        )
+        return TokenResponse(
+            access=access_token, refresh=refresh_token, token_type="bearer"
+        )
     except service.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid ID token"
