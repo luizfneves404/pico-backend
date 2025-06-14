@@ -150,21 +150,6 @@ class Flow(Base):
         lazy="raise_on_sql",
     )
 
-    __table_args__ = (
-        Index(
-            "idx_flow_major_tags_pgroonga",
-            major_tags,
-            postgresql_using="pgroonga",
-            # optionally: postgresql_ops={"major_tags": "<opclass>"}
-        ),
-        Index(
-            "idx_flow_minor_tags_pgroonga",
-            minor_tags,
-            postgresql_using="pgroonga",
-            # optionally: postgresql_ops={"minor_tags": "<opclass>"}
-        ),
-    )
-
     @hybrid_property
     def num_total_questions(self) -> int:
         """Count total questions for this flow."""
@@ -404,16 +389,6 @@ class Question(Base):
             postgresql_using="hnsw",
             postgresql_with={"m": 16, "ef_construction": 200},
             postgresql_ops={"embedding": "vector_cosine_ops"},
-        ),
-        Index(
-            "idx_question_major_tags_pgroonga",
-            major_tags,
-            postgresql_using="pgroonga",
-        ),
-        Index(
-            "idx_question_minor_tags_pgroonga",
-            minor_tags,
-            postgresql_using="pgroonga",
         ),
     )
 

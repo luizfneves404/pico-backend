@@ -2,7 +2,6 @@ import random
 
 from fastapi import UploadFile
 from sqlalchemy import (
-    case,
     desc,
     exists,
     func,
@@ -144,14 +143,28 @@ async def search_flows(
     pagination: PaginationParams,
 ) -> list[Flow]:
     """
-    Simplified PGroonga-based search by major_tags and minor_tags.
-    Returns flows where either tag array matches the query.
+    Full-text search over major_tags and minor_tags arrays using PostgreSQL FTS.
+    Major matches count double for relevance.
     """
-    match_major = Flow.major_tags.op("&@~")(query)
-    match_minor = Flow.minor_tags.op("&@~")(query)
+    # Turn the tag arrays into searchable text
+    major_text = func.array_to_string(Flow.major_tags, " ")
+    minor_text = func.array_to_string(Flow.minor_tags, " ")
 
-    # Define a simple relevance score: major match = 2, minor match = 1
-    relevance_score = case((match_major, 2), (match_minor, 1), else_=0)
+    # Build tsvector expressions
+    major_fts = func.to_tsvector("simple", major_text)
+    minor_fts = func.to_tsvector("simple", minor_text)
+
+    # Build tsquery from the user input
+    ts_query = func.plainto_tsquery("simple", query)
+
+    # Boolean matches
+    match_major = major_fts.op("@@")(ts_query)
+    match_minor = minor_fts.op("@@")(ts_query)
+
+    # If you want a finer-grained rank, you can use ts_rank:
+    major_rank = func.ts_rank(major_fts, ts_query)
+    minor_rank = func.ts_rank(minor_fts, ts_query)
+    relevance_score = major_rank * 2 + minor_rank
 
     stmt = (
         select(Flow)
@@ -159,7 +172,7 @@ async def search_flows(
         .order_by(
             desc(relevance_score),
             desc(Flow.id),
-        )  # Order by relevance, highest first
+        )
         .options(*get_flow_loader(num_elements=None))
     )
 
