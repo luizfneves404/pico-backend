@@ -1,8 +1,8 @@
 from app.fcm.models import FCMDevice
-from app.shared.admin import Admin
+from app.shared.admin import CustomModelView
 
 
-class FCMDeviceAdmin(Admin, model=FCMDevice):
+class FCMDeviceAdmin(CustomModelView, model=FCMDevice):
     icon = "fa-solid fa-mobile-alt"
 
     column_list = [

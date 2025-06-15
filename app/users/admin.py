@@ -1,10 +1,11 @@
 from typing import Any, ClassVar, Sequence, Union
 
 from fastapi import Request
+from pydantic import BaseModel
 from sqlalchemy import Select, select
 from sqlalchemy.orm import InstrumentedAttribute, selectinload
 
-from app.shared.admin import Admin
+from app.shared.admin import CustomModelView
 from app.users import service as user_service
 from app.users.models import User
 
@@ -14,7 +15,22 @@ def format_string(value: Any) -> Any:
     return value if value else "[EMPTY STRING]"
 
 
-class UserAdmin(Admin, model=User):
+class UserImportSchema(BaseModel):
+    name: str
+    username: str
+    email: str
+    phone_number: str
+    password: str
+    is_superuser: bool
+    is_bot: bool
+    bot_difficulty: float
+    signup_source: str
+    current_education: int
+    intended_education: int
+    referred_by: int
+
+
+class UserAdmin(CustomModelView[UserImportSchema, User], model=User):
     icon = "fa-solid fa-users"
 
     column_list: ClassVar[
@@ -146,3 +162,19 @@ class UserAdmin(Admin, model=User):
                 "bot_difficulty" not in data or data["bot_difficulty"] is None
             ):
                 data["bot_difficulty"] = 0.5  # Default difficulty
+
+    def to_orm_model(self, validated_data: UserImportSchema) -> User:
+        return User(
+            name=validated_data.name,
+            username=validated_data.username,
+            email=validated_data.email,
+            phone_number=validated_data.phone_number,
+            hashed_password=user_service.get_password_hash(validated_data.password),
+            is_superuser=validated_data.is_superuser,
+            is_bot=validated_data.is_bot,
+            bot_difficulty=validated_data.bot_difficulty,
+            signup_source=validated_data.signup_source,
+            current_education_id=validated_data.current_education,
+            intended_education_id=validated_data.intended_education,
+            referred_by_id=validated_data.referred_by,
+        )

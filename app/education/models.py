@@ -19,12 +19,18 @@ class AdministrativeCategory(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
+class InstitutionType(StrEnum):
+    INSTITUTION = "institution"
+    SCHOOL = "school"
+    COLLEGE = "college"
+
+
 class Institution(Base):
     """Represents an institution offering an education level."""
 
     name: Mapped[str] = mapped_column(String(120))
     user_submitted: Mapped[bool] = mapped_column(default=False)
-    institution_type: Mapped[str] = mapped_column(String(50))  # discriminator column
+    institution_type: Mapped[InstitutionType] = mapped_column()
     government_issued_code: Mapped[str] = mapped_column(String(50), default="")
     country_code: Mapped[str] = mapped_column(ForeignKey("country.code"))
     country: Mapped["Country"] = relationship(lazy="raise_on_sql")
@@ -43,7 +49,7 @@ class Institution(Base):
     )
 
     __mapper_args__ = {
-        "polymorphic_identity": "institution",
+        "polymorphic_identity": InstitutionType.INSTITUTION,
         "polymorphic_on": institution_type,
     }
 
@@ -63,13 +69,13 @@ class Institution(Base):
 
 class School(Institution):
     __mapper_args__ = {
-        "polymorphic_identity": "school",
+        "polymorphic_identity": InstitutionType.SCHOOL,
     }
 
 
 class College(Institution):
     __mapper_args__ = {
-        "polymorphic_identity": "college",
+        "polymorphic_identity": InstitutionType.COLLEGE,
     }
 
 

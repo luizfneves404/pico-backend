@@ -9,10 +9,10 @@ from wtforms.validators import Optional
 
 from app.files.models import File
 from app.files.storage import storage
-from app.shared.admin import Admin
+from app.shared.admin import CustomModelView
 
 
-class FileAdmin(Admin, model=File):
+class FileAdmin(CustomModelView, model=File):
     icon = "fa-solid fa-file"
     column_list = [
         File.id,

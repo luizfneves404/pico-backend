@@ -1,18 +1,32 @@
 from typing import Any, ClassVar, Sequence, Union
 
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import InstrumentedAttribute
 
 from app.education.models import (
+    AdministrativeCategory,
     Course,
     EducationInfo,
     EducationLevel,
     Institution,
+    InstitutionType,
     LevelStage,
 )
-from app.shared.admin import Admin
+from app.shared.admin import CustomModelView
 
 
-class InstitutionAdmin(Admin, model=Institution):
+class InstitutionImportSchema(BaseModel):
+    name: str
+    user_submitted: bool
+    institution_type: InstitutionType
+    country_code: str = Field(min_length=2, max_length=2)
+    level_id: int
+    administrative_category: AdministrativeCategory
+
+
+class InstitutionAdmin(
+    CustomModelView[InstitutionImportSchema, Institution], model=Institution
+):
     icon = "fa-solid fa-university"
 
     column_list: ClassVar[
@@ -37,8 +51,35 @@ class InstitutionAdmin(Admin, model=Institution):
 
     form_columns = ["name", "user_submitted", "courses"]
 
+    can_import = True
+    import_schema = InstitutionImportSchema
+    import_template_data = {
+        "name": "Arlekia University",
+        "user_submitted": True,
+        "institution_type": "college",
+        "country_code": "AA",
+        "level_id": 1,
+        "administrative_category": "PUBLIC",
+    }
 
-class EducationLevelAdmin(Admin, model=EducationLevel):
+    def to_orm_model(self, validated_data: InstitutionImportSchema) -> Institution:
+        return Institution(
+            name=validated_data.name,
+            user_submitted=validated_data.user_submitted,
+            institution_type=validated_data.institution_type,
+            country_code=validated_data.country_code,
+            level_id=validated_data.level_id,
+            administrative_category=validated_data.administrative_category,
+        )
+
+
+class EducationLevelImportSchema(BaseModel):
+    name_i18n: str
+
+
+class EducationLevelAdmin(
+    CustomModelView[EducationLevelImportSchema, EducationLevel], model=EducationLevel
+):
     icon = "fa-solid fa-layer-group"
 
     column_list = [
@@ -65,7 +106,16 @@ class EducationLevelAdmin(Admin, model=EducationLevel):
     ]
 
 
-class LevelStageAdmin(Admin, model=LevelStage):
+class LevelStageImportSchema(BaseModel):
+    name: str
+    level_id: int
+    country_code: str
+    is_default: bool
+
+
+class LevelStageAdmin(
+    CustomModelView[LevelStageImportSchema, LevelStage], model=LevelStage
+):
     icon = "fa-solid fa-stairs"
 
     column_list = [
@@ -102,7 +152,13 @@ class LevelStageAdmin(Admin, model=LevelStage):
     ]
 
 
-class CourseModelAdmin(Admin, model=Course):
+class CourseImportSchema(BaseModel):
+    name_i18n: str
+    level_id: int
+    user_submitted: bool
+
+
+class CourseModelAdmin(CustomModelView[CourseImportSchema, Course], model=Course):
     icon = "fa-solid fa-book-open"
 
     column_list = [
@@ -136,7 +192,16 @@ class CourseModelAdmin(Admin, model=Course):
     ]
 
 
-class EducationInfoAdmin(Admin, model=EducationInfo):
+class EducationInfoImportSchema(BaseModel):
+    level: int
+    course: int
+    institution: int
+    stage: int
+
+
+class EducationInfoAdmin(
+    CustomModelView[EducationInfoImportSchema, EducationInfo], model=EducationInfo
+):
     icon = "fa-solid fa-graduation-cap"
 
     column_list: ClassVar[
@@ -165,4 +230,9 @@ class EducationInfoAdmin(Admin, model=EducationInfo):
         EducationInfo.stage,
     ]
 
-    form_columns = ["course", "institution", "stage"]
+    form_columns = [
+        EducationInfo.level,
+        EducationInfo.course,
+        EducationInfo.institution,
+        EducationInfo.stage,
+    ]

@@ -1,8 +1,8 @@
-from app.shared.admin import Admin
+from app.shared.admin import CustomModelView
 from app.ws.models import UserOnlineInfo
 
 
-class UserOnlineInfoAdmin(Admin, model=UserOnlineInfo):
+class UserOnlineInfoAdmin(CustomModelView, model=UserOnlineInfo):
     icon = "fa-solid fa-plug"
 
     column_list = [

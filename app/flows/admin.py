@@ -2,7 +2,7 @@ from typing import Any, ClassVar, Sequence, Union
 
 from fastapi import Request
 from sqlalchemy import Select, select
-from sqlalchemy.orm import InstrumentedAttribute, selectinload
+from sqlalchemy.orm import selectinload
 
 from app.flows.models import (
     Campaign,
@@ -18,12 +18,10 @@ from app.flows.models import (
     Question,
     QuestionArea,
 )
-from app.shared.admin import Admin
-
-MODEL_ATTR = Union[str, InstrumentedAttribute[Any]]
+from app.shared.admin import MODEL_ATTR, CustomModelView
 
 
-class FlowAdmin(Admin, model=Flow):
+class FlowAdmin(CustomModelView, model=Flow):
     icon = "fa-solid fa-stream"
 
     column_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
@@ -117,7 +115,7 @@ class FlowAdmin(Admin, model=Flow):
         return await self._get_object_by_pk(stmt)
 
 
-class FlowTranscriptionBlockAdmin(Admin, model=FlowTranscriptionBlock):
+class FlowTranscriptionBlockAdmin(CustomModelView, model=FlowTranscriptionBlock):
     icon = "fa-solid fa-file-text"
 
     column_list = [
@@ -155,7 +153,7 @@ class FlowTranscriptionBlockAdmin(Admin, model=FlowTranscriptionBlock):
     ]
 
 
-class FlowElementAdmin(Admin, model=FlowElement):
+class FlowElementAdmin(CustomModelView, model=FlowElement):
     icon = "fa-solid fa-list"
 
     column_list = [
@@ -194,7 +192,7 @@ class FlowElementAdmin(Admin, model=FlowElement):
     ]
 
 
-class QuestionAdmin(Admin, model=Question):
+class QuestionAdmin(CustomModelView, model=Question):
     icon = "fa-solid fa-question-circle"
 
     column_list = [
@@ -262,7 +260,7 @@ class QuestionAdmin(Admin, model=Question):
         )
 
 
-class QuestionAreaAdmin(Admin, model=QuestionArea):
+class QuestionAreaAdmin(CustomModelView, model=QuestionArea):
     icon = "fa-solid fa-map"
 
     column_list = [
@@ -301,7 +299,7 @@ class QuestionAreaAdmin(Admin, model=QuestionArea):
     ]
 
 
-class ExamAdmin(Admin, model=Exam):
+class ExamAdmin(CustomModelView, model=Exam):
     icon = "fa-solid fa-clipboard-check"
 
     column_list = [
@@ -337,7 +335,7 @@ class ExamAdmin(Admin, model=Exam):
     ]
 
 
-class OfficialQuestionSourceAdmin(Admin, model=OfficialQuestionSource):
+class OfficialQuestionSourceAdmin(CustomModelView, model=OfficialQuestionSource):
     icon = "fa-solid fa-certificate"
 
     column_list = [
@@ -367,7 +365,7 @@ class OfficialQuestionSourceAdmin(Admin, model=OfficialQuestionSource):
     ]
 
 
-class FlowUserFeedAdmin(Admin, model=FlowUserFeed):
+class FlowUserFeedAdmin(CustomModelView, model=FlowUserFeed):
     icon = "fa-solid fa-rss"
 
     column_list = [
@@ -399,7 +397,7 @@ class FlowUserFeedAdmin(Admin, model=FlowUserFeed):
     ]
 
 
-class CampaignAdmin(Admin, model=Campaign):
+class CampaignAdmin(CustomModelView, model=Campaign):
     icon = "fa-solid fa-bullhorn"
 
     column_list = [
@@ -454,7 +452,7 @@ class CampaignAdmin(Admin, model=Campaign):
     ]
 
 
-class ChoiceAdmin(Admin, model=Choice):
+class ChoiceAdmin(CustomModelView, model=Choice):
     icon = "fa-solid fa-check-circle"
 
     column_list = [
@@ -500,7 +498,7 @@ class ChoiceAdmin(Admin, model=Choice):
     ]
 
 
-class FlowQuestionAdmin(Admin, model=FlowQuestion):
+class FlowQuestionAdmin(CustomModelView, model=FlowQuestion):
     icon = "fa-solid fa-question"
 
     column_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
@@ -543,7 +541,7 @@ class FlowQuestionAdmin(Admin, model=FlowQuestion):
     ]
 
 
-class FlowQuestionUserAdmin(Admin, model=FlowQuestionUser):
+class FlowQuestionUserAdmin(CustomModelView, model=FlowQuestionUser):
     icon = "fa-solid fa-user-check"
 
     column_list = [

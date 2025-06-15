@@ -4,6 +4,7 @@ import os
 import sys
 
 from app.logging_config import get_logging_config
+from app.shared.admin import AdminWithImport
 
 sys.path.insert(
     1,
@@ -20,8 +21,8 @@ from fastapi.openapi.docs import (
 )
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
-from sqladmin import Admin
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
@@ -53,12 +54,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with db_manager.use_db(settings.database_url):
         async with use_redis():
             async with arq_client.arq_redis():
-                admin = Admin(
+                admin = AdminWithImport(
                     app,
-                    db_manager.engine,
+                    engine=db_manager.engine,
                     authentication_backend=authentication_backend,
                     base_url="/" + settings.admin_url,
+                    debug=settings.environment in [Environment.DEV, Environment.TEST],
                 )
+                import_routes: list[Route] = [
+                    Route(
+                        "/{identity}/import",
+                        endpoint=admin.import_csv,
+                        name="import_csv",
+                        methods=["GET", "POST"],
+                    ),
+                    Route(
+                        "/{identity}/import/template",
+                        endpoint=admin.import_template,
+                        name="import_template",
+                        methods=["GET"],
+                    ),
+                ]
+
+                # Insert import routes before the existing routes
+                admin.admin.router.routes = import_routes + admin.admin.router.routes
 
                 for view in admin_views:
                     admin.add_view(view)

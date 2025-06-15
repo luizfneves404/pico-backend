@@ -55,7 +55,9 @@ class Base(DeclarativeBase):
     )
     type_annotation_map = {
         datetime.datetime: TIMESTAMP(timezone=True),
-        enum.Enum: sqlalchemy.Enum(enum.Enum, length=50, native_enum=False),
+        enum.Enum: sqlalchemy.Enum(
+            enum.Enum, length=50, native_enum=False, create_constraint=True
+        ),
     }
 
     @declared_attr.directive

@@ -3,10 +3,10 @@ from app.in_app_notifications.models import (
     FlowInAppNotification,
     InAppNotification,
 )
-from app.shared.admin import Admin
+from app.shared.admin import CustomModelView
 
 
-class InAppNotificationAdmin(Admin, model=InAppNotification):
+class InAppNotificationAdmin(CustomModelView, model=InAppNotification):
     icon = "fa-solid fa-bell"
 
     column_list = [
@@ -48,7 +48,7 @@ class InAppNotificationAdmin(Admin, model=InAppNotification):
     ]
 
 
-class ExternalInAppNotificationAdmin(Admin, model=ExternalInAppNotification):
+class ExternalInAppNotificationAdmin(CustomModelView, model=ExternalInAppNotification):
     icon = "fa-solid fa-external-link"
 
     column_list = [
@@ -87,7 +87,7 @@ class ExternalInAppNotificationAdmin(Admin, model=ExternalInAppNotification):
     ]
 
 
-class FlowInAppNotificationAdmin(Admin, model=FlowInAppNotification):
+class FlowInAppNotificationAdmin(CustomModelView, model=FlowInAppNotification):
     icon = "fa-solid fa-stream"
 
     column_list = [

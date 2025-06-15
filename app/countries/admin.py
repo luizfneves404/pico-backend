@@ -1,9 +1,28 @@
+from typing import ClassVar
+
+from pydantic import BaseModel
+
 from app.countries.models import Country
-from app.shared.admin import Admin
+from app.shared.admin import CustomModelView
 
 
-class CountryAdmin(Admin, model=Country):
+class CountryImportSchema(BaseModel):
+    code: str
+    name: str
+    phone_code: str
+
+
+class CountryAdmin(CustomModelView[CountryImportSchema, Country], model=Country):
     icon = "fa-solid fa-flag"
+
+    # Enable CSV import
+    can_import: ClassVar[bool] = True
+    import_schema = CountryImportSchema
+    import_template_data = {
+        "code": "AA",
+        "name": "Arlekia Anamasia",
+        "phone_code": "690",
+    }
 
     column_list = [
         Country.id,
@@ -37,3 +56,10 @@ class CountryAdmin(Admin, model=Country):
         "name",
         "phone_code",
     ]
+
+    def to_orm_model(self, validated_data: CountryImportSchema) -> Country:
+        return Country(
+            code=validated_data.code,
+            name=validated_data.name,
+            phone_code=validated_data.phone_code,
+        )

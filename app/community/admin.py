@@ -1,8 +1,8 @@
 from app.community.models import Community, CommunityUser
-from app.shared.admin import Admin
+from app.shared.admin import CustomModelView
 
 
-class CommunityAdmin(Admin, model=Community):
+class CommunityAdmin(CustomModelView, model=Community):
     icon = "fa-solid fa-users"
 
     column_list = [
@@ -35,7 +35,7 @@ class CommunityAdmin(Admin, model=Community):
     ]
 
 
-class CommunityUserAdmin(Admin, model=CommunityUser):
+class CommunityUserAdmin(CustomModelView, model=CommunityUser):
     icon = "fa-solid fa-user-group"
 
     column_list = [

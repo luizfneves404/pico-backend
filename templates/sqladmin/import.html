@@ -1,0 +1,128 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Import {{ model_name }}</h3>
+      <div class="ms-auto">
+        <a href="{{ url_for('admin:list', identity=model_view.identity) }}" class="btn btn-secondary">
+          <i class="fa-solid fa-arrow-left"></i> Back to {{ model_view.name_plural }}
+        </a>
+      </div>
+    </div>
+    
+    <div class="card-body">
+      <div class="row mb-4">
+        <div class="col-md-8">
+          <h4>Import Instructions</h4>
+          <ul>
+            <li>Download the CSV template below to ensure proper formatting</li>
+            <li>Fill in your data using the template format</li>
+            <li>Maximum {{ max_rows }} rows allowed per import</li>
+            <li>Use UTF-8 encoding for your CSV file</li>
+            <li>Empty cells will be treated as NULL values</li>
+          </ul>
+        </div>
+        <div class="col-md-4">
+          <div class="card bg-light">
+            <div class="card-body text-center">
+              <h5>CSV Template</h5>
+              <p class="text-muted">Download a sample CSV file with the correct headers</p>
+              <a href="{{ url_for('admin:import_template', identity=model_view.identity) }}" 
+                 class="btn btn-outline-primary">
+                <i class="fa-solid fa-download"></i> Download Template
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-md-8">
+          <h4>Expected Columns</h4>
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>Column Name</th>
+                  <th>Required</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for column in sample_columns %}
+                <tr>
+                  <td><code>{{ column }}</code></td>
+                  <td>
+                    {% if column in model_view.import_schema.model_fields and model_view.import_schema.model_fields[column].is_required() %}
+                      <span class="badge bg-danger">Required</span>
+                    {% else %}
+                      <span class="badge bg-secondary">Optional</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <hr>
+
+      <form method="POST" enctype="multipart/form-data" id="import-form">
+        <div class="row">
+          <div class="col-md-6">
+            <div class="mb-3">
+              <label for="csv_file" class="form-label">Select CSV File</label>
+              <input type="file" class="form-control" id="csv_file" name="csv_file" accept=".csv" required>
+              <div class="form-text">Only CSV files are accepted</div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="mb-3">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="dry_run" name="dry_run" value="true" checked>
+                <label class="form-check-label" for="dry_run">
+                  Preview Only (Dry Run)
+                </label>
+                <div class="form-text">Check this to validate your data without importing it</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <button type="submit" class="btn btn-primary">
+            <i class="fa-solid fa-upload"></i> Upload and Process
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('import-form').addEventListener('submit', function(e) {
+  const fileInput = document.getElementById('csv_file');
+  const file = fileInput.files[0];
+  
+  if (!file) {
+    e.preventDefault();
+    alert('Please select a CSV file');
+    return;
+  }
+  
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    e.preventDefault();
+    alert('Please select a valid CSV file');
+    return;
+  }
+  
+  // Show loading state
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+});
+</script>
+{% endblock %}
