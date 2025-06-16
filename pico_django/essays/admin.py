@@ -1,17 +1,4 @@
-import essays.essay_service as essay_service
-from django.contrib import admin
-from django.db import models
-from essays.models import (
-    Essay,
-    EssayTopic,
-    EssayType,
-    ExtractedText,
-    Feedback,
-    FeedbackCategory,
-)
-
-
-class FeedbackCategoryInline(admin.TabularInline):
+"""class FeedbackCategoryInline(admin.TabularInline):
     model = FeedbackCategory
     extra = 1
 
@@ -104,3 +91,4 @@ class EssayTopicAdmin(admin.ModelAdmin):
     search_fields = ["id", "name"]
     fields = ["name"]
     list_display = ["id", "name"]
+"""

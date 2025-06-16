@@ -13,7 +13,6 @@ from app.flows.models import (
     FlowDifficulty,
     FlowQuestion,
     FlowQuestionUser,
-    FlowSourceType,
     QuestionAnswerType,
     QuestionArea,
     QuestionDifficulty,
@@ -132,6 +131,7 @@ class FlowInFeed(BaseModel):
 
     elements: list[FlowQuestionInFeed]  # first 5 questions? ask gpt if this is needed
     num_total_elements: int
+    num_users_answered: int
 
     @classmethod
     def from_orm_model(cls, flow: Flow) -> "FlowInFeed":
@@ -155,6 +155,7 @@ class FlowInFeed(BaseModel):
                 and (i == 0 or flow.elements[i - 1].order == flow.elements[i].order - 1)
             ],
             num_total_elements=flow.num_total_elements,
+            num_users_answered=flow.num_users_answered,
         )
 
 
@@ -179,6 +180,7 @@ class FlowDetail(FlowInFeed):
             difficulty=flow_in_feed.difficulty,
             elements=flow_in_feed.elements,
             num_total_elements=flow_in_feed.num_total_elements,
+            num_users_answered=flow_in_feed.num_users_answered,
             num_user_total_answers=flow.num_user_total_answers(user_id),
             num_user_correct_answers=flow.num_user_correct_answers(user_id),
         )
@@ -201,6 +203,7 @@ class FlowInSearch(FlowDetail):
             difficulty=flow_detail.difficulty,
             elements=flow_detail.elements,
             num_total_elements=flow_detail.num_total_elements,
+            num_users_answered=flow_detail.num_users_answered,
             num_user_total_answers=flow_detail.num_user_total_answers,
             num_user_correct_answers=flow_detail.num_user_correct_answers,
         )
@@ -248,6 +251,7 @@ class AddQuestionsToFlowFull(BaseModel):
     exam_country_code: str | None = None
     exam_education_level_id: int | None = None
     source_year: int | None = None
+
 
 class SubmitAnswerMultipleChoiceRequest(BaseModel):
     question_id: int

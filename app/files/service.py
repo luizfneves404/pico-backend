@@ -22,8 +22,8 @@ async def create_file(db_session: AsyncSession, upload_file: UploadFile) -> File
     Raises:
         ValueError: If the upload_file has no filename
     """
-    if upload_file.filename is None:
-        raise ValueError("File name is required")
+    if upload_file.filename is None or upload_file.size is None:
+        raise ValueError("File name and size are required")
 
     file_id = await run_in_threadpool(
         storage.upload,

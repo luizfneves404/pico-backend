@@ -25,28 +25,30 @@ class InstitutionType(StrEnum):
     COLLEGE = "college"
 
 
-class Institution(Base):
+class Institution(Base, kw_only=True):
     """Represents an institution offering an education level."""
 
     name: Mapped[str] = mapped_column(String(120))
-    user_submitted: Mapped[bool] = mapped_column(default=False)
-    institution_type: Mapped[InstitutionType] = mapped_column()
-    government_issued_code: Mapped[str] = mapped_column(String(50), default="")
-    country_code: Mapped[str] = mapped_column(ForeignKey("country.code"))
-    country: Mapped["Country"] = relationship(lazy="raise_on_sql")
-    location: Mapped[WKBElement | None] = mapped_column(
-        Geography(geometry_type="POINT", srid=4326)
+    country_code: Mapped[str] = mapped_column(ForeignKey("country.code"), default=None)
+    country: Mapped["Country"] = relationship(lazy="raise_on_sql", default=None)
+    level_id: Mapped[int] = mapped_column(
+        ForeignKey("education_level.id"), default=None
     )
-    address: Mapped[str] = mapped_column(Text, default="")
-    city: Mapped[str] = mapped_column(Text, default="")
-    administrative_category: Mapped[AdministrativeCategory] = mapped_column(
-        String(50), default=AdministrativeCategory.UNKNOWN
-    )
-    level_id: Mapped[int] = mapped_column(ForeignKey("education_level.id"))
     level: Mapped["EducationLevel"] = relationship(
         lazy="raise_on_sql",
         back_populates="institutions",
+        default=None,
     )
+    institution_type: Mapped[InstitutionType] = mapped_column()
+    user_submitted: Mapped[bool] = mapped_column()
+    administrative_category: Mapped[AdministrativeCategory] = mapped_column(String(50))
+
+    government_issued_code: Mapped[str] = mapped_column(String(50), default="")
+    location: Mapped[WKBElement | None] = mapped_column(
+        Geography(geometry_type="POINT", srid=4326), default=None
+    )
+    address: Mapped[str] = mapped_column(Text, default="")
+    city: Mapped[str] = mapped_column(Text, default="")
 
     __mapper_args__ = {
         "polymorphic_identity": InstitutionType.INSTITUTION,
@@ -67,48 +69,56 @@ class Institution(Base):
         return self.name
 
 
-class School(Institution):
+class School(Institution, kw_only=True):
     __mapper_args__ = {
         "polymorphic_identity": InstitutionType.SCHOOL,
     }
 
 
-class College(Institution):
+class College(Institution, kw_only=True):
     __mapper_args__ = {
         "polymorphic_identity": InstitutionType.COLLEGE,
     }
 
 
-class Course(Base):
+class Course(Base, kw_only=True):
     name_i18n: Mapped[dict[str, str]] = mapped_column(JSON)
-    user_submitted: Mapped[bool] = mapped_column(default=False)
+    user_submitted: Mapped[bool] = mapped_column()
+    level_id: Mapped[int] = mapped_column(
+        ForeignKey("education_level.id"), default=None
+    )
 
-    level_id: Mapped[int] = mapped_column(ForeignKey("education_level.id"))
     level: Mapped["EducationLevel"] = relationship(
         lazy="raise_on_sql",
         back_populates="courses",
+        default=None,
     )
 
     def __str__(self) -> str:
         return str(self.name_i18n)
 
 
-class LevelStage(Base):
+class LevelStage(Base, kw_only=True):
     """Represents a stage of an education level.
     For example, "First grade" would be a stage of the "High School" level.
     """
 
     name: Mapped[str] = mapped_column(String(120))
-
-    country_code: Mapped[str | None] = mapped_column(ForeignKey("country.code"))
-    country: Mapped["Country | None"] = relationship(lazy="raise_on_sql")
-
-    level_id: Mapped[int] = mapped_column(ForeignKey("education_level.id"))
+    level_id: Mapped[int] = mapped_column(
+        ForeignKey("education_level.id"), default=None
+    )
     level: Mapped["EducationLevel"] = relationship(
         lazy="raise_on_sql",
         back_populates="stages",
+        default=None,
     )
 
+    country_code: Mapped[str | None] = mapped_column(
+        ForeignKey("country.code"), default=None
+    )
+    country: Mapped["Country | None"] = relationship(
+        lazy="raise_on_sql", init=False, default=None
+    )
     is_default: Mapped[bool] = mapped_column(default=False)
 
     __table_args__ = (
@@ -121,34 +131,51 @@ class LevelStage(Base):
     )
 
 
-class EducationLevel(Base):
+class EducationLevel(Base, kw_only=True):
     name_i18n: Mapped[dict[str, str]] = mapped_column(JSON)
+
     stages: Mapped[list["LevelStage"]] = relationship(
         back_populates="level",
         lazy="raise_on_sql",
+        default_factory=list,
     )
     courses: Mapped[list["Course"]] = relationship(
         back_populates="level",
         lazy="raise_on_sql",
+        default_factory=list,
     )
-
     institutions: Mapped[list["Institution"]] = relationship(
         back_populates="level",
         lazy="raise_on_sql",
+        default_factory=list,
     )
 
 
-class EducationInfo(Base):
+class EducationInfo(Base, kw_only=True):
     level_id: Mapped[int] = mapped_column(
-        ForeignKey("education_level.id", ondelete="SET NULL")
+        ForeignKey("education_level.id"), default=None
     )
-    level: Mapped["EducationLevel"] = relationship(lazy="raise_on_sql")
+    level: Mapped["EducationLevel"] = relationship(
+        lazy="raise_on_sql",
+        default=None,
+    )
 
-    institution_id: Mapped[int | None] = mapped_column(ForeignKey("institution.id"))
-    institution: Mapped["Institution | None"] = relationship(lazy="raise_on_sql")
-
-    stage_id: Mapped[int | None] = mapped_column(ForeignKey("level_stage.id"))
-    stage: Mapped["LevelStage | None"] = relationship(lazy="raise_on_sql")
-
-    course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"))
-    course: Mapped["Course | None"] = relationship(lazy="raise_on_sql")
+    institution_id: Mapped[int | None] = mapped_column(
+        ForeignKey("institution.id"), default=None
+    )
+    institution: Mapped["Institution | None"] = relationship(
+        lazy="raise_on_sql",
+        default=None,
+    )
+    stage_id: Mapped[int | None] = mapped_column(
+        ForeignKey("level_stage.id"), default=None
+    )
+    stage: Mapped["LevelStage | None"] = relationship(
+        lazy="raise_on_sql",
+        default=None,
+    )
+    course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"), default=None)
+    course: Mapped["Course | None"] = relationship(
+        lazy="raise_on_sql",
+        default=None,
+    )

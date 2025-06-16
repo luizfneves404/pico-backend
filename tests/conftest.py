@@ -29,6 +29,7 @@ import app.users.jwt_token as jwt_token
 from alembic.command import upgrade
 from app.arq_worker import make_worker_settings
 from app.config import settings
+from app.countries.models import Country
 from app.database import DatabaseSessionManager, db_manager
 from app.deps import get_db_session
 from app.education.models import EducationLevel, LevelStage
@@ -39,7 +40,12 @@ from app.redis_client import get_redis, use_redis
 from app.users.models import User
 from app.ws.routers import get_db_session_websocket
 from tests.db_utils import alembic_config_from_url, tmp_database
-from tests.factories import EducationLevelFactory, LevelStageFactory, UserFactory
+from tests.factories import (
+    CountryFactory,
+    EducationLevelFactory,
+    LevelStageFactory,
+    UserFactory,
+)
 
 T = TypeVar("T")
 DEFAULT_TEST_PASSWORD = "defaultpassword"
@@ -355,3 +361,9 @@ async def level_stage(
 ) -> LevelStage:
     async with session.begin():
         return await LevelStageFactory.create(session, level_id=education_level.id)
+
+
+@pytest.fixture
+async def country(session: AsyncSession) -> Country:
+    async with session.begin():
+        return await CountryFactory.create(session)

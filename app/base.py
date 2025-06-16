@@ -5,11 +5,13 @@ import re
 from typing import Annotated, Any, Callable, cast
 
 import sqlalchemy
-from sqlalchemy import TIMESTAMP, MetaData, event, func
+from sqlalchemy import TIMESTAMP, MetaData, event, func, inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import (
+    MANYTOONE,
     DeclarativeBase,
     Mapped,
+    MappedAsDataclass,
     Session,
     declared_attr,
     has_inherited_table,
@@ -30,7 +32,8 @@ auto_now_insert_timestamp = Annotated[
 ]
 
 auto_now_update_timestamp = Annotated[
-    datetime.datetime, mapped_column(server_default=func.now(), onupdate=func.now())
+    datetime.datetime,
+    mapped_column(server_default=func.now(), onupdate=func.now()),
 ]
 
 
@@ -40,7 +43,7 @@ def camel_to_snake(name: str) -> str:
     return name.lower()
 
 
-class Base(DeclarativeBase):
+class Base(MappedAsDataclass, DeclarativeBase):
     metadata = MetaData(
         naming_convention={
             "all_column_names": lambda constraint, table: "_".join(
@@ -67,8 +70,15 @@ class Base(DeclarativeBase):
             return None
         return camel_to_snake(cls.__name__)
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    created_at: Mapped[auto_now_insert_timestamp]
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, init=False)
+    created_at: Mapped[auto_now_insert_timestamp] = mapped_column(init=False)
+
+    def __post_init__(self):
+        for m2o_rel in (
+            r for r in inspect(self).mapper.relationships if r.direction is MANYTOONE
+        ):
+            if self.__dict__.get(m2o_rel.key, False) is None:
+                self.__dict__.pop(m2o_rel.key, None)
 
 
 def register_rollback_action(session: AsyncSession, action: Callable[[], None]) -> None:

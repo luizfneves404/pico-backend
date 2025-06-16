@@ -16,14 +16,13 @@ class DeviceType(StrEnum):
     WEB = "web"
 
 
-class FCMDevice(Base):
+class FCMDevice(Base, kw_only=True):
     registration_id: Mapped[str] = mapped_column(String(255), unique=True)
     device_type: Mapped[DeviceType] = mapped_column()
-    active: Mapped[bool] = mapped_column(default=True)
-
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("user.id", ondelete="CASCADE"), unique=True
+        ForeignKey("user.id", ondelete="CASCADE"), unique=True, default=None
     )
     user: Mapped["User"] = relationship(
-        back_populates="fcm_device", lazy="raise_on_sql"
+        back_populates="fcm_device", lazy="raise_on_sql", default=None
     )
+    active: Mapped[bool] = mapped_column(default=True)

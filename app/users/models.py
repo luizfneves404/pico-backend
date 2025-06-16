@@ -35,7 +35,7 @@ class SignupSource(StrEnum):
     UNKNOWN = ""
 
 
-class User(Base):
+class User(Base, kw_only=True):
     name: Mapped[str] = mapped_column(String(150))
     username: Mapped[str] = mapped_column(String(50), unique=True)
     email: Mapped[str] = mapped_column(String(255), unique=True)
@@ -52,28 +52,32 @@ class User(Base):
     signup_source: Mapped[SignupSource] = mapped_column(default=SignupSource.UNKNOWN)
 
     current_education_id: Mapped[int | None] = mapped_column(
-        ForeignKey("education_info.id")
+        ForeignKey("education_info.id"), default=None
     )
     current_education: Mapped["EducationInfo | None"] = relationship(
-        foreign_keys=[current_education_id], lazy="raise_on_sql"
+        foreign_keys=[current_education_id],
+        lazy="raise_on_sql",
+        default=None,
     )
 
     intended_education_id: Mapped[int | None] = mapped_column(
-        ForeignKey("education_info.id"),
+        ForeignKey("education_info.id"), default=None
     )
     intended_education: Mapped["EducationInfo | None"] = relationship(
-        foreign_keys=[intended_education_id], lazy="raise_on_sql"
+        foreign_keys=[intended_education_id],
+        lazy="raise_on_sql",
+        default=None,
     )
 
     country_code: Mapped[str | None] = mapped_column(
         ForeignKey("country.code"), default=None
     )
     country: Mapped["Country | None"] = relationship(
-        foreign_keys=[country_code], lazy="raise_on_sql"
+        foreign_keys=[country_code], lazy="raise_on_sql", default=None
     )
 
     location: Mapped[WKBElement | None] = mapped_column(
-        Geography(geometry_type="POINT", srid=4326)
+        Geography(geometry_type="POINT", srid=4326), default=None
     )
 
     social_score: Mapped[int] = mapped_column(default=0)
@@ -81,24 +85,27 @@ class User(Base):
 
     # referral fields
     referred_by_id: Mapped[int | None] = mapped_column(
-        ForeignKey("user.id"),
+        ForeignKey("user.id"), default=None
     )
     referred_by: Mapped["User | None"] = relationship(
         foreign_keys=[referred_by_id],
         remote_side="User.id",
         back_populates="referrals",
         lazy="raise_on_sql",
+        default=None,
     )
     referrals: Mapped[list["User"]] = relationship(
         back_populates="referred_by",
         foreign_keys=[referred_by_id],
         lazy="raise_on_sql",
+        default_factory=list,
     )
 
     flows_created: Mapped[list["Flow"]] = relationship(
         back_populates="created_by",
         foreign_keys=[Flow.created_by_id],
         lazy="raise_on_sql",
+        default_factory=list,
     )
 
     user_online_info: Mapped["UserOnlineInfo"] = relationship(
@@ -106,6 +113,7 @@ class User(Base):
         lazy="raise_on_sql",
         cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
+        default=None,
     )
 
     fcm_device: Mapped["FCMDevice"] = relationship(
@@ -113,12 +121,14 @@ class User(Base):
         lazy="raise_on_sql",
         cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
+        default=None,
     )
 
     communities: Mapped[list["Community"]] = relationship(
         back_populates="users",
         lazy="raise_on_sql",
         secondary="community_user",
+        default_factory=list,
     )
 
     __table_args__ = (

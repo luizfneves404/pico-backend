@@ -41,7 +41,6 @@ async def create_superuser(
                 password=SecretStr(password),
                 referred_by_username="",
                 signup_source=SignupSource.OTHER,  # Mark as admin-created
-                country_code="BR",
             )
 
             hashed_password = get_password_hash(user_data.password.get_secret_value())
@@ -51,7 +50,8 @@ async def create_superuser(
                 email=str(user_data.email),
                 hashed_password=str(hashed_password),
                 is_superuser=True,
-                country_code=str(user_data.country_code),
+                google_id="",
+                apple_id="",
             )
 
             session.add(db_user)

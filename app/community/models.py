@@ -6,7 +6,7 @@ from app.base import Base
 from app.users.models import User
 
 
-class CommunityUser(Base):
+class CommunityUser(Base, kw_only=True):
     __table_args__ = (UniqueConstraint("community_id", "user_id"),)
 
     community_id: Mapped[int] = mapped_column(
@@ -15,7 +15,7 @@ class CommunityUser(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
 
 
-class Community(Base):
+class Community(Base, kw_only=True):
     name: Mapped[str] = mapped_column(String(255))
     subtitle: Mapped[str] = mapped_column(String(255))
 
@@ -23,6 +23,7 @@ class Community(Base):
         back_populates="communities",
         secondary="community_user",
         lazy="raise_on_sql",
+        default_factory=list,
     )
 
     __table_args__ = (UniqueConstraint("name", "subtitle"),)

@@ -43,6 +43,7 @@ def get_logging_config() -> dict[str, Any]:
         "root": {"level": "WARNING", "handlers": ["console", "admin_email"]},
         "loggers": {
             "app": {"level": "DEBUG", "propagate": True},
+            "tests": {"level": "DEBUG", "propagate": True},
             "alembic": {"level": "DEBUG", "propagate": True},
             "sqlalchemy.engine": {
                 "level": "DEBUG"

@@ -11,6 +11,7 @@ from sqlalchemy import (
     Index,
     Text,
     UniqueConstraint,
+    distinct,
     func,
     select,
 )
@@ -62,10 +63,12 @@ STARTING_DUEL_SCORE = 500
 logger = logging.getLogger(__name__)
 
 
-class FlowTranscriptionBlock(Base):
-    flow_id: Mapped[int] = mapped_column(ForeignKey("flow.id", ondelete="CASCADE"))
+class FlowTranscriptionBlock(Base, kw_only=True):
+    flow_id: Mapped[int] = mapped_column(
+        ForeignKey("flow.id", ondelete="CASCADE"), default=None
+    )
     flow: Mapped["Flow"] = relationship(
-        back_populates="transcription_blocks", lazy="raise_on_sql"
+        back_populates="transcription_blocks", lazy="raise_on_sql", default=None
     )
 
     block_text: Mapped[str] = mapped_column(Text, default="")
@@ -105,34 +108,41 @@ class FlowSourceType(StrEnum):
     FULL = "full"
 
 
-class Flow(Base):
-    code: Mapped[uuid.UUID] = mapped_column(server_default=func.gen_random_uuid())
+class Flow(Base, kw_only=True):
+    # Required fields first
     title: Mapped[str] = mapped_column(Text)
-    cover_image_id: Mapped[int | None] = mapped_column(ForeignKey("file.id"))
-    cover_image: Mapped["File | None"] = relationship(lazy="raise_on_sql")
-    created_by_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    created_by: Mapped["User"] = relationship(lazy="raise_on_sql")
-
-    action_link: Mapped[str] = mapped_column(Text, default="")
-    action_text: Mapped[str] = mapped_column(Text, default="")
-
-    max_num_questions: Mapped[int] = mapped_column(
-        default=0
-    )  # because we need to tell the frontend the total, in case we still havent finished doing all of them
-
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("user.id"), default=None)
+    created_by: Mapped["User"] = relationship(lazy="raise_on_sql", default=None)
     difficulty: Mapped[FlowDifficulty] = mapped_column()
     question_answer_type: Mapped[QuestionAnswerType] = mapped_column()
-
     source_type: Mapped[FlowSourceType] = mapped_column()
     flow_input_type: Mapped[FlowInputType] = (
         mapped_column()
     )  # determines input_topic vs transcription_blocks
+
+    # Optional fields with defaults
+    code: Mapped[uuid.UUID] = mapped_column(
+        server_default=func.gen_random_uuid(), init=False
+    )
+    cover_image_id: Mapped[int | None] = mapped_column(
+        ForeignKey("file.id"), default=None
+    )
+    cover_image: Mapped["File | None"] = relationship(lazy="raise_on_sql", default=None)
+    action_link: Mapped[str] = mapped_column(Text, default="")
+    action_text: Mapped[str] = mapped_column(Text, default="")
+    max_num_questions: Mapped[int] = mapped_column(
+        default=0
+    )  # because we need to tell the frontend the total, in case we still havent finished doing all of them
     input_topic: Mapped[str] = mapped_column(Text, default="")
 
+    # Relationships
+
     major_tags: Mapped[list[str]] = mapped_column(
-        postgresql.ARRAY(Text), default=[]
+        postgresql.ARRAY(Text), default_factory=list
     )  # should be derived from questions tags + questions official source
-    minor_tags: Mapped[list[str]] = mapped_column(postgresql.ARRAY(Text), default=[])
+    minor_tags: Mapped[list[str]] = mapped_column(
+        postgresql.ARRAY(Text), default_factory=list
+    )
 
     transcription_blocks: Mapped[list["FlowTranscriptionBlock"]] = relationship(
         back_populates="flow",
@@ -140,6 +150,7 @@ class Flow(Base):
         cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
         lazy="raise_on_sql",
+        default_factory=list,
     )
 
     elements: Mapped[list["FlowElement"]] = relationship(
@@ -148,6 +159,7 @@ class Flow(Base):
         cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
         lazy="raise_on_sql",
+        default_factory=list,
     )
 
     @hybrid_property
@@ -279,20 +291,56 @@ class Flow(Base):
             )
         ).scalar_subquery()
 
+    @hybrid_property
+    def num_users_answered(self) -> int:
+        """Count total users who answered at least one question for this flow."""
+        flow_question_users = [
+            fqu
+            for element in self.elements
+            if isinstance(element, FlowQuestion)
+            for fqu in element.flow_question_users
+        ]
+        return len(
+            {
+                fqu.user_id
+                for fqu in flow_question_users
+                if fqu.choice_id is not None or fqu.submitted_text != ""
+            }
+        )
 
-class FlowElement(Base):
-    flow_id: Mapped[int] = mapped_column(
-        ForeignKey("flow.id", ondelete="CASCADE"),
-    )
-    flow: Mapped[Flow] = relationship(back_populates="elements")
+    @num_users_answered.inplace.expression
+    @classmethod
+    def _num_users_answered_expression(cls):
+        """SQL expression for counting total users who answered at least one question for this flow."""
+        return (
+            select(func.count(distinct(FlowQuestionUser.user_id)))
+            .select_from(FlowQuestionUser)
+            .where(
+                FlowQuestionUser.flow_element_id.in_(
+                    select(FlowElement.id)
+                    .select_from(FlowElement)
+                    .where(FlowElement.flow_id == cls.id)
+                ),
+                (FlowQuestionUser.choice_id.is_not(None))
+                | (FlowQuestionUser.submitted_text != ""),
+            )
+        ).scalar_subquery()
 
+
+class FlowElement(Base, kw_only=True):
     order: Mapped[int] = mapped_column(
         CheckConstraint("order >= 0", name="flow_element_order_check"),
     )
     element_type: Mapped[str] = mapped_column(Text)
+    flow_id: Mapped[int] = mapped_column(
+        ForeignKey("flow.id", ondelete="CASCADE"), default=None
+    )
+    flow: Mapped[Flow] = relationship(
+        back_populates="elements", lazy="raise_on_sql", default=None
+    )
 
     question_id: Mapped[int | None] = mapped_column(
-        ForeignKey("question.id", ondelete="CASCADE")
+        ForeignKey("question.id", ondelete="CASCADE"), default=None
     )
 
     __table_args__ = (
@@ -321,50 +369,53 @@ class QuestionDifficulty(StrEnum):
     HARD = "Difícil"
 
 
-class Question(Base):
+class Question(Base, kw_only=True):
+    # Required fields first
+    difficulty: Mapped[QuestionDifficulty] = mapped_column()
+    source_type: Mapped[QuestionSourceType] = mapped_column()
+    answer_type: Mapped[QuestionAnswerType] = mapped_column()
     content_blocks: Mapped[list[ContentBlock]] = mapped_column(
-        ContentBlockListType, default=[]
+        ContentBlockListType,
     )
-
     is_active: Mapped[bool] = mapped_column(default=True)
-
     is_quantitative: Mapped[bool] = mapped_column(default=False)
 
-    major_tags: Mapped[list[str]] = mapped_column(postgresql.ARRAY(Text), default=[])
-    minor_tags: Mapped[list[str]] = mapped_column(postgresql.ARRAY(Text), default=[])
-
-    difficulty: Mapped[QuestionDifficulty] = mapped_column()
-
-    parameter_a: Mapped[float | None] = mapped_column()
-    parameter_b: Mapped[float | None] = mapped_column()
-    parameter_c: Mapped[float | None] = mapped_column()
-
+    # Optional fields with defaults
+    major_tags: Mapped[list[str]] = mapped_column(
+        postgresql.ARRAY(Text), default_factory=list
+    )
+    minor_tags: Mapped[list[str]] = mapped_column(
+        postgresql.ARRAY(Text), default_factory=list
+    )
     answer_content_blocks: Mapped[list[ContentBlock]] = mapped_column(
-        ContentBlockListType, default=[]
+        ContentBlockListType, default_factory=list
     )
 
+    # Optional fields without defaults
+    parameter_a: Mapped[float | None] = mapped_column(default=None)
+    parameter_b: Mapped[float | None] = mapped_column(default=None)
+    parameter_c: Mapped[float | None] = mapped_column(default=None)
     embedding: Mapped[list[float] | None] = mapped_column(
-        Vector(NUM_QUESTION_EMBEDDING_DIMENSIONS)
+        Vector(NUM_QUESTION_EMBEDDING_DIMENSIONS), default=None
     )
-
-    source_type: Mapped[QuestionSourceType] = mapped_column()
     official_source_id: Mapped[int | None] = mapped_column(
-        ForeignKey("official_question_source.id")
-    )
-    official_source: Mapped["OfficialQuestionSource | None"] = relationship(
-        lazy="raise_on_sql", foreign_keys=[official_source_id]
+        ForeignKey("official_question_source.id"), default=None
     )
     source_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("user.id")
+        ForeignKey("user.id"), default=None
     )  # add constraint according to source type
-    source_user: Mapped["User | None"] = relationship(lazy="raise_on_sql")
 
-    answer_type: Mapped[QuestionAnswerType] = mapped_column()
+    # Relationships
+    official_source: Mapped["OfficialQuestionSource | None"] = relationship(
+        lazy="raise_on_sql", foreign_keys=[official_source_id], default=None
+    )
+    source_user: Mapped["User | None"] = relationship(lazy="raise_on_sql", default=None)
 
     flows: Mapped[list["Flow"]] = relationship(
         lazy="raise_on_sql",
         secondary="flow_element",
         viewonly=True,
+        default_factory=list,
     )
 
     flow_questions: Mapped[list["FlowQuestion"]] = relationship(
@@ -372,6 +423,7 @@ class Question(Base):
         lazy="raise_on_sql",
         cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
+        default_factory=list,
     )
 
     choices: Mapped[list["Choice"]] = relationship(
@@ -380,6 +432,7 @@ class Question(Base):
         lazy="raise_on_sql",
         cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
+        default_factory=list,
     )
 
     __table_args__ = (
@@ -407,48 +460,63 @@ class Question(Base):
         return next(choice.id for choice in self.choices if choice.is_correct)
 
 
-class QuestionArea(Base):
+class QuestionArea(Base, kw_only=True):
     name: Mapped[str] = mapped_column(Text)
-    tags: Mapped[list[str]] = mapped_column(postgresql.ARRAY(Text), default=[])
-    education_level_id: Mapped[int] = mapped_column(ForeignKey("education_level.id"))
-    education_level: Mapped["EducationLevel"] = relationship(lazy="raise_on_sql")
-    country_code: Mapped[str] = mapped_column(ForeignKey("country.code"))
-    country: Mapped["Country"] = relationship(lazy="raise_on_sql")
-    course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"))
-    course: Mapped["Course | None"] = relationship(lazy="raise_on_sql")
+    education_level_id: Mapped[int] = mapped_column(
+        ForeignKey("education_level.id"), default=None
+    )
+    education_level: Mapped["EducationLevel"] = relationship(
+        lazy="raise_on_sql", default=None
+    )
+    country_code: Mapped[str] = mapped_column(ForeignKey("country.code"), default=None)
+    country: Mapped["Country"] = relationship(lazy="raise_on_sql", default=None)
+    course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"), default=None)
+    course: Mapped["Course | None"] = relationship(lazy="raise_on_sql", default=None)
+    tags: Mapped[list[str]] = mapped_column(
+        postgresql.ARRAY(Text), default_factory=list
+    )
 
 
-class Exam(Base):
+class Exam(Base, kw_only=True):
     """
     Represents an exam (bancada in portuguese)
     """
 
     name: Mapped[str] = mapped_column(Text)
 
-    country_code: Mapped[str] = mapped_column(ForeignKey("country.code"))
-    country: Mapped["Country"] = relationship(lazy="raise_on_sql")
+    country_code: Mapped[str] = mapped_column(ForeignKey("country.code"), default=None)
+    country: Mapped["Country"] = relationship(lazy="raise_on_sql", default=None)
 
-    education_level_id: Mapped[int] = mapped_column(ForeignKey("education_level.id"))
-    education_level: Mapped["EducationLevel"] = relationship(lazy="raise_on_sql")
+    education_level_id: Mapped[int] = mapped_column(
+        ForeignKey("education_level.id"), default=None
+    )
+    education_level: Mapped["EducationLevel"] = relationship(
+        lazy="raise_on_sql", default=None
+    )
 
-    course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"))
-    course: Mapped["Course | None"] = relationship(lazy="raise_on_sql")
+    course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"), default=None)
+    course: Mapped["Course | None"] = relationship(lazy="raise_on_sql", default=None)
 
 
-class OfficialQuestionSource(Base):
-    exam_id: Mapped[int] = mapped_column(ForeignKey("exam.id", ondelete="CASCADE"))
-    exam: Mapped["Exam"] = relationship(lazy="raise_on_sql")
-
+class OfficialQuestionSource(Base, kw_only=True):
     year: Mapped[int] = mapped_column()
+
+    exam_id: Mapped[int] = mapped_column(
+        ForeignKey("exam.id", ondelete="CASCADE"), default=None
+    )
+    exam: Mapped["Exam"] = relationship(lazy="raise_on_sql", default=None)
 
 
 class FlowQuestion(FlowElement):
     __mapper_args__ = {"polymorphic_identity": "flow_question"}
 
-    question: Mapped["Question"] = relationship(lazy="raise_on_sql")
+    question: Mapped["Question"] = relationship(lazy="raise_on_sql", default=None)
 
     users_answered: Mapped[list["User"]] = relationship(
-        secondary="flow_question_user", viewonly=True, lazy="raise_on_sql"
+        secondary="flow_question_user",
+        viewonly=True,
+        lazy="raise_on_sql",
+        init=False,
     )
 
     flow_question_users: Mapped[list["FlowQuestionUser"]] = relationship(
@@ -456,18 +524,21 @@ class FlowQuestion(FlowElement):
         lazy="raise_on_sql",
         cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
         passive_deletes=True,
+        default_factory=list,
     )
 
     answers: Mapped[list["FlowQuestionUser"]] = relationship(
         lazy="raise_on_sql",
         viewonly=True,
         primaryjoin="and_(FlowQuestionUser.flow_element_id == FlowQuestion.id, or_(FlowQuestionUser.choice_id != None, FlowQuestionUser.submitted_text != ''))",
+        init=False,
     )
 
     multiple_choice_answers: Mapped[list["FlowQuestionUser"]] = relationship(
         lazy="raise_on_sql",
         viewonly=True,
         primaryjoin="and_(FlowQuestionUser.flow_element_id == FlowQuestion.id, FlowQuestionUser.choice_id != None)",
+        init=False,
     )
 
     @hybrid_property
@@ -511,22 +582,42 @@ class FlowQuestion(FlowElement):
             )
         ).scalar_subquery()
 
+    @hybrid_property
+    def num_users_answered(self) -> int:
+        """Count total users who answered the question."""
+        return len(
+            {
+                fqu.user_id
+                for fqu in self.flow_question_users
+                if fqu.choice_id is not None or fqu.submitted_text != ""
+            }
+        )
 
-class Choice(Base):
-    image_id: Mapped[int | None] = mapped_column(ForeignKey("file.id"))
-    image: Mapped["File | None"] = relationship(lazy="raise_on_sql")
-    text: Mapped[str] = mapped_column(Text, default="")
-    is_correct: Mapped[bool] = mapped_column(default=False)
+    @num_users_answered.inplace.expression
+    @classmethod
+    def _num_users_answered_expression(cls):
+        """SQL expression for counting total users who answered the question."""
+        return (
+            select(func.count(distinct(FlowQuestionUser.user_id)))
+            .select_from(FlowQuestionUser)
+            .where(FlowQuestionUser.flow_element_id == cls.id)
+        ).scalar_subquery()
+
+
+class Choice(Base, kw_only=True):
     order: Mapped[int] = mapped_column(
         CheckConstraint("order >= 0", name="choice_order_check"),
     )
-
+    is_correct: Mapped[bool] = mapped_column()
     question_id: Mapped[int] = mapped_column(
-        ForeignKey("question.id", ondelete="CASCADE")
+        ForeignKey("question.id", ondelete="CASCADE"), default=None
     )
     question: Mapped["Question"] = relationship(
-        back_populates="choices", lazy="raise_on_sql"
+        back_populates="choices", lazy="raise_on_sql", default=None
     )
+    image_id: Mapped[int | None] = mapped_column(ForeignKey("file.id"), default=None)
+    image: Mapped["File | None"] = relationship(lazy="raise_on_sql", default=None)
+    text: Mapped[str] = mapped_column(Text, default="")
 
     __table_args__ = (UniqueConstraint("question_id", "order"),)
 
@@ -534,7 +625,7 @@ class Choice(Base):
         return self.text
 
 
-class FlowQuestionUser(Base):
+class FlowQuestionUser(Base, kw_only=True):
     """This stores information about a user's relationship to a flow question.
 
     An answer exists when either:
@@ -543,22 +634,25 @@ class FlowQuestionUser(Base):
     """
 
     flow_element_id: Mapped[int] = mapped_column(
-        ForeignKey("flow_element.id", ondelete="CASCADE")
+        ForeignKey("flow_element.id", ondelete="CASCADE"), default=None
     )
     flow_question: Mapped[FlowQuestion] = relationship(
-        back_populates="flow_question_users", lazy="raise_on_sql"
+        back_populates="flow_question_users", lazy="raise_on_sql", default=None
     )
 
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
-    user: Mapped["User"] = relationship(lazy="raise_on_sql")
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), default=None
+    )
+    user: Mapped["User"] = relationship(lazy="raise_on_sql", default=None)
 
-    choice_id: Mapped[int | None] = mapped_column(ForeignKey("choice.id"))
-    choice: Mapped["Choice | None"] = relationship(lazy="raise_on_sql")
+    grade: Mapped[float | None] = mapped_column(default=None)
+
+    choice_id: Mapped[int | None] = mapped_column(ForeignKey("choice.id"), default=None)
+    choice: Mapped["Choice | None"] = relationship(lazy="raise_on_sql", default=None)
 
     submitted_text: Mapped[str] = mapped_column(Text, default="")
 
     feedback: Mapped[str] = mapped_column(Text, default="")
-    grade: Mapped[float | None]
 
     __table_args__ = (
         UniqueConstraint("flow_element_id", "user_id"),
@@ -573,14 +667,18 @@ class FlowQuestionUser(Base):
     )
 
 
-class FlowUserFeed(Base):
+class FlowUserFeed(Base, kw_only=True):
     """Tracks when a user has seen a flow in their feed to prevent duplicates"""
 
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
-    user: Mapped["User"] = relationship(lazy="raise_on_sql")
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), default=None
+    )
+    user: Mapped["User"] = relationship(lazy="raise_on_sql", default=None)
 
-    flow_id: Mapped[int] = mapped_column(ForeignKey("flow.id", ondelete="CASCADE"))
-    flow: Mapped[Flow] = relationship(lazy="raise_on_sql")
+    flow_id: Mapped[int] = mapped_column(
+        ForeignKey("flow.id", ondelete="CASCADE"), default=None
+    )
+    flow: Mapped[Flow] = relationship(lazy="raise_on_sql", default=None)
 
     __table_args__ = (UniqueConstraint("user_id", "flow_id"),)
 
@@ -594,7 +692,7 @@ class CampaignType(StrEnum):
     ADD_PHONE_NUMBER = "add_phone_number"
 
 
-class Campaign(Base):
+class Campaign(Base, kw_only=True):
     """
     Represents a campaign with optional images, external link, and type.
 
@@ -611,25 +709,20 @@ class Campaign(Base):
         campaign_type: The type of the campaign.
     """
 
+    campaign_type: Mapped[CampaignType]
     name: Mapped[str] = mapped_column(Text)
     text: Mapped[str] = mapped_column(Text)
     external_link: Mapped[str] = mapped_column(Text)
     external_link_text: Mapped[str] = mapped_column(Text)
 
-    image1_id: Mapped[int | None] = mapped_column(ForeignKey("file.id"))
+    probability: Mapped[float] = mapped_column()
+
+    image1_id: Mapped[int | None] = mapped_column(ForeignKey("file.id"), default=None)
     image1: Mapped["File | None"] = relationship(
-        "File",
-        lazy="raise_on_sql",
-        foreign_keys=[image1_id],
+        lazy="raise_on_sql", foreign_keys=[image1_id], default=None
     )
 
-    image2_id: Mapped[int | None] = mapped_column(ForeignKey("file.id"))
+    image2_id: Mapped[int | None] = mapped_column(ForeignKey("file.id"), default=None)
     image2: Mapped["File | None"] = relationship(
-        "File",
-        lazy="raise_on_sql",
-        foreign_keys=[image2_id],
+        lazy="raise_on_sql", foreign_keys=[image2_id], default=None
     )
-
-    probability: Mapped[float] = mapped_column(default=0.0)
-
-    campaign_type: Mapped[CampaignType]

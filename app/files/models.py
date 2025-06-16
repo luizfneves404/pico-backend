@@ -15,7 +15,7 @@ from app.base import (
 from app.files.storage import storage
 
 
-class File(Base):
+class File(Base, kw_only=True):
     """Represents a file stored in the system.
 
     The file_id is a unique identifier that can be used to reference the file
@@ -25,7 +25,7 @@ class File(Base):
 
     file_id: Mapped[str] = mapped_column(String(length=255), unique=True)
     original_name: Mapped[str] = mapped_column(String(length=255))
-    updated_at: Mapped[auto_now_update_timestamp]
+    updated_at: Mapped[auto_now_update_timestamp] = mapped_column(init=False)
     size: Mapped[int] = mapped_column()
 
     def __str__(self) -> str:
@@ -113,6 +113,8 @@ async def create_file(db_session: AsyncSession, upload_file: UploadFile) -> File
         upload_file.file,
         upload_file.filename,
     )
+    if not upload_file.size:
+        raise ValueError("File size somehow is None")
 
     file = File(
         file_id=file_id,

@@ -5,7 +5,6 @@
 import functools
 import logging
 import os
-import random
 import tempfile
 import uuid
 from typing import Any, TypeVar
@@ -14,7 +13,6 @@ from factory.alchemy import SQLAlchemyOptions
 from factory.base import Factory
 from factory.declarations import (
     Iterator,
-    LazyAttribute,
     LazyFunction,
     RelatedFactoryList,
     Sequence,
@@ -26,14 +24,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_scoped_session
 import app.database as database
 from app.base import Base
 from app.community.models import Community
+from app.countries.models import Country
 from app.education.models import (
     AdministrativeCategory,
     College,
     Course,
     EducationInfo,
     EducationLevel,
+    Institution,
+    InstitutionType,
     LevelStage,
-    School,
 )
 from app.files.models import File
 from app.files.storage import storage
@@ -66,10 +66,6 @@ T = TypeVar("T", bound=Base)
 
 # Module-level cache for file data to ensure consistency across fields
 _file_cache: dict[str, dict[str, Any]] = {}
-
-
-def random_country_code(_: object) -> str:
-    return random.choice(["BR", "US", "CA", "DE", "FR", "IT", "ES", "PT", "NL", "BE"])
 
 
 def name_sequence(n: int) -> str:
@@ -127,6 +123,36 @@ def education_level_name_i18n_sequence(n: int) -> dict[str, str]:
 
 def level_stage_name_sequence(n: int) -> str:
     return f"Level Stage {n}"
+
+
+def country_code_sequence(n: int) -> str:
+    """
+    Generates the n-th two-letter uppercase code (AA to ZZ).
+
+    Args:
+        n: An integer representing the index of the desired code,
+           starting from 0 for 'AA'. Valid range is 0 to 675.
+
+    Returns:
+        A two-letter uppercase string.
+    """
+    if not (0 <= n < 26 * 26):
+        raise ValueError(
+            "n must be between 0 and 675 (inclusive) for two uppercase letters."
+        )
+
+    first_char_val = 65 + (n // 26)  # ASCII for 'A' is 65
+    second_char_val = 65 + (n % 26)
+
+    return chr(first_char_val) + chr(second_char_val)
+
+
+def country_name_sequence(n: int) -> str:
+    return f"Country {n}"
+
+
+def country_phone_code_sequence(n: int) -> str:
+    return f"{n:03d}"
 
 
 def create_file_data() -> dict[str, Any]:
@@ -216,15 +242,24 @@ class EducationLevelFactory(AsyncSQLAlchemyFactory[EducationLevel]):
     name_i18n = Sequence(education_level_name_i18n_sequence)
 
 
-class SchoolFactory(AsyncSQLAlchemyFactory[School]):
+class CountryFactory(AsyncSQLAlchemyFactory[Country]):
     class Meta:
-        model = School
+        model = Country
+
+    code = Sequence(country_code_sequence)
+    name = Sequence(country_name_sequence)
+    phone_code = Sequence(country_phone_code_sequence)
+
+
+class SchoolFactory(AsyncSQLAlchemyFactory[Institution]):
+    class Meta:
+        model = Institution
         sqlalchemy_get_or_create = ("name",)
 
     name = Sequence(school_name_sequence)
-    institution_type = "school"
+    institution_type = InstitutionType.SCHOOL
     user_submitted = False
-    country_code = LazyAttribute(random_country_code)
+    country = SubFactory(CountryFactory)
     level = SubFactory(EducationLevelFactory)
     administrative_category = AdministrativeCategory.UNKNOWN
 
@@ -235,7 +270,7 @@ class LevelStageFactory(AsyncSQLAlchemyFactory[LevelStage]):
         sqlalchemy_get_or_create = ("name",)
 
     name = Sequence(level_stage_name_sequence)
-    country_code = LazyAttribute(random_country_code)
+    country = SubFactory(CountryFactory)
     level = SubFactory(EducationLevelFactory)
 
 
@@ -258,7 +293,7 @@ class CollegeFactory(AsyncSQLAlchemyFactory[College]):
     user_submitted = False
     courses = RelatedFactoryList(CourseFactory, size=3)
     level = SubFactory(EducationLevelFactory)
-    country_code = LazyAttribute(random_country_code)
+    country = SubFactory(CountryFactory)
     administrative_category = AdministrativeCategory.UNKNOWN
 
 
@@ -294,6 +329,8 @@ class UserFactory(AsyncSQLAlchemyFactory[User]):
     name = Sequence(name_sequence)
     username = Sequence(username_sequence)
     hashed_password = LazyFunction(hashed_password_func)
+    google_id = ""
+    apple_id = ""
     email = Sequence(email_sequence)
     phone_number = Sequence(phone_number_sequence)
     is_superuser = False
@@ -302,7 +339,7 @@ class UserFactory(AsyncSQLAlchemyFactory[User]):
     signup_source = "social"
     current_education = SubFactory(EducationFactory)
     intended_education = SubFactory(EducationFactory)
-    country_code = LazyAttribute(random_country_code)
+    country = SubFactory(CountryFactory)
 
 
 class FileFactory(AsyncSQLAlchemyFactory[File]):
@@ -315,7 +352,6 @@ class FileFactory(AsyncSQLAlchemyFactory[File]):
     file_id = LazyFunction(get_file_id)
     original_name = LazyFunction(get_original_name_for_file_id)
     size = LazyFunction(get_size_for_file_id)
-    updated_at = Faker("date_time_this_year")
 
 
 def get_content_blocks() -> list[ContentBlock]:
@@ -345,7 +381,7 @@ class ExamFactory(AsyncSQLAlchemyFactory[Exam]):
     """Factory for creating Exam instances."""
 
     name = "ENEM"
-    country_code = "BR"
+    country = SubFactory(CountryFactory)
     education_level = SubFactory(EducationLevelFactory)
     course = SubFactory(CourseFactory)
 

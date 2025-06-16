@@ -7,10 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.education.models import (
+    AdministrativeCategory,
     Course,
     EducationInfo,
     EducationLevel,
     Institution,
+    InstitutionType,
     LevelStage,
 )
 
@@ -145,10 +147,11 @@ async def create_institution(
     """
     institution = Institution(
         name=name,
-        institution_type=institution_type,
+        institution_type=InstitutionType(institution_type),
         user_submitted=user_submitted,
         country_code=country_code,
         level_id=level_id,
+        administrative_category=AdministrativeCategory.UNKNOWN,
     )
     db_session.add(institution)
     try:

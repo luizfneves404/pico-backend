@@ -10,6 +10,7 @@ This file contains tests for the education API endpoints:
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.countries.models import Country
 from app.education.models import EducationLevel
 from app.education.service import create_course, create_institution
 
@@ -29,10 +30,13 @@ async def test_list_levels(
 
 
 async def test_list_levels_with_country_filter(
-    client: AsyncClient, session: AsyncSession, education_level: EducationLevel
+    client: AsyncClient,
+    session: AsyncSession,
+    education_level: EducationLevel,
+    country: Country,
 ) -> None:
     """Test listing education levels with country filter."""
-    response = await client.get("/api/education/levels?country_code=BR")
+    response = await client.get(f"/api/education/levels?country_code={country.code}")
     assert response.status_code == 200
     levels = response.json()
     # Should still return levels (stages might be filtered by country)
@@ -115,7 +119,9 @@ async def test_get_course_detail_not_found(client: AsyncClient) -> None:
 
 
 async def test_create_institution(
-    client: AsyncClient, education_level: EducationLevel
+    client: AsyncClient,
+    education_level: EducationLevel,
+    country: Country,
 ) -> None:
     """Test creating an institution via the API."""
     response = await client.post(
@@ -123,7 +129,7 @@ async def test_create_institution(
         json={
             "name": "Test University",
             "institution_type": "college",
-            "country_code": "BR",
+            "country_code": country.code,
             "level_id": education_level.id,
         },
     )
@@ -131,17 +137,19 @@ async def test_create_institution(
     institution_data = response.json()
     assert institution_data["name"] == "Test University"
     assert institution_data["institution_type"] == "college"
-    assert institution_data["country_code"] == "BR"
+    assert institution_data["country_code"] == country.code
 
 
-async def test_create_institution_invalid_data(client: AsyncClient) -> None:
+async def test_create_institution_invalid_data(
+    client: AsyncClient, country: Country
+) -> None:
     """Test creating an institution with invalid data."""
     response = await client.post(
         "/api/education/institutions/create",
         json={
             "name": "",  # Invalid empty name
             "institution_type": "college",
-            "country_code": "BR",
+            "country_code": country.code,
             "level_id": 1,
         },
     )
@@ -149,7 +157,10 @@ async def test_create_institution_invalid_data(client: AsyncClient) -> None:
 
 
 async def test_search_institutions_by_name(
-    client: AsyncClient, session: AsyncSession, education_level: EducationLevel
+    client: AsyncClient,
+    session: AsyncSession,
+    education_level: EducationLevel,
+    country: Country,
 ) -> None:
     """Test searching institutions by name."""
     # Create an institution using the service layer
@@ -158,7 +169,7 @@ async def test_search_institutions_by_name(
             session,
             name="MIT",
             institution_type="college",
-            country_code="US",
+            country_code=country.code,
             user_submitted=False,
             level_id=education_level.id,
         )
@@ -180,7 +191,10 @@ async def test_search_institutions_by_name(
 
 
 async def test_search_institutions_by_type(
-    client: AsyncClient, session: AsyncSession, education_level: EducationLevel
+    client: AsyncClient,
+    session: AsyncSession,
+    education_level: EducationLevel,
+    country: Country,
 ) -> None:
     """Test searching institutions by type."""
     # Create institutions of different types
@@ -189,7 +203,7 @@ async def test_search_institutions_by_type(
             session,
             name="Harvard School",
             institution_type="school",
-            country_code="US",
+            country_code=country.code,
             user_submitted=False,
             level_id=education_level.id,
         )
@@ -197,7 +211,7 @@ async def test_search_institutions_by_type(
             session,
             name="Harvard University",
             institution_type="college",
-            country_code="US",
+            country_code=country.code,
             user_submitted=False,
             level_id=education_level.id,
         )
@@ -218,7 +232,10 @@ async def test_search_institutions_by_type(
 
 
 async def test_search_institutions_with_location(
-    client: AsyncClient, session: AsyncSession, education_level: EducationLevel
+    client: AsyncClient,
+    session: AsyncSession,
+    education_level: EducationLevel,
+    country: Country,
 ) -> None:
     """Test searching institutions with location filter."""
     # Create an institution
@@ -227,7 +244,7 @@ async def test_search_institutions_with_location(
             session,
             name="Local University",
             institution_type="college",
-            country_code="BR",
+            country_code=country.code,
             user_submitted=False,
             level_id=education_level.id,
         )
@@ -249,7 +266,10 @@ async def test_search_institutions_with_location(
 
 
 async def test_get_institution_detail(
-    client: AsyncClient, session: AsyncSession, education_level: EducationLevel
+    client: AsyncClient,
+    session: AsyncSession,
+    education_level: EducationLevel,
+    country: Country,
 ) -> None:
     """Test getting institution details."""
     # Create an institution using the service layer
@@ -258,7 +278,7 @@ async def test_get_institution_detail(
             session,
             name="Test College",
             institution_type="college",
-            country_code="BR",
+            country_code=country.code,
             user_submitted=False,
             level_id=education_level.id,
         )
@@ -270,7 +290,7 @@ async def test_get_institution_detail(
     assert institution_data["id"] == institution.id
     assert institution_data["name"] == "Test College"
     assert institution_data["institution_type"] == "college"
-    assert institution_data["country_code"] == "BR"
+    assert institution_data["country_code"] == country.code
 
 
 async def test_get_institution_detail_not_found(client: AsyncClient) -> None:

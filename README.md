@@ -9,13 +9,8 @@
 
 - If a column needs unique=True, don't add index=True, because PostgreSQL automatically creates an index for unique constraints.
 - As defined in the type_annotation_map in base.py, mapped datetimes always use timezone=True, so no need to specify it.
-- As defined in base.py, all tables have tablename defined, an id column and a created_at column.
+- As defined in base.py, all tables have tablename defined, an id column and a created_at column. They are all also DataclassAsMapped, so be mindful of how the constructor for the dataclass will be created, depdending on what you do with the mapped_columns. The current convention for required foreign keys is to set default=None on both the _id and the relationship attribute, even though that is not the best for type checking (since one of them has to be passed but this will not be enforced statically). Prefer to use kw_only=True on the mapped classes. Also, use default_factory=list for list relationship sides.
 - When defining a column for a subclass and using single table inheritance, choose its type as non-nullable as in "Mapped[int]" but set nullable=True in the mapped_column definition of the new column. No need to set a default, it will be set to null. We do it like this because not all subclasses will have the new column, and it's better to have a nullable column than a non-nullable column with a default. Or, if dealing with a relationship, define the relationship attribute and the foreign key attribute in the subclass like "Mapped["ChildClass"]" and "child_id: Mapped[int]" but pass nullable=True to the foreign key mapped_column.
-
-## SQLAlchemy Usage
-
-- Always use "async with session.begin()" instead of explicit commit() and rollback() blocks. In path operation functions, this should not be needed since the dependency manages the transaction. autobegin is off to promote explicit control of transactions. If you need to have an error and not rollback when inside a transaction context (such as in a router function), use a nested transaction.
-- Remember to do flush after altering objects to send changes to the database, since autoflush is off. This was chosen so that we know exactly when we are hitting the database.
 - Don't use column_property with alias, since it will force some early evaluation and break things. Use hybrid_property instead.
 - If you use a third mapped class as a many-to-many table, add viewonly=True to the relationship connecting the two other mapped classes to avoid conflicts.
 - Use lazy="raise_on_sql" basically always on relationships, we don't want to do db access implicitly (even though using async sqlalchemy would already block this implicit db access, i prefer to be explicit). When you want to define a "strong" relationship, where a child should be deleted if the parent is, you probably want to use the following, plus any other kwargs you want to pass to the relationship:
@@ -27,6 +22,12 @@ relationship(
     passive_deletes=True,
 )
 ```
+
+## SQLAlchemy Usage
+
+- Always use "async with session.begin()" instead of explicit commit() and rollback() blocks. In path operation functions, this should not be needed since the dependency manages the transaction. autobegin is off to promote explicit control of transactions. If you need to have an error and not rollback when inside a transaction context (such as in a router function), use a nested transaction.
+- Remember to do flush after altering objects to send changes to the database, since autoflush is off. This was chosen so that we know exactly when we are hitting the database.
+
 
 ## FastAPI Usage
 
