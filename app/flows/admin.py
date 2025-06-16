@@ -137,7 +137,15 @@ class FlowAdmin(CustomModelView, model=Flow):
             .options(
                 selectinload(Flow.created_by),
                 selectinload(Flow.cover_image),
-                selectinload(Flow.elements),
+                selectinload(Flow.elements.of_type(FlowQuestion)).options(
+                    selectinload(FlowQuestion.question).options(
+                        selectinload(Question.choices),
+                        selectinload(Question.source_user),
+                        selectinload(Question.official_source),
+                    ),
+                    selectinload(FlowQuestion.flow_question_users),
+                ),
+                selectinload(Flow.elements.of_type(FlowElement)),
             )
             .where(Flow.id == int(value))
         )
@@ -388,48 +396,14 @@ class QuestionAdmin(CustomModelView, model=Question):
         """Process array fields before saving."""
         # Convert comma-separated strings to arrays
         if hasattr(form, "major_tags") and form.major_tags.data is not None:
-            if isinstance(form.major_tags.data, str):
-                model.major_tags = [
-                    tag.strip()
-                    for tag in form.major_tags.data.split(",")
-                    if tag.strip()
-                ]
-            elif isinstance(form.major_tags.data, list):
-                if len(form.major_tags.data) > 1 and all(
-                    len(str(item)) == 1 for item in form.major_tags.data
-                ):
-                    text = "".join(str(item) for item in form.major_tags.data)
-                    model.major_tags = [
-                        tag.strip() for tag in text.split(",") if tag.strip()
-                    ]
-                else:
-                    model.major_tags = [
-                        str(tag).strip()
-                        for tag in form.major_tags.data
-                        if str(tag).strip()
-                    ]
+            model.major_tags = [
+                tag.strip() for tag in form.major_tags.data.split(",") if tag.strip()
+            ]
 
         if hasattr(form, "minor_tags") and form.minor_tags.data is not None:
-            if isinstance(form.minor_tags.data, str):
-                model.minor_tags = [
-                    tag.strip()
-                    for tag in form.minor_tags.data.split(",")
-                    if tag.strip()
-                ]
-            elif isinstance(form.minor_tags.data, list):
-                if len(form.minor_tags.data) > 1 and all(
-                    len(str(item)) == 1 for item in form.minor_tags.data
-                ):
-                    text = "".join(str(item) for item in form.minor_tags.data)
-                    model.minor_tags = [
-                        tag.strip() for tag in text.split(",") if tag.strip()
-                    ]
-                else:
-                    model.minor_tags = [
-                        str(tag).strip()
-                        for tag in form.minor_tags.data
-                        if str(tag).strip()
-                    ]
+            model.minor_tags = [
+                tag.strip() for tag in form.minor_tags.data.split(",") if tag.strip()
+            ]
 
     def on_form_prefill(self, form, id) -> None:
         """Convert arrays to comma-separated strings for form display."""
@@ -504,20 +478,9 @@ class QuestionAreaAdmin(CustomModelView, model=QuestionArea):
         """Process array fields before saving."""
         # Convert comma-separated strings to arrays
         if hasattr(form, "tags") and form.tags.data is not None:
-            if isinstance(form.tags.data, str):
-                model.tags = [
-                    tag.strip() for tag in form.tags.data.split(",") if tag.strip()
-                ]
-            elif isinstance(form.tags.data, list):
-                if len(form.tags.data) > 1 and all(
-                    len(str(item)) == 1 for item in form.tags.data
-                ):
-                    text = "".join(str(item) for item in form.tags.data)
-                    model.tags = [tag.strip() for tag in text.split(",") if tag.strip()]
-                else:
-                    model.tags = [
-                        str(tag).strip() for tag in form.tags.data if str(tag).strip()
-                    ]
+            model.tags = [
+                tag.strip() for tag in form.tags.data.split(",") if tag.strip()
+            ]
 
     def on_form_prefill(self, form, id) -> None:
         """Convert arrays to comma-separated strings for form display."""
@@ -766,6 +729,25 @@ class FlowQuestionAdmin(CustomModelView, model=FlowQuestion):
         FlowQuestion.question_id,
         FlowQuestion.order,
     ]
+
+    def list_query(self, request: Request) -> Select[tuple[FlowQuestion]]:
+        return select(FlowQuestion).options(
+            selectinload(FlowQuestion.flow_question_users),
+            selectinload(FlowQuestion.flow),
+            selectinload(FlowQuestion.question),
+        )
+
+    async def get_object_for_details(self, value: Any) -> Any:
+        stmt = (
+            select(FlowQuestion)
+            .options(
+                selectinload(FlowQuestion.flow_question_users),
+                selectinload(FlowQuestion.flow),
+                selectinload(FlowQuestion.question),
+            )
+            .where(FlowQuestion.id == int(value))
+        )
+        return await self._get_object_by_pk(stmt)
 
 
 class FlowQuestionUserAdmin(CustomModelView, model=FlowQuestionUser):
