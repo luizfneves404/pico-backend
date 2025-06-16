@@ -1,21 +1,24 @@
 import csv
 import io
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, Generic, TypeVar, cast
+from typing import Any, Callable, ClassVar, TypeVar
 
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from markupsafe import Markup
 from pydantic import BaseModel, ValidationError
-from sqladmin import ModelView
-from sqladmin.application import Admin as SQLAdminAdmin
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute
 from starlette.datastructures import UploadFile
 
+from app.shared.bootstrap_sqladmin import monkey_patch_sqladmin
+
+monkey_patch_sqladmin()  # needs to run this before importing sqladmin
+from sqladmin import ModelView
+from sqladmin.application import Admin as SQLAdminAdmin
+
 MODEL_ATTR = str | InstrumentedAttribute[Any]
 ModelType = TypeVar("ModelType", bound=DeclarativeBase)
-ImportSchemaType = TypeVar("ImportSchemaType", bound=BaseModel)
 
 
 def bool_formatter(value: bool) -> Markup:
@@ -41,12 +44,10 @@ class CSVImportError(Exception):
 
 
 class AdminWithImport(SQLAdminAdmin):
-    def _find_custom_model_view(
-        self, identity: str
-    ) -> "CustomModelView[BaseModel, DeclarativeBase]":
+    def _find_custom_model_view(self, identity: str) -> "CustomModelView":
         for view in self.views:
             if isinstance(view, CustomModelView) and view.identity == identity:
-                return cast(CustomModelView[BaseModel, DeclarativeBase], view)
+                return view
         raise HTTPException(status_code=404)
 
     async def import_csv(self, request: Request) -> HTMLResponse | Response:
@@ -97,7 +98,7 @@ class AdminWithImport(SQLAdminAdmin):
     async def _handle_import_upload(
         self,
         request: Request,
-        model_view: "CustomModelView[ImportSchemaType, ModelType]",
+        model_view: "CustomModelView",
     ) -> HTMLResponse:
         """Handle CSV file upload and processing."""
         form = await request.form()
@@ -140,7 +141,7 @@ class AdminWithImport(SQLAdminAdmin):
         )
 
 
-class CustomModelView(ModelView, Generic[ImportSchemaType, ModelType]):
+class CustomModelView(ModelView):
     """Enhanced ModelView with simple CSV import functionality.
 
     Basic usage:
@@ -185,13 +186,13 @@ class CustomModelView(ModelView, Generic[ImportSchemaType, ModelType]):
     import_max_rows: ClassVar[int] = 100000
     """Maximum number of rows allowed for import."""
 
-    import_schema: type[ImportSchemaType] | None = None
+    import_schema: type[BaseModel] | None = None
 
     import_template_data: ClassVar[dict[str, Any]] = {}
 
     session_maker: async_sessionmaker[AsyncSession]
 
-    def to_orm_model(self, validated_data: ImportSchemaType) -> ModelType:
+    def to_orm_model(self, validated_data: Any) -> Any:
         """Convert Pydantic model to ORM model."""
         return self.model(**validated_data.model_dump())
 

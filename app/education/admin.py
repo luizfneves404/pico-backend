@@ -24,9 +24,7 @@ class InstitutionImportSchema(BaseModel):
     administrative_category: AdministrativeCategory
 
 
-class InstitutionAdmin(
-    CustomModelView[InstitutionImportSchema, Institution], model=Institution
-):
+class InstitutionAdmin(CustomModelView, model=Institution):
     icon = "fa-solid fa-university"
 
     column_list: ClassVar[
@@ -77,9 +75,7 @@ class EducationLevelImportSchema(BaseModel):
     name_i18n: str
 
 
-class EducationLevelAdmin(
-    CustomModelView[EducationLevelImportSchema, EducationLevel], model=EducationLevel
-):
+class EducationLevelAdmin(CustomModelView, model=EducationLevel):
     icon = "fa-solid fa-layer-group"
 
     column_list = [
@@ -113,9 +109,7 @@ class LevelStageImportSchema(BaseModel):
     is_default: bool
 
 
-class LevelStageAdmin(
-    CustomModelView[LevelStageImportSchema, LevelStage], model=LevelStage
-):
+class LevelStageAdmin(CustomModelView, model=LevelStage):
     icon = "fa-solid fa-stairs"
 
     column_list = [
@@ -158,7 +152,7 @@ class CourseImportSchema(BaseModel):
     user_submitted: bool
 
 
-class CourseModelAdmin(CustomModelView[CourseImportSchema, Course], model=Course):
+class CourseModelAdmin(CustomModelView, model=Course):
     icon = "fa-solid fa-book-open"
 
     column_list = [
@@ -199,9 +193,7 @@ class EducationInfoImportSchema(BaseModel):
     stage: int
 
 
-class EducationInfoAdmin(
-    CustomModelView[EducationInfoImportSchema, EducationInfo], model=EducationInfo
-):
+class EducationInfoAdmin(CustomModelView, model=EducationInfo):
     icon = "fa-solid fa-graduation-cap"
 
     column_list: ClassVar[

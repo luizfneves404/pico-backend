@@ -12,7 +12,7 @@ class CountryImportSchema(BaseModel):
     phone_code: str
 
 
-class CountryAdmin(CustomModelView[CountryImportSchema, Country], model=Country):
+class CountryAdmin(CustomModelView, model=Country):
     icon = "fa-solid fa-flag"
 
     # Enable CSV import

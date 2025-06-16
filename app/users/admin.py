@@ -7,7 +7,7 @@ from sqlalchemy.orm import InstrumentedAttribute, selectinload
 
 from app.shared.admin import CustomModelView
 from app.users import service as user_service
-from app.users.models import User
+from app.users.models import SignupSource, User
 
 
 def format_string(value: Any) -> Any:
@@ -30,7 +30,7 @@ class UserImportSchema(BaseModel):
     referred_by: int
 
 
-class UserAdmin(CustomModelView[UserImportSchema, User], model=User):
+class UserAdmin(CustomModelView, model=User):
     icon = "fa-solid fa-users"
 
     column_list: ClassVar[
@@ -173,8 +173,10 @@ class UserAdmin(CustomModelView[UserImportSchema, User], model=User):
             is_superuser=validated_data.is_superuser,
             is_bot=validated_data.is_bot,
             bot_difficulty=validated_data.bot_difficulty,
-            signup_source=validated_data.signup_source,
+            signup_source=SignupSource(validated_data.signup_source),
             current_education_id=validated_data.current_education,
             intended_education_id=validated_data.intended_education,
             referred_by_id=validated_data.referred_by,
+            google_id="",
+            apple_id="",
         )

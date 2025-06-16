@@ -3,6 +3,7 @@ from typing import Any, ClassVar, Sequence, Union
 from fastapi import Request
 from sqlalchemy import Select, select
 from sqlalchemy.orm import selectinload
+from wtforms.validators import Optional
 
 from app.flows.models import (
     Campaign,
@@ -33,7 +34,7 @@ class FlowAdmin(CustomModelView, model=Flow):
         Flow.difficulty,
         Flow.question_answer_type,
         Flow.source_type,
-        "num_total_questions",
+        Flow.max_num_questions,
         Flow.created_at,
     ]
     column_searchable_list = [
@@ -95,6 +96,15 @@ class FlowAdmin(CustomModelView, model=Flow):
         Flow.major_tags,
         Flow.minor_tags,
     ]
+
+    form_args = {
+        "major_tags": {
+            "validators": [Optional()],
+        },
+        "minor_tags": {
+            "validators": [Optional()],
+        },
+    }
 
     def list_query(self, request: Request) -> Select[tuple[Flow]]:
         return select(Flow).options(
