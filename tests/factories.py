@@ -18,7 +18,8 @@ from factory.declarations import (
     Sequence,
     SubFactory,
 )
-from factory.faker import Faker
+from factory.faker import Faker as FactoryFaker
+from faker import Faker
 from sqlalchemy.ext.asyncio import AsyncSession, async_scoped_session
 
 import app.database as database
@@ -126,25 +127,10 @@ def level_stage_name_sequence(n: int) -> str:
 
 
 def country_code_sequence(n: int) -> str:
-    """
-    Generates the n-th two-letter uppercase code (AA to ZZ).
-
-    Args:
-        n: An integer representing the index of the desired code,
-           starting from 0 for 'AA'. Valid range is 0 to 675.
-
-    Returns:
-        A two-letter uppercase string.
-    """
-    if not (0 <= n < 26 * 26):
-        raise ValueError(
-            "n must be between 0 and 675 (inclusive) for two uppercase letters."
-        )
-
-    first_char_val = 65 + (n // 26)  # ASCII for 'A' is 65
-    second_char_val = 65 + (n % 26)
-
-    return chr(first_char_val) + chr(second_char_val)
+    n = n % (26 * 26)  # Wrap around after 676
+    first = n // 26
+    second = n % 26
+    return chr(ord("A") + first) + chr(ord("A") + second)
 
 
 def country_name_sequence(n: int) -> str:
@@ -254,7 +240,6 @@ class CountryFactory(AsyncSQLAlchemyFactory[Country]):
 class SchoolFactory(AsyncSQLAlchemyFactory[Institution]):
     class Meta:
         model = Institution
-        sqlalchemy_get_or_create = ("name",)
 
     name = Sequence(school_name_sequence)
     institution_type = InstitutionType.SCHOOL
@@ -267,7 +252,6 @@ class SchoolFactory(AsyncSQLAlchemyFactory[Institution]):
 class LevelStageFactory(AsyncSQLAlchemyFactory[LevelStage]):
     class Meta:
         model = LevelStage
-        sqlalchemy_get_or_create = ("name",)
 
     name = Sequence(level_stage_name_sequence)
     country = SubFactory(CountryFactory)
@@ -277,7 +261,6 @@ class LevelStageFactory(AsyncSQLAlchemyFactory[LevelStage]):
 class CourseFactory(AsyncSQLAlchemyFactory[Course]):
     class Meta:
         model = Course
-        sqlalchemy_get_or_create = ("name",)
 
     name_i18n = Sequence(course_name_i18n_sequence)
     level = SubFactory(EducationLevelFactory)
@@ -302,7 +285,6 @@ class CommunityFactory(AsyncSQLAlchemyFactory[Community]):
 
     class Meta:
         model = Community
-        sqlalchemy_get_or_create = ("name",)
 
     name = Sequence(community_name_sequence)
     subtitle = Sequence(community_subtitle_sequence)
@@ -324,7 +306,6 @@ class UserFactory(AsyncSQLAlchemyFactory[User]):
 
     class Meta:
         model = User
-        sqlalchemy_get_or_create = ("username",)
 
     name = Sequence(name_sequence)
     username = Sequence(username_sequence)
@@ -347,7 +328,6 @@ class FileFactory(AsyncSQLAlchemyFactory[File]):
 
     class Meta:
         model = File
-        sqlalchemy_get_or_create = ("file_id",)
 
     file_id = LazyFunction(get_file_id)
     original_name = LazyFunction(get_original_name_for_file_id)
@@ -361,18 +341,18 @@ def get_content_blocks() -> list[ContentBlock]:
             style="paragraph",
             content=[
                 RichText(
-                    text="This is sample question text for testing purposes.",
-                    bold=False,
-                    italic=False,
-                    underline=False,
-                    strikethrough=False,
+                    text=Faker().paragraph(),
+                    bold=Faker().boolean(),
+                    italic=Faker().boolean(),
+                    underline=Faker().boolean(),
+                    strikethrough=Faker().boolean(),
                 ),
             ],
         ),
         ImageBlock(
             block_type="image",
-            file_id="file1",
-            alt="This is a sample image for testing purposes.",
+            file_url=Faker().url(),
+            alt=Faker().sentence(),
         ),
     ]
 
@@ -387,7 +367,6 @@ class ExamFactory(AsyncSQLAlchemyFactory[Exam]):
 
     class Meta:
         model = Exam
-        sqlalchemy_get_or_create = ("name",)
 
 
 class OfficialQuestionSourceFactory(AsyncSQLAlchemyFactory[OfficialQuestionSource]):
@@ -405,7 +384,6 @@ class QuestionFactory(AsyncSQLAlchemyFactory[Question]):
 
     class Meta:
         model = Question
-        sqlalchemy_get_or_create = ("content_blocks",)
 
     content_blocks = LazyFunction(get_content_blocks)
     answer_content_blocks = LazyFunction(get_content_blocks)
@@ -413,12 +391,12 @@ class QuestionFactory(AsyncSQLAlchemyFactory[Question]):
     is_active = True
     is_quantitative = False
     difficulty = Iterator(QuestionDifficulty)
-    major_tags = Faker("words", nb=3)
-    minor_tags = Faker("words", nb=3)
+    major_tags = FactoryFaker("words", nb=3)
+    minor_tags = FactoryFaker("words", nb=3)
     parameter_a = 1.0
     parameter_b = 2.0
     parameter_c = 3.0
-    embedding = Faker("random_elements", elements=[0.0, 1.0], length=1024)
+    embedding = FactoryFaker("random_elements", elements=[0.0, 1.0], length=1024)
     source_type = QuestionSourceType.OFFICIAL
     official_source = SubFactory(OfficialQuestionSourceFactory)
     source_user_id = None
@@ -430,9 +408,8 @@ class ChoiceFactory(AsyncSQLAlchemyFactory[Choice]):
 
     class Meta:
         model = Choice
-        sqlalchemy_get_or_create = ("text",)
 
-    text = Faker("sentence")
+    text = FactoryFaker("sentence")
     is_correct = Iterator([True, False, True, False, False, True])
     order = Sequence(lambda n: n)
     question = SubFactory(QuestionFactory)
@@ -460,15 +437,15 @@ class FlowFactory(AsyncSQLAlchemyFactory[Flow]):
     cover_image = SubFactory(FileFactory)
     difficulty = FlowDifficulty.ALL
     flow_input_type = FlowInputType.TOPIC
-    input_topic = Faker("paragraph")
+    input_topic = FactoryFaker("paragraph")
     created_by = SubFactory(UserFactory)
-    action_link = Faker("url")
-    action_text = Faker("sentence")
+    action_link = FactoryFaker("url")
+    action_text = FactoryFaker("sentence")
     question_answer_type = QuestionAnswerType.MULTIPLE_CHOICE
     source_type = FlowSourceType.OFFICIAL
     max_num_questions = 10
-    major_tags = Faker("words", nb=3)
-    minor_tags = Faker("words", nb=3)
+    major_tags = FactoryFaker("words", nb=3)
+    minor_tags = FactoryFaker("words", nb=3)
 
 
 class FlowElementFactory(AsyncSQLAlchemyFactory[FlowElement]):
@@ -482,7 +459,7 @@ class FlowElementFactory(AsyncSQLAlchemyFactory[FlowElement]):
     element_type = "flow_element"
     is_active = True
     is_correct = False
-    text = Faker("paragraph")
+    text = FactoryFaker("paragraph")
     subject = "Matemática"
     source = "ENEM"
 
@@ -509,9 +486,8 @@ class ExternalInAppNotificationFactory(
 
     seen = False
     user = None
-    text = Faker("sentence")
-    in_app_notification_type = "external_in_app_notification"
-    external_url = Faker("url")
+    text = FactoryFaker("sentence")
+    external_url = FactoryFaker("url")
 
 
 class FlowInAppNotificationFactory(AsyncSQLAlchemyFactory[FlowInAppNotification]):
@@ -522,6 +498,5 @@ class FlowInAppNotificationFactory(AsyncSQLAlchemyFactory[FlowInAppNotification]
 
     seen = False
     user = None
-    text = Faker("sentence")
-    in_app_notification_type = "flow_in_app_notification"
+    text = FactoryFaker("sentence")
     flow = SubFactory(FlowFactory)

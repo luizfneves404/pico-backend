@@ -102,9 +102,9 @@ class FileAdmin(CustomModelView, model=File):
         # For now, we'll just handle the first file
         # In the future, we could zip multiple files together
         pk = pks[0]
-        file = await self.get_object_for_details(pk)
+        file: File = await self.get_object_for_details(pk)
         if not file:
             raise ValueError(f"File with id {pk} not found")
 
-        url = await run_in_threadpool(storage.get_url, file.file_id)
+        url = await file.get_url()
         return RedirectResponse(url=url)

@@ -106,12 +106,17 @@ async def process_token(
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[JWT_ALGORITHM])
         if expected_type and payload.get("token_type") != expected_type:
+            logger.info(
+                f"Token type {payload.get('token_type')} is not {expected_type}"
+            )
             raise InvalidTokenError(
                 f"Token type {payload.get('token_type')} is not {expected_type}"
             )
         user = await service.get_user(db_session, id=payload.get("user_id"))
         if not user:
+            logger.info(f"User not found for token. User id: {payload.get('user_id')}")
             raise UserNotFoundError("User not found")
+        logger.debug(f"User found for token. User id: {user.id}")
         return user
     except jwt.ExpiredSignatureError:
         logger.info(f"Expired {expected_type} token")

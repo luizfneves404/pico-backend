@@ -42,7 +42,7 @@ class StorageBackend(ABC):
 
     @abstractmethod
     def get_url(self, file_id: str, expiration: int = 3600) -> str:
-        """Get a URL to access a file.
+        """Get a URL to access a file. Can be a blocking method.
 
         Args:
             file_id: The unique identifier of the file
@@ -138,6 +138,8 @@ class LocalStorage(StorageBackend):
             raise FileNotFoundError(f"File {file_id} not found in local storage")
         return open(file_path, "rb")
 
+
+storage: StorageBackend
 
 # Create storage instances based on configuration
 if isinstance(settings.storage, S3Config):

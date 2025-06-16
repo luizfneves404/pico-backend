@@ -75,7 +75,9 @@ async def test_flow_feed(user_client: AsyncClient, user: User, session: AsyncSes
         assert isinstance(flow["code"], str)
         assert isinstance(flow["created_at"], str)
         assert isinstance(flow["title"], str)
-        assert flow["cover_image"] is None or isinstance(flow["cover_image"], str)
+        assert flow["cover_image_url"] is None or isinstance(
+            flow["cover_image_url"], str
+        )
         assert isinstance(flow["action_link"], str)
         assert isinstance(flow["action_text"], str)
         assert isinstance(flow["created_by"], dict)
@@ -163,7 +165,9 @@ async def test_discover_flows(
         assert isinstance(flow["code"], str)
         assert isinstance(flow["created_at"], str)
         assert isinstance(flow["title"], str)
-        assert flow["cover_image"] is None or isinstance(flow["cover_image"], str)
+        assert flow["cover_image_url"] is None or isinstance(
+            flow["cover_image_url"], str
+        )
         assert isinstance(flow["action_link"], str)
         assert isinstance(flow["action_text"], str)
         assert isinstance(flow["created_by"], dict)
@@ -236,8 +240,8 @@ async def test_get_flow_details(
     assert response_data["created_at"] == flow.created_at.strftime(
         "%Y-%m-%dT%H:%M:%S.%fZ"
     )
-    assert response_data["cover_image"] == (
-        flow.cover_image.url if flow.cover_image else None
+    assert response_data["cover_image_url"] == (
+        await flow.cover_image.get_url() if flow.cover_image else None
     )
     assert response_data["action_link"] == flow.action_link
     assert response_data["action_text"] == flow.action_text
@@ -815,7 +819,7 @@ async def test_search_flows_basic_functionality(
         assert "code" in flow
         assert "created_at" in flow
         assert "title" in flow
-        assert "cover_image" in flow
+        assert "cover_image_url" in flow
         assert "action_link" in flow
         assert "action_text" in flow
         assert "created_by" in flow

@@ -34,6 +34,11 @@ class InAppNotification(Base, kw_only=True):
 
 
 class ExternalInAppNotification(InAppNotification, kw_only=True):
+    in_app_notification_type: Mapped[InAppNotificationType] = mapped_column(
+        use_existing_column=True,
+        init=False,
+        insert_default=InAppNotificationType.IN_APP_NOTIFICATION,
+    )
     __mapper_args__ = {
         "polymorphic_identity": InAppNotificationType.EXTERNAL,
         "polymorphic_load": "inline",
@@ -43,6 +48,9 @@ class ExternalInAppNotification(InAppNotification, kw_only=True):
 
 
 class FlowInAppNotification(InAppNotification, kw_only=True):
+    in_app_notification_type: Mapped[InAppNotificationType] = mapped_column(
+        use_existing_column=True, init=False, insert_default=InAppNotificationType.FLOW
+    )
     __mapper_args__ = {
         "polymorphic_identity": InAppNotificationType.FLOW,
         "polymorphic_load": "inline",

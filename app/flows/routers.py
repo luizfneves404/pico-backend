@@ -58,7 +58,7 @@ async def feed(
     )
     if campaign:
         campaign_item = CampaignFeedItem(
-            item_type="campaign", item=CampaignInFeed.from_orm_model(campaign)
+            item_type="campaign", item=await CampaignInFeed.from_orm_model(campaign)
         )
     else:
         campaign_item = None
@@ -70,7 +70,7 @@ async def feed(
     )
 
     feed_items: list[FeedItem] = [
-        FlowFeedItem(item_type="flow", item=FlowInFeed.from_orm_model(flow))
+        FlowFeedItem(item_type="flow", item=await FlowInFeed.from_orm_model(flow))
         for flow in flows
     ]
 
@@ -94,7 +94,7 @@ async def discover_flows(
     flows = await flow_service.discover_flows(
         db_session, user_id=current_user.id, num_flows=pagination.size
     )
-    flows_in_feed = [FlowInFeed.from_orm_model(flow) for flow in flows]
+    flows_in_feed = [await FlowInFeed.from_orm_model(flow) for flow in flows]
     return paginate(flows_in_feed, pagination)
 
 
@@ -112,7 +112,7 @@ async def search_flows(
         pagination=pagination,
     )
     flows_in_search = [
-        FlowInSearch.from_orm_model_for_user(flow, user_id=current_user.id)
+        await FlowInSearch.from_orm_model_for_user(flow, user_id=current_user.id)
         for flow in flows
     ]
     return paginate(flows_in_search, pagination)
@@ -123,12 +123,12 @@ async def flow_detail(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
     id: int,
-):
+) -> FlowDetail:
     """Get details for a specific flow"""
 
     try:
         flow = await flow_service.get_flow_detail(db_session, flow_id=id)
-        return FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
+        return await FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
     except flow_service.FlowNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
@@ -141,7 +141,7 @@ async def create_flow(
     current_user: CurrentUserAnnotated,
     topic: Annotated[str, Form()] = "",
     input_files: list[UploadFile] = FastAPIFile(default=None),
-):
+) -> FlowDetail:
     """Create a new flow from a topic with optional files"""
 
     try:
@@ -158,7 +158,7 @@ async def create_flow(
             code=uuid4(),
             created_at=datetime.now(timezone.utc),
             title=f"Flow sobre {topic}",
-            cover_image=None,
+            cover_image_url=None,
             action_link="",
             action_text="Continuar estudando",
             created_by=SimpleUser(id=current_user.id, username=current_user.username),
@@ -168,6 +168,7 @@ async def create_flow(
             num_total_elements=0,
             num_user_total_answers=0,
             num_user_correct_answers=0,
+            num_users_answered=0,
         )
     except flow_service.FlowValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -181,7 +182,7 @@ async def add_questions_to_flow_official(
     current_user: CurrentUserAnnotated,
     id: int,
     add_questions_to_flow_official: AddQuestionsToFlowOfficial,
-):
+) -> FlowDetail:
     """Add questions to a flow"""
 
     try:
@@ -196,7 +197,7 @@ async def add_questions_to_flow_official(
             code=uuid4(),
             created_at=datetime.now(timezone.utc),
             title="Flow com questões oficiais",
-            cover_image=None,
+            cover_image_url=None,
             action_link="",
             action_text="Continuar estudando",
             created_by=SimpleUser(id=current_user.id, username=current_user.username),
@@ -206,6 +207,7 @@ async def add_questions_to_flow_official(
             num_total_elements=10,
             num_user_total_answers=0,
             num_user_correct_answers=0,
+            num_users_answered=0,
         )
     except flow_service.FlowNotFoundError:
         raise HTTPException(
@@ -219,7 +221,7 @@ async def add_questions_to_flow_ai(
     current_user: CurrentUserAnnotated,
     id: int,
     add_questions_to_flow_ai: AddQuestionsToFlowAI,
-):
+) -> FlowDetail:
     """Add questions to a flow"""
 
     try:
@@ -234,7 +236,7 @@ async def add_questions_to_flow_ai(
             code=uuid4(),
             created_at=datetime.now(timezone.utc),
             title="Flow com questões de IA",
-            cover_image=None,
+            cover_image_url=None,
             action_link="",
             action_text="Continuar estudando",
             created_by=SimpleUser(id=current_user.id, username=current_user.username),
@@ -244,6 +246,7 @@ async def add_questions_to_flow_ai(
             num_total_elements=15,
             num_user_total_answers=0,
             num_user_correct_answers=0,
+            num_users_answered=0,
         )
     except flow_service.FlowNotFoundError:
         raise HTTPException(
@@ -257,7 +260,7 @@ async def add_questions_to_flow_full(
     current_user: CurrentUserAnnotated,
     id: int,
     add_questions_to_flow_full: AddQuestionsToFlowFull,
-):
+) -> FlowDetail:
     """Add AI and official questions to a flow"""
 
     try:
@@ -272,7 +275,7 @@ async def add_questions_to_flow_full(
             code=uuid4(),
             created_at=datetime.now(timezone.utc),
             title="Flow completo com questões oficiais e IA",
-            cover_image=None,
+            cover_image_url=None,
             action_link="",
             action_text="Continuar estudando",
             created_by=SimpleUser(id=current_user.id, username=current_user.username),
@@ -282,6 +285,7 @@ async def add_questions_to_flow_full(
             num_total_elements=25,
             num_user_total_answers=0,
             num_user_correct_answers=0,
+            num_users_answered=0,
         )
     except flow_service.FlowNotFoundError:
         raise HTTPException(
@@ -323,7 +327,7 @@ async def delete_flow(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
     id: int,
-):
+) -> None:
     """Delete a flow"""
 
     try:
@@ -344,7 +348,8 @@ async def user_flows(
 
     flows = await flow_service.list_user_flows(db_session, user_id=user_id)
     return [
-        FlowInSearch.from_orm_model_for_user(flow, user_id=user_id) for flow in flows
+        await FlowInSearch.from_orm_model_for_user(flow, user_id=user_id)
+        for flow in flows
     ]
 
 

@@ -109,7 +109,6 @@ class FlowSourceType(StrEnum):
 
 
 class Flow(Base, kw_only=True):
-    # Required fields first
     title: Mapped[str] = mapped_column(Text)
     created_by_id: Mapped[int] = mapped_column(ForeignKey("user.id"), default=None)
     created_by: Mapped["User"] = relationship(lazy="raise_on_sql", default=None)
@@ -120,7 +119,6 @@ class Flow(Base, kw_only=True):
         mapped_column()
     )  # determines input_topic vs transcription_blocks
 
-    # Optional fields with defaults
     code: Mapped[uuid.UUID] = mapped_column(
         server_default=func.gen_random_uuid(), init=False
     )
@@ -134,8 +132,6 @@ class Flow(Base, kw_only=True):
         default=0
     )  # because we need to tell the frontend the total, in case we still havent finished doing all of them
     input_topic: Mapped[str] = mapped_column(Text, default="")
-
-    # Relationships
 
     major_tags: Mapped[list[str]] = mapped_column(
         postgresql.ARRAY(Text), default_factory=list
@@ -370,7 +366,6 @@ class QuestionDifficulty(StrEnum):
 
 
 class Question(Base, kw_only=True):
-    # Required fields first
     difficulty: Mapped[QuestionDifficulty] = mapped_column()
     source_type: Mapped[QuestionSourceType] = mapped_column()
     answer_type: Mapped[QuestionAnswerType] = mapped_column()
@@ -380,7 +375,6 @@ class Question(Base, kw_only=True):
     is_active: Mapped[bool] = mapped_column(default=True)
     is_quantitative: Mapped[bool] = mapped_column(default=False)
 
-    # Optional fields with defaults
     major_tags: Mapped[list[str]] = mapped_column(
         postgresql.ARRAY(Text), default_factory=list
     )
@@ -391,7 +385,6 @@ class Question(Base, kw_only=True):
         ContentBlockListType, default_factory=list
     )
 
-    # Optional fields without defaults
     parameter_a: Mapped[float | None] = mapped_column(default=None)
     parameter_b: Mapped[float | None] = mapped_column(default=None)
     parameter_c: Mapped[float | None] = mapped_column(default=None)
@@ -405,7 +398,6 @@ class Question(Base, kw_only=True):
         ForeignKey("user.id"), default=None
     )  # add constraint according to source type
 
-    # Relationships
     official_source: Mapped["OfficialQuestionSource | None"] = relationship(
         lazy="raise_on_sql", foreign_keys=[official_source_id], default=None
     )

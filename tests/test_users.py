@@ -1077,9 +1077,6 @@ class TestSocialFeatures:
             )
             course = await CourseFactory.create(session=session)
 
-        print("institution", institution.name)
-        print("course", course.name)
-
         async with session.begin():
             response = await user_client.patch(
                 "/api/users/me",

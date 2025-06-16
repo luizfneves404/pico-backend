@@ -55,6 +55,7 @@ async def create_notification(
     db_session: AsyncSession,
     *,
     user_id: int,
+    text: str,
     notification_type: Literal["external"],
     external_url: str,
 ) -> None:
@@ -66,6 +67,7 @@ async def create_notification(
     db_session: AsyncSession,
     *,
     user_id: int,
+    text: str,
     notification_type: Literal["flow"],
     flow_id: int,
 ) -> None:
@@ -76,18 +78,21 @@ async def create_notification(
     db_session: AsyncSession,
     *,
     user_id: int,
+    text: str,
     notification_type: Literal["flow", "external"],
     flow_id: int | None = None,
     external_url: str | None = None,
 ) -> None:
-    if notification_type == "flow":
+    if notification_type == "flow" and flow_id is not None:
         notification = FlowInAppNotification(
             user_id=user_id,
+            text=text,
             flow_id=flow_id,
         )
-    elif notification_type == "external":
+    elif notification_type == "external" and external_url is not None:
         notification = ExternalInAppNotification(
             user_id=user_id,
+            text=text,
             external_url=external_url,
         )
     else:

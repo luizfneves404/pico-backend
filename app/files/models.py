@@ -31,9 +31,8 @@ class File(Base, kw_only=True):
     def __str__(self) -> str:
         return self.original_name
 
-    @property
-    def url(self) -> str:
-        return storage.get_url(self.file_id)
+    async def get_url(self) -> str:
+        return await run_in_threadpool(storage.get_url, self.file_id)
 
     @asynccontextmanager
     async def get_file_like(self) -> AsyncGenerator[IO[bytes], None]:

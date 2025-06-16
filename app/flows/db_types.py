@@ -9,7 +9,7 @@ class ImageBlock(BaseModel):
     block_type: Literal[
         "image"
     ]  # didn't add as default because OpenAPI will render it as optional
-    file_id: str
+    file_url: str
     alt: str | None = None
 
 
@@ -50,7 +50,9 @@ class ContentBlockListType(TypeDecorator[list[ContentBlock]]):
     def process_bind_param(self, value: list[ContentBlock] | None, dialect: Any) -> Any:
         if value is None:
             return None
-        return [block.model_dump() for block in value]  # Serialize each block
+        return [
+            block.model_dump(mode="json") for block in value
+        ]  # Serialize each block
 
     def process_result_value(
         self, value: Any, dialect: Any
