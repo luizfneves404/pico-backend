@@ -72,14 +72,13 @@ class TokenRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access: str
-    refresh: str
-    # oauth2 scheme expects these:
+    access_token: str
+    refresh_token: str
     token_type: Literal["bearer"]
 
 
 class RefreshRequest(BaseModel):
-    refresh: str
+    refresh_token: str
 
 
 class VerifyRequest(BaseModel):

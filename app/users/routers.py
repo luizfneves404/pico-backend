@@ -63,7 +63,7 @@ async def login(
         )
     access_token, refresh_token = jwt_token.generate_tokens(user)
     return TokenResponse(
-        access=access_token, refresh=refresh_token, token_type="bearer"
+        access_token=access_token, refresh_token=refresh_token, token_type="bearer"
     )
 
 
@@ -73,10 +73,12 @@ async def refresh_token(
 ) -> TokenResponse:
     try:
         user = await jwt_token.process_token(
-            db_session, refresh_request.refresh, "refresh"
+            db_session, refresh_request.refresh_token, "refresh"
         )
-        access, refresh = jwt_token.generate_tokens(user)
-        return TokenResponse(access=access, refresh=refresh, token_type="bearer")
+        access_token, refresh_token = jwt_token.generate_tokens(user)
+        return TokenResponse(
+            access_token=access_token, refresh_token=refresh_token, token_type="bearer"
+        )
     except TokenError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=e.message)
     except service.UserNotFoundError:
@@ -115,7 +117,7 @@ async def google_auth(
             user, auth_provider="google"
         )
         return TokenResponse(
-            access=access_token, refresh=refresh_token, token_type="bearer"
+            access_token=access_token, refresh_token=refresh_token, token_type="bearer"
         )
     except service.InvalidTokenError:
         raise HTTPException(
@@ -157,7 +159,7 @@ async def apple_auth(
             user, auth_provider="apple"
         )
         return TokenResponse(
-            access=access_token, refresh=refresh_token, token_type="bearer"
+            access_token=access_token, refresh_token=refresh_token, token_type="bearer"
         )
     except service.InvalidTokenError:
         raise HTTPException(

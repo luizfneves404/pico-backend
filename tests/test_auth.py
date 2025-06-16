@@ -15,12 +15,12 @@ async def test_token_obtain_pair(client: AsyncClient, user: User):
     )
     assert response.status_code == 200
     response_data = response.json()
-    assert "access" in response_data
-    assert "refresh" in response_data
+    assert "access_token" in response_data
+    assert "refresh_token" in response_data
 
     # Verify token is valid
     decoded_token = jwt.decode(
-        response_data["access"], settings.secret_key, algorithms=["HS256"]
+        response_data["access_token"], settings.secret_key, algorithms=["HS256"]
     )
     assert decoded_token["user_id"] == user.id
 
@@ -38,7 +38,7 @@ async def test_token_obtain_pair_whitespace(client: AsyncClient, user: User):
 
     # Verify token is valid
     decoded_token = jwt.decode(
-        response_data["access"], settings.secret_key, algorithms=["HS256"]
+        response_data["access_token"], settings.secret_key, algorithms=["HS256"]
     )
     assert decoded_token["user_id"] == user.id
 
@@ -51,7 +51,7 @@ async def test_token_verify(client: AsyncClient, user: User):
             "password": "defaultpassword",
         },
     )
-    access_token = token_response.json()["access"]
+    access_token = token_response.json()["access_token"]
 
     response = await client.post(
         "/api/token/verify",
@@ -68,14 +68,14 @@ async def test_token_refresh(client: AsyncClient, user: User):
             "password": "defaultpassword",
         },
     )
-    refresh_token = token_response.json()["refresh"]
+    refresh_token = token_response.json()["refresh_token"]
 
     response = await client.post(
         "/api/token/refresh",
-        json={"refresh": refresh_token},
+        json={"refresh_token": refresh_token},
     )
     assert response.status_code == 200
-    new_access_token = response.json()["access"]
+    new_access_token = response.json()["access_token"]
 
     # Verify new token is valid
     decoded_token = jwt.decode(
@@ -92,7 +92,7 @@ async def test_user_me_endpoint(client: AsyncClient, user: User):
             "password": "defaultpassword",
         },
     )
-    access_token = token_response.json()["access"]
+    access_token = token_response.json()["access_token"]
 
     headers = {"Authorization": f"Bearer {access_token}"}
     response = await client.get("/api/users/me", headers=headers)

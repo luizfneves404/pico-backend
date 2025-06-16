@@ -63,7 +63,7 @@ class TestUserCreation:
         assert token_response.status_code == 200
 
         # Test user retrieval with token
-        headers = {"Authorization": f"Bearer {token_response.json()['access']}"}
+        headers = {"Authorization": f"Bearer {token_response.json()['access_token']}"}
         me_response = await client.get("/api/users/me", headers=headers)
         assert me_response.status_code == 200
         me_data = me_response.json()
@@ -172,12 +172,12 @@ class TestSocialAuthentication:
         )
         assert response.status_code == 200
         response_data = response.json()
-        assert "access" in response_data
-        assert "refresh" in response_data
+        assert "access_token" in response_data
+        assert "refresh_token" in response_data
 
         # Verify JWT token contains correct data
         decoded_token = jwt.decode(
-            response_data["access"], settings.secret_key, algorithms=["HS256"]
+            response_data["access_token"], settings.secret_key, algorithms=["HS256"]
         )
         assert decoded_token["auth_provider"] == "google"
         assert decoded_token["email"] == "newuser@gmail.com"
@@ -222,7 +222,7 @@ class TestSocialAuthentication:
 
         # Verify JWT token
         decoded_token = jwt.decode(
-            response_data["access"], settings.secret_key, algorithms=["HS256"]
+            response_data["access_token"], settings.secret_key, algorithms=["HS256"]
         )
         assert decoded_token["user_id"] == existing_user.id
         assert decoded_token["auth_provider"] == "google"
@@ -263,7 +263,7 @@ class TestSocialAuthentication:
 
         # Verify JWT token
         decoded_token = jwt.decode(
-            response_data["access"], settings.secret_key, algorithms=["HS256"]
+            response_data["access_token"], settings.secret_key, algorithms=["HS256"]
         )
         assert decoded_token["user_id"] == existing_user.id
         assert decoded_token["auth_provider"] == "google"
@@ -353,12 +353,12 @@ class TestSocialAuthentication:
         )
         assert response.status_code == 200
         response_data = response.json()
-        assert "access" in response_data
-        assert "refresh" in response_data
+        assert "access_token" in response_data
+        assert "refresh_token" in response_data
 
         # Verify JWT token
         decoded_token = jwt.decode(
-            response_data["access"], settings.secret_key, algorithms=["HS256"]
+            response_data["access_token"], settings.secret_key, algorithms=["HS256"]
         )
         assert decoded_token["auth_provider"] == "apple"
         assert decoded_token["email"] == "newuser@icloud.com"
@@ -399,7 +399,7 @@ class TestSocialAuthentication:
 
         # Verify JWT token
         decoded_token = jwt.decode(
-            response_data["access"], settings.secret_key, algorithms=["HS256"]
+            response_data["access_token"], settings.secret_key, algorithms=["HS256"]
         )
         assert decoded_token["user_id"] == existing_user.id
         assert decoded_token["auth_provider"] == "apple"
@@ -440,7 +440,7 @@ class TestSocialAuthentication:
 
         # Verify JWT token
         decoded_token = jwt.decode(
-            response_data["access"], settings.secret_key, algorithms=["HS256"]
+            response_data["access_token"], settings.secret_key, algorithms=["HS256"]
         )
         assert decoded_token["user_id"] == existing_user.id
         assert decoded_token["auth_provider"] == "apple"
@@ -517,7 +517,7 @@ class TestSocialAuthentication:
 
         # User should be created even with empty email
         decoded_token = jwt.decode(
-            response_data["access"], settings.secret_key, algorithms=["HS256"]
+            response_data["access_token"], settings.secret_key, algorithms=["HS256"]
         )
         assert decoded_token["auth_provider"] == "apple"
 
