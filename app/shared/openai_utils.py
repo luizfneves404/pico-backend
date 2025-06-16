@@ -36,6 +36,10 @@ JSONIFY_INFO_SYSTEM_MESSAGE = "Extraia a informação '{info}' do texto a seguir
 DELATEXIFY_MODEL = "gpt-4o-mini"
 DEFAULT_TIMEOUT = 10
 DEFAULT_MAX_RETRIES = 5
+
+# Models that support reasoning_effort parameter
+REASONING_EFFORT_MODELS = ["o3-mini", "o3", "o4-mini"]
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -88,7 +92,7 @@ def _openai_request(
 async def _openai_request(
     *,
     endpoint: Literal["chat_completion_parsed"],
-    model: str,  # Qualquer modelo exceto "o3-mini"
+    model: str,  # Qualquer modelo que não suporte reasoning_effort
     temperature: float,
     messages: list[ChatCompletionMessageParam],
     response_format: type[ModelT],
@@ -102,7 +106,7 @@ async def _openai_request(
 async def _openai_request(
     *,
     endpoint: Literal["chat_completion_parsed"],
-    model: Literal["o3-mini"],
+    model: str,  # Modelos que suportam reasoning_effort
     temperature: NotGiven = NOT_GIVEN,
     messages: list[ChatCompletionMessageParam],
     response_format: type[ModelT],
@@ -206,9 +210,9 @@ async def _openai_request(
             raise ValueError(
                 "messages is required for the chat_completion_parsed endpoint."
             )
-        # Handle the special case for o3-mini with reasoning_effort
-        if model == "o3-mini" and reasoning_effort is not None:
-            # Para o3-mini, não passamos temperature
+        # Handle models that support reasoning_effort
+        if model in REASONING_EFFORT_MODELS and reasoning_effort is not None:
+            # Para modelos com reasoning_effort, não passamos temperature
             response = await async_client.with_options(
                 timeout=timeout
             ).beta.chat.completions.parse(
@@ -221,7 +225,7 @@ async def _openai_request(
             # Para outros modelos, passamos temperature normalmente
             if isinstance(temperature, NotGiven):
                 raise ValueError(
-                    "temperature is required for models other than o3-mini"
+                    f"temperature is required for models that don't support reasoning_effort. Model: {model}"
                 )
             response = await async_client.with_options(
                 timeout=timeout
@@ -286,7 +290,7 @@ def _mock_openai_request(
 async def _mock_openai_request(
     *,
     endpoint: Literal["chat_completion_parsed"],
-    model: str,  # Qualquer modelo exceto "o3-mini"
+    model: str,  # Qualquer modelo que não suporte reasoning_effort
     temperature: float,
     messages: list[ChatCompletionMessageParam],
     response_format: type[ModelT],
@@ -300,7 +304,7 @@ async def _mock_openai_request(
 async def _mock_openai_request(
     *,
     endpoint: Literal["chat_completion_parsed"],
-    model: Literal["o3-mini"],
+    model: str,  # Modelos que suportam reasoning_effort
     temperature: NotGiven = NOT_GIVEN,
     messages: list[ChatCompletionMessageParam],
     response_format: type[ModelT],
@@ -443,11 +447,7 @@ async def _mock_openai_request(
         raise ValueError(f"Unsupported endpoint: {endpoint}")
 
 
-openai_request = (
-    _openai_request
-    if settings.environment == Environment.PROD
-    else _mock_openai_request
-)
+openai_request = _mock_openai_request if settings.mock_openai else _openai_request
 
 #############################################
 # Helper: Message Sanitization (Minimal)
@@ -468,9 +468,9 @@ def sanitize_messages_for_log(
                     # Safely access and modify image URL
                     image_url = content_part.get("image_url")
                     if isinstance(image_url, dict) and "url" in image_url:
-                        sanitized_message["content"][idx]["image_url"]["url"] = (
-                            "[IMAGE]"
-                        )
+                        sanitized_message["content"][idx]["image_url"][
+                            "url"
+                        ] = "[IMAGE]"
         sanitized_messages.append(sanitized_message)
     return sanitized_messages
 
@@ -525,15 +525,19 @@ async def get_completion_parsed(
         response_format.__name__,
         sanitize_messages_for_log(messages),
     )
-    if model == "o3-mini":
+    if model in REASONING_EFFORT_MODELS:
         if reasoning_effort is None:
-            raise ValueError("o3-mini must have reasoning_effort")
+            raise ValueError(
+                f"Models {REASONING_EFFORT_MODELS} must have reasoning_effort parameter"
+            )
         if temperature is not None:
-            logger.warning("temperature is ignored for model o3-mini")
+            logger.warning(
+                f"temperature is ignored for reasoning models: {REASONING_EFFORT_MODELS}"
+            )
 
         return await openai_request(
             endpoint="chat_completion_parsed",
-            model="o3-mini",
+            model=model,
             temperature=NOT_GIVEN,
             messages=messages,
             response_format=response_format,
@@ -543,7 +547,9 @@ async def get_completion_parsed(
         )
     else:
         if temperature is None:
-            raise ValueError("temperature is required for models other than o3-mini")
+            raise ValueError(
+                f"temperature is required for models that don't support reasoning_effort. Model: {model}"
+            )
 
         return await openai_request(
             endpoint="chat_completion_parsed",
@@ -703,7 +709,7 @@ async def transcribe_image(image_url: str) -> str:
     logger.info("Transcribing image with model=gpt-4o")
     response = await openai_request(
         endpoint="chat_completion",
-        model="gpt-4o",
+        model="gpt-4.1-nano",
         temperature=0.1,
         messages=[
             {
