@@ -41,25 +41,28 @@ class TextBlock(BaseModel):
 ContentBlock = Annotated[TextBlock | ImageBlock, Field(discriminator="block_type")]
 
 
+def validate_content_block_list(value: Any) -> list[ContentBlock]:
+    return TypeAdapter(list[ContentBlock]).validate_python(value)
+
+
 class ContentBlockListType(TypeDecorator[list[ContentBlock]]):
     """Stores a list of ContentBlock models as JSON in the DB"""
 
     impl = JSON
     cache_ok = True
 
-    def process_bind_param(self, value: list[ContentBlock] | None, dialect: Any) -> Any:
+    def process_bind_param(self, value: Any, dialect: Any) -> Any:
         if value is None:
             return None
-        return [
-            block.model_dump(mode="json") for block in value
-        ]  # Serialize each block
+        content_blocks = validate_content_block_list(value)
+        return [block.model_dump(mode="json") for block in content_blocks]
 
     def process_result_value(
         self, value: Any, dialect: Any
     ) -> list[ContentBlock] | None:
         if value is None:
             return None
-        return TypeAdapter(list[ContentBlock]).validate_python(value)
+        return validate_content_block_list(value)
 
     def coerce_compared_value(self, op: OperatorType | None, value: Any) -> Any:
         return self.impl.coerce_compared_value(op, value)  # type: ignore

@@ -1,11 +1,14 @@
+import json
 from typing import Any, ClassVar, Sequence, Union
 
 from fastapi import Request
+from sqladmin.fields import JSONField
 from sqlalchemy import Select, select
 from sqlalchemy.orm import selectinload
-from wtforms import TextAreaField
+from wtforms import Field, widgets
 from wtforms.validators import Optional
 
+from app.flows.db_types import validate_content_block_list
 from app.flows.models import (
     Campaign,
     Choice,
@@ -21,6 +24,52 @@ from app.flows.models import (
     QuestionArea,
 )
 from app.shared.admin import MODEL_ATTR, CustomModelView
+
+
+class ContentBlocksField(JSONField):
+    def _value(self) -> str:
+        if self.raw_data:
+            return self.raw_data[0]
+        elif self.data:
+            json_str = json.dumps(
+                [block.model_dump(mode="json") for block in self.data],
+                indent=4,
+                ensure_ascii=False,
+            )
+            return json_str
+        else:
+            return "{}"
+
+    def process_formdata(self, valuelist: list[str]) -> None:
+        if valuelist:
+            value = valuelist[0]
+
+            # allow saving blank field as None
+            if not value:
+                self.data = None
+                return
+
+            try:
+                self.data = validate_content_block_list(json.loads(value))
+            except ValueError as e:
+                raise ValueError(self.gettext(f"Invalid JSON: {e}"))
+
+
+class TagsTextAreaField(Field):
+    widget = widgets.TextArea()
+
+    def _value(self):
+        # Render list as a comma-separated string
+        if self.data:
+            return ", ".join(self.data)
+        return ""
+
+    def process_formdata(self, valuelist):
+        if valuelist:
+            # Split by comma, strip whitespace
+            self.data = [v.strip() for v in valuelist[0].split(",") if v.strip()]
+        else:
+            self.data = []
 
 
 class FlowAdmin(CustomModelView, model=Flow):
@@ -98,11 +147,6 @@ class FlowAdmin(CustomModelView, model=Flow):
         Flow.minor_tags,
     ]
 
-    form_overrides = {
-        "major_tags": TextAreaField,
-        "minor_tags": TextAreaField,
-    }
-
     form_args = {
         "major_tags": {
             "validators": [Optional()],
@@ -111,17 +155,6 @@ class FlowAdmin(CustomModelView, model=Flow):
         "minor_tags": {
             "validators": [Optional()],
             "description": "Digite as tags secundárias separadas por vírgula (ex: básico, intermediário, avançado)",
-        },
-    }
-
-    form_widget_args = {
-        "major_tags": {
-            "rows": 3,
-            "placeholder": "matemática, álgebra, geometria",
-        },
-        "minor_tags": {
-            "rows": 3,
-            "placeholder": "básico, intermediário, avançado",
         },
     }
 
@@ -150,73 +183,6 @@ class FlowAdmin(CustomModelView, model=Flow):
             .where(Flow.id == int(value))
         )
         return await self._get_object_by_pk(stmt)
-
-    async def on_model_change(
-        self, form, model: Flow, is_created: bool, request=None
-    ) -> None:
-        """Process array fields before saving."""
-        # Convert comma-separated strings to arrays
-        if hasattr(form, "major_tags") and form.major_tags.data is not None:
-            if isinstance(form.major_tags.data, str):
-                # If it's a string, split by comma
-                model.major_tags = [
-                    tag.strip()
-                    for tag in form.major_tags.data.split(",")
-                    if tag.strip()
-                ]
-            elif isinstance(form.major_tags.data, list):
-                # If it's already a list, check if it contains single characters
-                if len(form.major_tags.data) > 1 and all(
-                    len(str(item)) == 1 for item in form.major_tags.data
-                ):
-                    # If it's a list of single characters, join them back and split by comma
-                    text = "".join(str(item) for item in form.major_tags.data)
-                    model.major_tags = [
-                        tag.strip() for tag in text.split(",") if tag.strip()
-                    ]
-                else:
-                    # If it's a proper list, just clean it
-                    model.major_tags = [
-                        str(tag).strip()
-                        for tag in form.major_tags.data
-                        if str(tag).strip()
-                    ]
-
-        if hasattr(form, "minor_tags") and form.minor_tags.data is not None:
-            if isinstance(form.minor_tags.data, str):
-                # If it's a string, split by comma
-                model.minor_tags = [
-                    tag.strip()
-                    for tag in form.minor_tags.data.split(",")
-                    if tag.strip()
-                ]
-            elif isinstance(form.minor_tags.data, list):
-                # If it's already a list, check if it contains single characters
-                if len(form.minor_tags.data) > 1 and all(
-                    len(str(item)) == 1 for item in form.minor_tags.data
-                ):
-                    # If it's a list of single characters, join them back and split by comma
-                    text = "".join(str(item) for item in form.minor_tags.data)
-                    model.minor_tags = [
-                        tag.strip() for tag in text.split(",") if tag.strip()
-                    ]
-                else:
-                    # If it's a proper list, just clean it
-                    model.minor_tags = [
-                        str(tag).strip()
-                        for tag in form.minor_tags.data
-                        if str(tag).strip()
-                    ]
-
-    def on_form_prefill(self, form, id) -> None:
-        """Convert arrays to comma-separated strings for form display."""
-        if hasattr(form, "major_tags") and form.major_tags.data:
-            if isinstance(form.major_tags.data, list):
-                form.major_tags.data = ", ".join(form.major_tags.data)
-
-        if hasattr(form, "minor_tags") and form.minor_tags.data:
-            if isinstance(form.minor_tags.data, list):
-                form.minor_tags.data = ", ".join(form.minor_tags.data)
 
 
 class FlowTranscriptionBlockAdmin(CustomModelView, model=FlowTranscriptionBlock):
@@ -358,8 +324,10 @@ class QuestionAdmin(CustomModelView, model=Question):
     ]
 
     form_overrides = {
-        "major_tags": TextAreaField,
-        "minor_tags": TextAreaField,
+        "content_blocks": ContentBlocksField,
+        "answer_content_blocks": ContentBlocksField,
+        "major_tags": TagsTextAreaField,
+        "minor_tags": TagsTextAreaField,
     }
 
     form_args = {
@@ -376,11 +344,22 @@ class QuestionAdmin(CustomModelView, model=Question):
     form_widget_args = {
         "major_tags": {
             "rows": 3,
-            "placeholder": "matemática, álgebra, geometria",
+            "style": "width: 100%",
+            "placeholder": "tag1, tag2, tag3",
         },
         "minor_tags": {
             "rows": 3,
-            "placeholder": "básico, intermediário, avançado",
+            "style": "width: 100%",
+            "placeholder": "tag1, tag2, tag3",
+        },
+    }
+
+    form_widget_args = {
+        "content_blocks": {
+            "rows": 30,
+        },
+        "answer_content_blocks": {
+            "rows": 30,
         },
     }
 
@@ -390,30 +369,36 @@ class QuestionAdmin(CustomModelView, model=Question):
             selectinload(Question.source_user),
         )
 
+    def form_edit_query(self, request: Request) -> Select[tuple[Question]]:
+        return (
+            select(Question)
+            .options(
+                selectinload(Question.official_source).options(
+                    selectinload(OfficialQuestionSource.exam),
+                ),
+                selectinload(Question.source_user),
+                selectinload(Question.choices),
+            )
+            .where(Question.id == int(request.path_params["pk"]))
+        )
+
     async def on_model_change(
-        self, form, model: Question, is_created: bool, request=None
+        self,
+        data: dict[str, Any],
+        model: Question,
+        is_created: bool,
+        request: Request | None = None,
     ) -> None:
         """Process array fields before saving."""
-        # Convert comma-separated strings to arrays
-        if hasattr(form, "major_tags") and form.major_tags.data is not None:
-            model.major_tags = [
-                tag.strip() for tag in form.major_tags.data.split(",") if tag.strip()
-            ]
-
-        if hasattr(form, "minor_tags") and form.minor_tags.data is not None:
-            model.minor_tags = [
-                tag.strip() for tag in form.minor_tags.data.split(",") if tag.strip()
-            ]
-
-    def on_form_prefill(self, form, id) -> None:
-        """Convert arrays to comma-separated strings for form display."""
-        if hasattr(form, "major_tags") and form.major_tags.data:
-            if isinstance(form.major_tags.data, list):
-                form.major_tags.data = ", ".join(form.major_tags.data)
-
-        if hasattr(form, "minor_tags") and form.minor_tags.data:
-            if isinstance(form.minor_tags.data, list):
-                form.minor_tags.data = ", ".join(form.minor_tags.data)
+        if "content_blocks" in data and data["content_blocks"] is not None:
+            model.content_blocks = validate_content_block_list(data["content_blocks"])
+        if (
+            "answer_content_blocks" in data
+            and data["answer_content_blocks"] is not None
+        ):
+            model.answer_content_blocks = validate_content_block_list(
+                data["answer_content_blocks"]
+            )
 
 
 class QuestionAreaAdmin(CustomModelView, model=QuestionArea):
@@ -450,13 +435,9 @@ class QuestionAreaAdmin(CustomModelView, model=QuestionArea):
         QuestionArea.name,
         QuestionArea.tags,
         QuestionArea.education_level_id,
-        QuestionArea.country_code,
+        QuestionArea.country_id,
         QuestionArea.course_id,
     ]
-
-    form_overrides = {
-        "tags": TextAreaField,
-    }
 
     form_args = {
         "tags": {
@@ -464,29 +445,6 @@ class QuestionAreaAdmin(CustomModelView, model=QuestionArea):
             "description": "Digite as tags separadas por vírgula (ex: matemática, básico, ensino médio)",
         },
     }
-
-    form_widget_args = {
-        "tags": {
-            "rows": 3,
-            "placeholder": "matemática, básico, ensino médio",
-        },
-    }
-
-    async def on_model_change(
-        self, form, model: QuestionArea, is_created: bool, request=None
-    ) -> None:
-        """Process array fields before saving."""
-        # Convert comma-separated strings to arrays
-        if hasattr(form, "tags") and form.tags.data is not None:
-            model.tags = [
-                tag.strip() for tag in form.tags.data.split(",") if tag.strip()
-            ]
-
-    def on_form_prefill(self, form, id) -> None:
-        """Convert arrays to comma-separated strings for form display."""
-        if hasattr(form, "tags") and form.tags.data:
-            if isinstance(form.tags.data, list):
-                form.tags.data = ", ".join(form.tags.data)
 
 
 class ExamAdmin(CustomModelView, model=Exam):
@@ -680,9 +638,9 @@ class ChoiceAdmin(CustomModelView, model=Choice):
     }
 
     form_columns = [
-        Choice.question_id,
+        Choice.question,
         Choice.text,
-        Choice.image_id,
+        Choice.image,
         Choice.is_correct,
         Choice.order,
     ]

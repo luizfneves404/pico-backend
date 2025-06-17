@@ -13,6 +13,7 @@ from sqlalchemy import (
     UniqueConstraint,
     distinct,
     func,
+    inspect,
     select,
 )
 from sqlalchemy.dialects import postgresql
@@ -376,13 +377,13 @@ class Question(Base, kw_only=True):
     is_quantitative: Mapped[bool] = mapped_column(default=False)
 
     major_tags: Mapped[list[str]] = mapped_column(
-        postgresql.ARRAY(Text), default_factory=list
+        postgresql.ARRAY(Text), insert_default=list
     )
     minor_tags: Mapped[list[str]] = mapped_column(
-        postgresql.ARRAY(Text), default_factory=list
+        postgresql.ARRAY(Text), insert_default=list
     )
     answer_content_blocks: Mapped[list[ContentBlock]] = mapped_column(
-        ContentBlockListType, default_factory=list
+        ContentBlockListType, insert_default=list
     )
 
     parameter_a: Mapped[float | None] = mapped_column(default=None)
@@ -489,6 +490,9 @@ class Exam(Base, kw_only=True):
     course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"), default=None)
     course: Mapped["Course | None"] = relationship(lazy="raise_on_sql", default=None)
 
+    def __str__(self) -> str:
+        return self.name
+
 
 class OfficialQuestionSource(Base, kw_only=True):
     year: Mapped[int] = mapped_column()
@@ -497,6 +501,14 @@ class OfficialQuestionSource(Base, kw_only=True):
         ForeignKey("exam.id", ondelete="CASCADE"), default=None
     )
     exam: Mapped["Exam"] = relationship(lazy="raise_on_sql", default=None)
+
+    def __str__(self) -> str:
+        insp = inspect(self)
+        return (
+            f"{self.exam.name} - {self.year}"
+            if "exam" not in insp.unloaded
+            else f"Exam {self.exam_id} - {self.year}"
+        )
 
 
 class FlowQuestion(FlowElement):

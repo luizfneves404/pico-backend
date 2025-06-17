@@ -95,7 +95,7 @@ class Course(Base, kw_only=True):
     )
 
     def __str__(self) -> str:
-        return str(self.name_i18n)
+        return str(self.name_i18n["en"] if "en" in self.name_i18n else self.name_i18n)
 
 
 class LevelStage(Base, kw_only=True):
@@ -129,6 +129,9 @@ class LevelStage(Base, kw_only=True):
             name="unique_level_stage_per_country",
         ),
     )
+
+    def __str__(self) -> str:
+        return str(self.name)
 
 
 class EducationLevel(Base, kw_only=True):
@@ -182,3 +185,5 @@ class EducationInfo(Base, kw_only=True):
         lazy="raise_on_sql",
         default=None,
     )
+    def __str__(self) -> str:
+        return f"Current education info of user {self.current_education_user.id if self.current_education_user else self.intended_education_user.id if self.intended_education_user else None}"
