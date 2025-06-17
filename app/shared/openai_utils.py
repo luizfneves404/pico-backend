@@ -21,7 +21,7 @@ from openai.types.chat import (
 )
 from pydantic import BaseModel
 
-from app.config import Environment, settings
+from app.config import settings
 
 from .constants import (
     SYSTEM_MESSAGE_GENERATE_TRANSCRIPTION_FROM_IMAGE,
@@ -468,9 +468,9 @@ def sanitize_messages_for_log(
                     # Safely access and modify image URL
                     image_url = content_part.get("image_url")
                     if isinstance(image_url, dict) and "url" in image_url:
-                        sanitized_message["content"][idx]["image_url"][
-                            "url"
-                        ] = "[IMAGE]"
+                        sanitized_message["content"][idx]["image_url"]["url"] = (
+                            "[IMAGE]"
+                        )
         sanitized_messages.append(sanitized_message)
     return sanitized_messages
 

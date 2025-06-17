@@ -8,7 +8,10 @@ from fastapi.responses import HTMLResponse
 from markupsafe import Markup
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    InstrumentedAttribute,
+)
 from starlette.datastructures import UploadFile
 
 from app.shared.bootstrap_sqladmin import monkey_patch_sqladmin
