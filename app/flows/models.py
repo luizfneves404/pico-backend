@@ -140,6 +140,7 @@ class Flow(Base, kw_only=True):
     minor_tags: Mapped[list[str]] = mapped_column(
         postgresql.ARRAY(Text), default_factory=list
     )
+    has_quantitative_questions: Mapped[bool] = mapped_column(default=False)
 
     transcription_blocks: Mapped[list["FlowTranscriptionBlock"]] = relationship(
         back_populates="flow",
