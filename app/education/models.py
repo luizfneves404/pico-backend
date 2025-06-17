@@ -150,6 +150,9 @@ class EducationLevel(Base, kw_only=True):
         default_factory=list,
     )
 
+    def __str__(self) -> str:
+        return str(self.name_i18n["en"] if "en" in self.name_i18n else self.name_i18n)
+
 
 class EducationInfo(Base, kw_only=True):
     level_id: Mapped[int] = mapped_column(

@@ -85,7 +85,6 @@ class TestUserCreation:
                 "referred_by_username": "",
             },
         )
-        print(response.json())
         assert response.status_code == 201
 
         # Verify login works
@@ -825,7 +824,6 @@ class TestUserUpdates:
             }
         }
         response = await user_client.patch("/api/users/me", json=data)
-        print(response.json())
         assert response.status_code == 200
         response_data = response.json()
         assert "current_education" in response_data["updated_fields"]
@@ -1100,14 +1098,6 @@ class TestSocialFeatures:
 
         # Verify community was created and user joined it
         async with session.begin():
-            print("searched community", institution.name, expected_community_subtitle)
-            print(
-                "all communities",
-                [
-                    (community.name, community.subtitle)
-                    for community in await session.scalars(select(Community))
-                ],
-            )
             result = await session.execute(
                 select(Community).where(
                     Community.name == institution.name,

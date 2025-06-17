@@ -887,7 +887,6 @@ async def test_search_flows_pagination(
     response = await user_client.get("/api/flows/search?query=testing&page=1&size=2")
     assert response.status_code == 200
     response_data = response.json()
-    print("response_data", response_data)
 
     assert response_data["page"] == 1
     assert response_data["size"] == 2
@@ -897,7 +896,6 @@ async def test_search_flows_pagination(
     response = await user_client.get("/api/flows/search?query=testing&page=2&size=2")
     assert response.status_code == 200
     response_data = response.json()
-    print("response_data", response_data)
 
     assert response_data["page"] == 2
     assert response_data["size"] == 2
@@ -907,7 +905,6 @@ async def test_search_flows_pagination(
     response = await user_client.get("/api/flows/search?query=testing&page=3&size=2")
     assert response.status_code == 200
     response_data = response.json()
-    print("response_data", response_data)
     assert response_data["page"] == 3
     assert response_data["size"] == 2
     assert len(response_data["items"]) == 1
@@ -1121,3 +1118,423 @@ async def test_search_flows_with_flow_elements(
     assert "elements" in found_flow
     assert "num_total_elements" in found_flow
     assert found_flow["num_total_elements"] == 3
+
+
+async def test_community_feed_basic_functionality(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test basic community feed functionality returns flows from community members"""
+    from app.community.models import CommunityUser
+    from tests.factories import CommunityFactory
+
+    async with session.begin():
+        # Create a community
+        community = await CommunityFactory.create(session=session)
+
+        # Create users and add them to the community
+        community_user1 = await UserFactory.create(session=session)
+        community_user2 = await UserFactory.create(session=session)
+        non_community_user = await UserFactory.create(session=session)
+
+        # Add users to community
+        session.add(
+            CommunityUser(community_id=community.id, user_id=community_user1.id)
+        )
+        session.add(
+            CommunityUser(community_id=community.id, user_id=community_user2.id)
+        )
+        session.add(CommunityUser(community_id=community.id, user_id=user.id))
+
+        # Create flows - some by community members, some by non-members
+        community_flow1 = await FlowFactory.create(
+            created_by=community_user1, session=session
+        )
+        community_flow2 = await FlowFactory.create(
+            created_by=community_user2, session=session
+        )
+        non_community_flow = await FlowFactory.create(
+            created_by=non_community_user, session=session
+        )
+
+        # Add flow questions to make flows valid
+        await FlowQuestionFactory.create(flow=community_flow1, session=session)
+        await FlowQuestionFactory.create(flow=community_flow2, session=session)
+        await FlowQuestionFactory.create(flow=non_community_flow, session=session)
+
+    # Get community feed
+    response = await user_client.get(f"/api/flows/community-feed/{community.id}")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    # Check paginated response structure
+    assert "page" in response_data
+    assert "size" in response_data
+    assert "items" in response_data
+    assert response_data["page"] == 1
+    assert isinstance(response_data["size"], int)
+
+    flows = response_data["items"]
+    # Should only return flows from community members
+    assert len(flows) == 2
+
+    # Verify correct flows are returned (ordered by created_at desc)
+    flow_ids = {flow["id"] for flow in flows}
+    assert community_flow1.id in flow_ids
+    assert community_flow2.id in flow_ids
+    assert non_community_flow.id not in flow_ids
+
+    # Verify response structure matches FlowInSearch schema
+    for flow in flows:
+        assert "id" in flow
+        assert "code" in flow
+        assert "created_at" in flow
+        assert "title" in flow
+        assert "cover_image_url" in flow
+        assert "action_link" in flow
+        assert "action_text" in flow
+        assert "created_by" in flow
+        assert "difficulty" in flow
+        assert "max_num_questions" in flow
+        assert "elements" in flow
+        assert "num_total_elements" in flow
+        assert "num_user_total_answers" in flow
+        assert "num_user_correct_answers" in flow
+
+        # Check created_by structure
+        assert "id" in flow["created_by"]
+        assert "username" in flow["created_by"]
+        assert flow["created_by"]["id"] in {community_user1.id, community_user2.id}
+
+
+async def test_community_feed_ordering(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test that community feed returns flows ordered by created_at desc"""
+    import asyncio
+
+    from app.community.models import CommunityUser
+    from tests.factories import CommunityFactory
+
+    async with session.begin():
+        # Create a community
+        community = await CommunityFactory.create(session=session)
+
+        # Create community users
+        community_user1 = await UserFactory.create(session=session)
+        community_user2 = await UserFactory.create(session=session)
+
+        # Add users to community
+        session.add(
+            CommunityUser(community_id=community.id, user_id=community_user1.id)
+        )
+        session.add(
+            CommunityUser(community_id=community.id, user_id=community_user2.id)
+        )
+        session.add(CommunityUser(community_id=community.id, user_id=user.id))
+
+        # Create flows with slight time differences
+        older_flow = await FlowFactory.create(
+            created_by=community_user1, session=session
+        )
+        await FlowQuestionFactory.create(flow=older_flow, session=session)
+
+        # Small delay to ensure different timestamps
+        await asyncio.sleep(0.01)
+
+        newer_flow = await FlowFactory.create(
+            created_by=community_user2, session=session
+        )
+        await FlowQuestionFactory.create(flow=newer_flow, session=session)
+
+    # Get community feed
+    response = await user_client.get(f"/api/flows/community-feed/{community.id}")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    flows = response_data["items"]
+    assert len(flows) == 2
+
+    # Verify flows are ordered by created_at desc (newer first)
+    assert flows[0]["id"] == newer_flow.id
+    assert flows[1]["id"] == older_flow.id
+
+
+async def test_community_feed_pagination(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test that community feed pagination works correctly"""
+    from app.community.models import CommunityUser
+    from tests.factories import CommunityFactory
+
+    async with session.begin():
+        # Create a community
+        community = await CommunityFactory.create(session=session)
+
+        # Create community users
+        community_users = await UserFactory.create_batch(3, session=session)
+
+        # Add users to community
+        for community_user in community_users:
+            session.add(
+                CommunityUser(community_id=community.id, user_id=community_user.id)
+            )
+        session.add(CommunityUser(community_id=community.id, user_id=user.id))
+
+        # Create multiple flows
+        for community_user in community_users:
+            flow = await FlowFactory.create(created_by=community_user, session=session)
+            await FlowQuestionFactory.create(flow=flow, session=session)
+
+    # Test first page with size 2
+    response = await user_client.get(
+        f"/api/flows/community-feed/{community.id}?page=1&size=2"
+    )
+    assert response.status_code == 200
+    response_data = response.json()
+
+    assert response_data["page"] == 1
+    assert response_data["size"] == 2
+    assert len(response_data["items"]) == 2
+
+    # Test second page with size 2
+    response = await user_client.get(
+        f"/api/flows/community-feed/{community.id}?page=2&size=2"
+    )
+    assert response.status_code == 200
+    response_data = response.json()
+
+    assert response_data["page"] == 2
+    assert response_data["size"] == 2
+    assert len(response_data["items"]) == 1
+
+    # Test page beyond available results
+    response = await user_client.get(
+        f"/api/flows/community-feed/{community.id}?page=3&size=2"
+    )
+    assert response.status_code == 200
+    response_data = response.json()
+
+    assert response_data["page"] == 3
+    assert response_data["size"] == 2
+    assert len(response_data["items"]) == 0
+
+
+async def test_community_feed_empty_community(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test community feed with no flows from community members"""
+    from app.community.models import CommunityUser
+    from tests.factories import CommunityFactory
+
+    async with session.begin():
+        # Create a community with only the current user
+        community = await CommunityFactory.create(session=session)
+        session.add(CommunityUser(community_id=community.id, user_id=user.id))
+
+        # Create flows by non-community members
+        non_community_user = await UserFactory.create(session=session)
+        non_community_flow = await FlowFactory.create(
+            created_by=non_community_user, session=session
+        )
+        await FlowQuestionFactory.create(flow=non_community_flow, session=session)
+
+    # Get community feed
+    response = await user_client.get(f"/api/flows/community-feed/{community.id}")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    # Should return empty list
+    assert response_data["page"] == 1
+    assert isinstance(response_data["size"], int)
+    assert response_data["items"] == []
+
+
+async def test_community_feed_nonexistent_community(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test community feed with non-existent community ID"""
+    # Try to get feed for non-existent community
+    response = await user_client.get("/api/flows/community-feed/99999")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    # Should return empty list for non-existent community
+    assert response_data["items"] == []
+
+
+async def test_community_feed_user_not_in_community(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test that community feed works even if requesting user is not in the community"""
+    from app.community.models import CommunityUser
+    from tests.factories import CommunityFactory
+
+    async with session.begin():
+        # Create a community without adding the current user
+        community = await CommunityFactory.create(session=session)
+
+        # Create community users and flows
+        community_user = await UserFactory.create(session=session)
+        session.add(CommunityUser(community_id=community.id, user_id=community_user.id))
+
+        community_flow = await FlowFactory.create(
+            created_by=community_user, session=session
+        )
+        await FlowQuestionFactory.create(flow=community_flow, session=session)
+
+    # Get community feed (user not in community)
+    response = await user_client.get(f"/api/flows/community-feed/{community.id}")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    flows = response_data["items"]
+    assert len(flows) == 1
+    assert flows[0]["id"] == community_flow.id
+
+
+async def test_community_feed_with_user_answers(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test that community feed includes user-specific answer counts"""
+    from app.community.models import CommunityUser
+    from tests.factories import CommunityFactory
+
+    async with session.begin():
+        # Create a community
+        community = await CommunityFactory.create(session=session)
+
+        # Create community user and add to community
+        community_user = await UserFactory.create(session=session)
+        session.add(CommunityUser(community_id=community.id, user_id=community_user.id))
+        session.add(CommunityUser(community_id=community.id, user_id=user.id))
+
+        # Create flow with questions
+        flow = await FlowFactory.create(created_by=community_user, session=session)
+        flow_question1 = await FlowQuestionFactory.create(flow=flow, session=session)
+        flow_question2 = await FlowQuestionFactory.create(flow=flow, session=session)
+
+        # Create choices and user answers
+        choice1 = await ChoiceFactory.create(
+            question=flow_question1.question, is_correct=True, session=session
+        )
+        choice2 = await ChoiceFactory.create(
+            question=flow_question2.question, is_correct=False, session=session
+        )
+
+        # Add user answers
+        from app.flows.models import FlowQuestionUser
+
+        answer1 = FlowQuestionUser(
+            flow_element_id=flow_question1.id,
+            user_id=user.id,
+            choice_id=choice1.id,
+        )
+        answer2 = FlowQuestionUser(
+            flow_element_id=flow_question2.id,
+            user_id=user.id,
+            choice_id=choice2.id,
+        )
+        session.add(answer1)
+        session.add(answer2)
+
+    # Get community feed
+    response = await user_client.get(f"/api/flows/community-feed/{community.id}")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    flows = response_data["items"]
+    assert len(flows) == 1
+
+    flow_data = flows[0]
+    assert flow_data["id"] == flow.id
+    assert flow_data["num_user_total_answers"] == 2
+    assert flow_data["num_user_correct_answers"] == 1
+
+
+async def test_community_feed_with_multiple_communities(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test that community feed only returns flows from the specified community"""
+    from app.community.models import CommunityUser
+    from tests.factories import CommunityFactory
+
+    async with session.begin():
+        # Create two communities
+        community1 = await CommunityFactory.create(session=session)
+        community2 = await CommunityFactory.create(session=session)
+
+        # Create users for each community
+        user1 = await UserFactory.create(session=session)
+        user2 = await UserFactory.create(session=session)
+
+        # Add users to respective communities
+        session.add(CommunityUser(community_id=community1.id, user_id=user1.id))
+        session.add(CommunityUser(community_id=community2.id, user_id=user2.id))
+        session.add(CommunityUser(community_id=community1.id, user_id=user.id))
+
+        # Create flows in each community
+        flow1 = await FlowFactory.create(created_by=user1, session=session)
+        flow2 = await FlowFactory.create(created_by=user2, session=session)
+
+        await FlowQuestionFactory.create(flow=flow1, session=session)
+        await FlowQuestionFactory.create(flow=flow2, session=session)
+
+    # Get feed for community1
+    response = await user_client.get(f"/api/flows/community-feed/{community1.id}")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    flows = response_data["items"]
+    assert len(flows) == 1
+    assert flows[0]["id"] == flow1.id
+
+    # Get feed for community2
+    response = await user_client.get(f"/api/flows/community-feed/{community2.id}")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    flows = response_data["items"]
+    assert len(flows) == 1
+    assert flows[0]["id"] == flow2.id
+
+
+async def test_community_feed_authorization_required(client: AsyncClient):
+    """Test that community feed requires authentication"""
+    response = await client.get("/api/flows/community-feed/1")
+    assert response.status_code == 401
+
+
+async def test_community_feed_with_flow_elements_loaded(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test that community feed loads flow elements correctly"""
+    from app.community.models import CommunityUser
+    from tests.factories import CommunityFactory
+
+    async with session.begin():
+        # Create a community
+        community = await CommunityFactory.create(session=session)
+
+        # Create community user
+        community_user = await UserFactory.create(session=session)
+        session.add(CommunityUser(community_id=community.id, user_id=community_user.id))
+        session.add(CommunityUser(community_id=community.id, user_id=user.id))
+
+        # Create flow with multiple questions
+        flow = await FlowFactory.create(created_by=community_user, session=session)
+        await FlowQuestionFactory.create_batch(5, flow=flow, session=session)
+
+    # Get community feed
+    response = await user_client.get(f"/api/flows/community-feed/{community.id}")
+    assert response.status_code == 200
+    response_data = response.json()
+
+    flows = response_data["items"]
+    assert len(flows) == 1
+
+    flow_data = flows[0]
+    assert flow_data["id"] == flow.id
+    assert "elements" in flow_data
+    assert flow_data["num_total_elements"] == 5
+    # Should load first 5 elements based on NUM_ELEMENTS_TO_LOAD_IN_FEED
+    assert len(flow_data["elements"]) == 5
