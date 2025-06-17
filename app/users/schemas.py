@@ -205,8 +205,6 @@ class UserInRanking(BaseModel):
     rank: int
     current_education: EducationInfoOut | None
     score: RoundedFloat
-    total_answers: int
-    correct_answers: int
 
 
 class UserIdsIn(BaseModel):
