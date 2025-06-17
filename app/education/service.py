@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.countries.service import CountryNotFound, get_country
 from app.education.models import (
     AdministrativeCategory,
     Course,
@@ -40,7 +41,7 @@ class InvalidInstitutionTypeError(Exception):
     pass
 
 
-class InvalidCountryCodeError(Exception):
+class CountryNotFoundError(Exception):
     pass
 
 
@@ -70,7 +71,11 @@ async def get_institution(db_session: AsyncSession, institution_id: int) -> Inst
     Raises:
         InstitutionNotFoundError: If no institution is found with the given ID
     """
-    institution = await db_session.get(Institution, institution_id)
+    institution = await db_session.scalar(
+        select(Institution)
+        .where(Institution.id == institution_id)
+        .options(selectinload(Institution.country))
+    )
     if not institution:
         raise InstitutionNotFoundError
     return institution
@@ -119,7 +124,7 @@ async def search_institutions(
             ST_Distance(Institution.location, user_geom, type_=Geography),
         ).limit(MAX_INSTITUTIONS_SEARCH_LIMIT)
 
-    stmt = stmt.where(*filters)
+    stmt = stmt.where(*filters).options(selectinload(Institution.country))
 
     result = await db.execute(stmt)
     return list(result.scalars())
@@ -145,11 +150,15 @@ async def create_institution(
     Returns:
         The created institution
     """
+    try:
+        country = await get_country(db_session, country_code)
+    except CountryNotFound:
+        raise CountryNotFoundError(f"Country with code {country_code} not found")
     institution = Institution(
         name=name,
         institution_type=InstitutionType(institution_type),
         user_submitted=user_submitted,
-        country_code=country_code,
+        country=country,
         level_id=level_id,
         administrative_category=AdministrativeCategory.UNKNOWN,
     )
@@ -161,9 +170,8 @@ async def create_institution(
             raise LevelNotFoundError(e)
         elif "institution_type" in str(e):
             raise InvalidInstitutionTypeError(e)
-        elif "country_code" in str(e):
-            raise InvalidCountryCodeError(e)
         raise e
+    await db_session.refresh(institution, ["country"])
     return institution
 
 
@@ -277,7 +285,8 @@ async def list_levels(
     """
     stages_loader = EducationLevel.stages
     if country_code:
-        stages_loader = stages_loader.and_(LevelStage.country_code == country_code)
+        country = await get_country(db_session, country_code)
+        stages_loader = stages_loader.and_(LevelStage.country_id == country.id)
 
     result = await db_session.scalars(
         select(EducationLevel).options(selectinload(stages_loader))

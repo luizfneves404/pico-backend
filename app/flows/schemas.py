@@ -316,7 +316,7 @@ class ExamOut(BaseModel):
         return cls(
             id=exam.id,
             name=exam.name,
-            country_code=exam.country_code,
+            country_code=exam.country.code,
             education_level_id=exam.education_level_id,
         )
 

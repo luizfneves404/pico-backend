@@ -13,7 +13,7 @@ async def list_areas(db_session: AsyncSession, *, user_id: int) -> list[Question
 
     stmt = (
         select(QuestionArea)
-        .join(User, QuestionArea.country_code == User.country_code)
+        .join(User, QuestionArea.country_id == User.country_id)
         .join(Educ, User.current_education)
         .where(
             User.id == user_id,

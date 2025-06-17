@@ -58,6 +58,7 @@ class User(Base, kw_only=True):
         foreign_keys=[current_education_id],
         lazy="raise_on_sql",
         default=None,
+        back_populates="current_education_user",
     )
 
     intended_education_id: Mapped[int | None] = mapped_column(
@@ -67,13 +68,14 @@ class User(Base, kw_only=True):
         foreign_keys=[intended_education_id],
         lazy="raise_on_sql",
         default=None,
+        back_populates="intended_education_user",
     )
 
-    country_code: Mapped[str | None] = mapped_column(
-        ForeignKey("country.code"), default=None
+    country_id: Mapped[int | None] = mapped_column(
+        ForeignKey("country.id"), default=None
     )
     country: Mapped["Country | None"] = relationship(
-        foreign_keys=[country_code], lazy="raise_on_sql", default=None
+        foreign_keys=[country_id], lazy="raise_on_sql", default=None
     )
 
     location: Mapped[WKBElement | None] = mapped_column(

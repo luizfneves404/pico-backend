@@ -1,6 +1,6 @@
 from typing import Any, ClassVar, Sequence, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy.orm import InstrumentedAttribute
 
 from app.education.models import (
@@ -19,7 +19,7 @@ class InstitutionImportSchema(BaseModel):
     name: str
     user_submitted: bool
     institution_type: InstitutionType
-    country_code: str = Field(min_length=2, max_length=2)
+    country_id: int
     level_id: int
     administrative_category: AdministrativeCategory
 
@@ -55,17 +55,19 @@ class InstitutionAdmin(CustomModelView, model=Institution):
         "name": "Arlekia University",
         "user_submitted": True,
         "institution_type": "college",
-        "country_code": "AA",
+        "country_id": 1,
         "level_id": 1,
         "administrative_category": "PUBLIC",
     }
 
-    def to_orm_model(self, validated_data: InstitutionImportSchema) -> Institution:
+    async def to_orm_model(
+        self, validated_data: InstitutionImportSchema
+    ) -> Institution:
         return Institution(
             name=validated_data.name,
             user_submitted=validated_data.user_submitted,
             institution_type=validated_data.institution_type,
-            country_code=validated_data.country_code,
+            country_id=validated_data.country_id,
             level_id=validated_data.level_id,
             administrative_category=validated_data.administrative_category,
         )
@@ -105,7 +107,7 @@ class EducationLevelAdmin(CustomModelView, model=EducationLevel):
 class LevelStageImportSchema(BaseModel):
     name: str
     level_id: int
-    country_code: str
+    country_id: int
     is_default: bool
 
 
@@ -141,7 +143,7 @@ class LevelStageAdmin(CustomModelView, model=LevelStage):
     form_columns = [
         "name",
         "level_id",
-        "country_code",
+        "country_id",
         "is_default",
     ]
 

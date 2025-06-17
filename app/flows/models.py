@@ -461,7 +461,7 @@ class QuestionArea(Base, kw_only=True):
     education_level: Mapped["EducationLevel"] = relationship(
         lazy="raise_on_sql", default=None
     )
-    country_code: Mapped[str] = mapped_column(ForeignKey("country.code"), default=None)
+    country_id: Mapped[int] = mapped_column(ForeignKey("country.id"), default=None)
     country: Mapped["Country"] = relationship(lazy="raise_on_sql", default=None)
     course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"), default=None)
     course: Mapped["Course | None"] = relationship(lazy="raise_on_sql", default=None)
@@ -477,7 +477,7 @@ class Exam(Base, kw_only=True):
 
     name: Mapped[str] = mapped_column(Text)
 
-    country_code: Mapped[str] = mapped_column(ForeignKey("country.code"), default=None)
+    country_id: Mapped[int] = mapped_column(ForeignKey("country.id"), default=None)
     country: Mapped["Country"] = relationship(lazy="raise_on_sql", default=None)
 
     education_level_id: Mapped[int] = mapped_column(

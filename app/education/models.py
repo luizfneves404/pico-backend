@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from app.base import Base
+from app.users.models import User
 
 if TYPE_CHECKING:
     from app.countries.models import Country
@@ -29,7 +30,7 @@ class Institution(Base, kw_only=True):
     """Represents an institution offering an education level."""
 
     name: Mapped[str] = mapped_column(String(120))
-    country_code: Mapped[str] = mapped_column(ForeignKey("country.code"), default=None)
+    country_id: Mapped[int] = mapped_column(ForeignKey("country.id"), default=None)
     country: Mapped["Country"] = relationship(lazy="raise_on_sql", default=None)
     level_id: Mapped[int] = mapped_column(
         ForeignKey("education_level.id"), default=None
@@ -59,7 +60,7 @@ class Institution(Base, kw_only=True):
         Index(
             "unique_government_code_per_country",
             "government_issued_code",
-            "country_code",
+            "country_id",
             unique=True,
             postgresql_where=government_issued_code != "",
         ),
@@ -113,8 +114,8 @@ class LevelStage(Base, kw_only=True):
         default=None,
     )
 
-    country_code: Mapped[str | None] = mapped_column(
-        ForeignKey("country.code"), default=None
+    country_id: Mapped[int | None] = mapped_column(
+        ForeignKey("country.id"), default=None
     )
     country: Mapped["Country | None"] = relationship(
         lazy="raise_on_sql", init=False, default=None
@@ -125,7 +126,7 @@ class LevelStage(Base, kw_only=True):
         UniqueConstraint(
             "name",
             "level_id",
-            "country_code",
+            "country_id",
             name="unique_level_stage_per_country",
         ),
     )
@@ -185,5 +186,18 @@ class EducationInfo(Base, kw_only=True):
         lazy="raise_on_sql",
         default=None,
     )
+    current_education_user: Mapped["User | None"] = relationship(
+        lazy="raise_on_sql",
+        default=None,
+        back_populates="current_education",
+        foreign_keys=[User.current_education_id],
+    )
+    intended_education_user: Mapped["User | None"] = relationship(
+        lazy="raise_on_sql",
+        default=None,
+        back_populates="intended_education",
+        foreign_keys=[User.intended_education_id],
+    )
+
     def __str__(self) -> str:
         return f"Current education info of user {self.current_education_user.id if self.current_education_user else self.intended_education_user.id if self.intended_education_user else None}"

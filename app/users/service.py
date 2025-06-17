@@ -16,6 +16,7 @@ import app.amp as amp
 import app.community.service as community_service
 import app.mail as mail
 import app.users.external_auth as external_auth
+from app.countries.service import get_country
 from app.education import service as education_service
 from app.education.models import EducationInfo
 from app.shared.validation import UNSET
@@ -188,7 +189,7 @@ async def _create_user(
     db_session: AsyncSession,
     *,
     name: str,
-    email: str | None,
+    email: str,
     signup_source: SignupSource,
     referred_by_username: str | None,
     hashed_password: str | None,
@@ -230,8 +231,8 @@ async def _create_user(
         username=username,
         email=email,
         hashed_password=hashed_password or "",
-        google_id=google_id,
-        apple_id=apple_id,
+        google_id=google_id or "",
+        apple_id=apple_id or "",
         signup_source=signup_source,
         referred_by_id=referred_by_id,
     )
@@ -273,7 +274,7 @@ async def _create_social_user(
     db_session: AsyncSession,
     *,
     name: str | None,
-    email: str | None,
+    email: str,
     signup_source: SignupSource,
     referred_by_username: str,
     google_id: str | None = None,
@@ -450,15 +451,14 @@ async def update_user_fields(
 
     # Handle country_code field explicitly
     if updates.country_code is not UNSET:
-        if updates.country_code != user.country_code:
-            user.country_code = updates.country_code
-            try:
-                await db_session.flush()
-                updated_fields.append("country_code")
-            except IntegrityError:
-                raise InvalidCountryCodeError(
-                    f"Invalid country code: {updates.country_code}"
-                )
+        country = await get_country(db_session, country_code=updates.country_code)
+        if not country:
+            raise InvalidCountryCodeError(
+                f"Invalid country code: {updates.country_code}"
+            )
+        user.country_id = country.id
+        await db_session.flush()
+        updated_fields.append("country_code")
 
     if updates.location is not UNSET:
         new_location = WKTElement(

@@ -25,7 +25,7 @@ class InstitutionOut(BaseModel):
             id=model.id,
             name=model.name,
             institution_type=model.institution_type,
-            country_code=model.country_code,
+            country_code=model.country.code,
             address=model.address,
             city=model.city,
         )
@@ -69,7 +69,7 @@ class LevelStageOut(BaseModel):
         return cls(
             id=model.id,
             name=model.name,
-            country_code=model.country_code,
+            country_code=model.country.code if model.country else None,
             is_default=model.is_default,
         )
 
