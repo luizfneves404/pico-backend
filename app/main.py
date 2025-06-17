@@ -41,7 +41,6 @@ from app.in_app_notifications.routers import router as in_app_notifications_rout
 from app.redis_client import use_redis
 from app.users.routers import token_router, user_router
 from app.ws.routers import router as websockets_router
-from pico_django.pico_backend.asgi import application as django_application
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +214,7 @@ class HostRouter:
 
 application = HostRouter(
     host_app_map={
-        settings.django_host: django_application,
+        # settings.django_host: django_application,
         settings.fastapi_host: fastapi_app,
     },
     default_app=fastapi_app,
