@@ -140,36 +140,18 @@ async def create_flow(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
     topic: Annotated[str, Form()] = "",
-    input_files: list[UploadFile] = FastAPIFile(default=None),
+    input_files: list[UploadFile] = FastAPIFile(default=[]),
 ) -> FlowDetail:
     """Create a new flow from a topic with optional files"""
 
     try:
-        # flow = await flow_service.create_flow_with_optional_files(
-        #     db_session,
-        #     user=current_user,
-        #     topic=topic,
-        #     files=input_files if input_files else [],
-        # )
-
-        # Mock response
-        return FlowDetail(
-            id=1,
-            code=uuid4(),
-            created_at=datetime.now(timezone.utc),
-            title=f"Flow sobre {topic}",
-            cover_image_url=None,
-            action_link="",
-            action_text="Continuar estudando",
-            created_by=SimpleUser(id=current_user.id, username=current_user.username),
-            difficulty=FlowDifficulty.MEDIUM,
-            max_num_questions=20,
-            elements=[],
-            num_total_elements=0,
-            num_user_total_answers=0,
-            num_user_correct_answers=0,
-            num_users_answered=0,
+        flow = await flow_service.create_flow_with_optional_files(
+            db_session,
+            user=current_user,
+            topic=topic,
+            files=input_files if input_files else [],
         )
+        return await FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
     except flow_service.FlowValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except flow_service.InvalidFileTypeError as e:
@@ -186,29 +168,10 @@ async def add_questions_to_flow_official(
     """Add questions to a flow"""
 
     try:
-        # flow = await flow_service.add_questions_to_flow_official(
-        #     db_session, current_user.id, id, add_questions_to_flow_official
-        # )
-        # return FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
-
-        # Mock response
-        return FlowDetail(
-            id=id,
-            code=uuid4(),
-            created_at=datetime.now(timezone.utc),
-            title="Flow com questões oficiais",
-            cover_image_url=None,
-            action_link="",
-            action_text="Continuar estudando",
-            created_by=SimpleUser(id=current_user.id, username=current_user.username),
-            difficulty=FlowDifficulty.MEDIUM,
-            max_num_questions=20,
-            elements=[],
-            num_total_elements=10,
-            num_user_total_answers=0,
-            num_user_correct_answers=0,
-            num_users_answered=0,
+        flow = await flow_service.add_questions_to_flow_official(
+            db_session, current_user.id, id, add_questions_to_flow_official
         )
+        return await FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
     except flow_service.FlowNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
@@ -225,29 +188,10 @@ async def add_questions_to_flow_ai(
     """Add questions to a flow"""
 
     try:
-        # flow = await flow_service.add_questions_to_flow_ai(
-        #     db_session, current_user.id, id, add_questions_to_flow_ai
-        # )
-        # return FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
-
-        # Mock response
-        return FlowDetail(
-            id=id,
-            code=uuid4(),
-            created_at=datetime.now(timezone.utc),
-            title="Flow com questões de IA",
-            cover_image_url=None,
-            action_link="",
-            action_text="Continuar estudando",
-            created_by=SimpleUser(id=current_user.id, username=current_user.username),
-            difficulty=FlowDifficulty.MEDIUM,
-            max_num_questions=20,
-            elements=[],
-            num_total_elements=15,
-            num_user_total_answers=0,
-            num_user_correct_answers=0,
-            num_users_answered=0,
+        flow = await flow_service.add_questions_to_flow_ai(
+            db_session, current_user.id, id, add_questions_to_flow_ai
         )
+        return await FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
     except flow_service.FlowNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
@@ -264,29 +208,10 @@ async def add_questions_to_flow_full(
     """Add AI and official questions to a flow"""
 
     try:
-        # flow = await flow_service.add_questions_to_flow_full(
-        #     db_session, current_user.id, id, add_questions_to_flow_full
-        # )
-        # return FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
-
-        # Mock response
-        return FlowDetail(
-            id=id,
-            code=uuid4(),
-            created_at=datetime.now(timezone.utc),
-            title="Flow completo com questões oficiais e IA",
-            cover_image_url=None,
-            action_link="",
-            action_text="Continuar estudando",
-            created_by=SimpleUser(id=current_user.id, username=current_user.username),
-            difficulty=FlowDifficulty.MEDIUM,
-            max_num_questions=25,
-            elements=[],
-            num_total_elements=25,
-            num_user_total_answers=0,
-            num_user_correct_answers=0,
-            num_users_answered=0,
+        flow = await flow_service.add_questions_to_flow_full(
+            db_session, current_user.id, id, add_questions_to_flow_full
         )
+        return await FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
     except flow_service.FlowNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
