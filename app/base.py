@@ -13,6 +13,7 @@ from sqlalchemy.orm import (
     Mapped,
     MappedAsDataclass,
     Session,
+    SessionTransaction,
     declared_attr,
     has_inherited_table,
     mapped_column,
@@ -89,17 +90,15 @@ def register_rollback_action(session: AsyncSession, action: Callable[[], None]) 
     cast(list[Callable[[], None]], session.info["rollback_actions"]).append(action)
 
 
-def after_transaction_end(session: Session, transaction: Any) -> None:
-    """Called when a transaction ends; executes rollback actions if needed."""
-    if transaction._parent is None:
-        actions = cast(
-            list[Callable[[], None]], session.info.pop("rollback_actions", [])
-        )
-        for action in actions:
-            try:
-                action()
-            except Exception as e:
-                logger.error(f"Rollback cleanup failed: {e}")
+def handle_after_soft_rollback(
+    session: AsyncSession, previous_transaction: SessionTransaction
+) -> None:
+    actions = cast(list[Callable[[], None]], session.info.pop("rollback_actions", []))
+    for action in actions:
+        try:
+            action()
+        except Exception as e:
+            logger.error(f"Rollback cleanup failed: {e}")
 
 
-event.listen(Session, "after_transaction_end", after_transaction_end)
+event.listen(Session, "after_soft_rollback", handle_after_soft_rollback)
