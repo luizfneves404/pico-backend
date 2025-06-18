@@ -91,6 +91,55 @@ class File(Base, kw_only=True):
         await run_in_threadpool(storage.delete, self.file_id)
 
 
+async def create_files(
+    db_session: AsyncSession, upload_files: list[UploadFile]
+) -> list[File]:
+    """Upload multiple files to storage and create File records.
+
+    Args:
+        db_session: The database session to use
+        upload_files: The files to upload
+
+    Returns:
+        list[File]: The created file records
+
+    Raises:
+        ValueError: If any upload_file has no filename or size
+    """
+    created_files = []
+    uploaded_file_ids = []
+
+    for upload_file in upload_files:
+        if upload_file.filename is None:
+            raise ValueError("File name is required")
+
+        file_id = await run_in_threadpool(
+            storage.upload,
+            upload_file.file,
+            upload_file.filename,
+        )
+        uploaded_file_ids.append(file_id)
+
+        if not upload_file.size:
+            raise ValueError("File size somehow is None")
+
+        file = File(
+            file_id=file_id,
+            original_name=upload_file.filename,
+            size=upload_file.size,
+        )
+        db_session.add(file)
+        created_files.append(file)
+
+    # Set up rollback cleanup for all uploaded files
+    def rollback_cleanup():
+        for file_id in uploaded_file_ids:
+            storage.delete(file_id)
+
+    register_rollback_action(db_session, rollback_cleanup)
+    return created_files
+
+
 async def create_file(db_session: AsyncSession, upload_file: UploadFile) -> File:
     """Upload a file to storage and create a new File record.
 
@@ -104,26 +153,5 @@ async def create_file(db_session: AsyncSession, upload_file: UploadFile) -> File
     Raises:
         ValueError: If the upload_file has no filename
     """
-    if upload_file.filename is None:
-        raise ValueError("File name is required")
-
-    file_id = await run_in_threadpool(
-        storage.upload,
-        upload_file.file,
-        upload_file.filename,
-    )
-    if not upload_file.size:
-        raise ValueError("File size somehow is None")
-
-    file = File(
-        file_id=file_id,
-        original_name=upload_file.filename,
-        size=upload_file.size,
-    )
-    db_session.add(file)
-
-    def rollback_cleanup():
-        storage.delete(file_id)
-
-    register_rollback_action(db_session, rollback_cleanup)
-    return file
+    files = await create_files(db_session, [upload_file])
+    return files[0]
