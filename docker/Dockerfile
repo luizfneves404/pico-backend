@@ -32,4 +32,4 @@ COPY --from=builder /code/.venv /code/.venv
 
 COPY . /code/
 
-RUN chmod +x /code/docker/docker-entrypoint.sh /code/docker/docker-celery-entrypoint.sh /code/docker/docker-celery-flower-entrypoint.sh /code/docker/docker-test-entrypoint.sh /code/docker/docker-worker-entrypoint.sh
+RUN chmod +x /code/docker/docker-entrypoint.sh /code/docker/docker-test-entrypoint.sh /code/docker/docker-worker-entrypoint.sh

@@ -74,7 +74,7 @@ pipeline-job:
       aws configure set default.region "$AWS_DEFAULT_REGION"
 
       echo "Increasing desired capacity of ECS clusters to 2..."
-      aws autoscaling set-desired-capacity --auto-scaling-group-name Infra-ECS-Cluster-celery-641e83ce-ECSAutoScalingGroup-ocuyjnL56bnz --desired-capacity 2
+      aws autoscaling set-desired-capacity --auto-scaling-group-name Infra-ECS-Cluster-worker-641e83ce-ECSAutoScalingGroup-ocuyjnL56bnz --desired-capacity 2
       aws autoscaling set-desired-capacity --auto-scaling-group-name Infra-ECS-Cluster-unrot-backend-web-f0fd6456-ECSAutoScalingGroup-pq5Glb6kvyFj --desired-capacity 2
 
       echo "Building and pushing backend image to AWS ECR..."
@@ -97,8 +97,8 @@ pipeline-job:
       LATEST_TASK_DEF=$(aws ecs describe-task-definition --task-definition "$CI_AWS_WEB_ECS_TASK_DEFINITION" --query 'taskDefinition.taskDefinitionArn' --output text)
       aws ecs update-service --cluster "$CI_AWS_WEB_ECS_CLUSTER" --service "$CI_AWS_WEB_ECS_SERVICE" --task-definition "$LATEST_TASK_DEF" --force-new-deployment
 
-      LATEST_TASK_DEF=$(aws ecs describe-task-definition --task-definition "$CI_AWS_CELERY_ECS_TASK_DEFINITION" --query 'taskDefinition.taskDefinitionArn' --output text)
-      aws ecs update-service --cluster "$CI_AWS_CELERY_ECS_CLUSTER" --service "$CI_AWS_CELERY_ECS_SERVICE" --task-definition "$LATEST_TASK_DEF" --force-new-deployment
+      LATEST_TASK_DEF=$(aws ecs describe-task-definition --task-definition "$CI_AWS_WORKER_ECS_TASK_DEFINITION" --query 'taskDefinition.taskDefinitionArn' --output text)
+      aws ecs update-service --cluster "$CI_AWS_WORKER_ECS_CLUSTER" --service "$CI_AWS_WORKER_ECS_SERVICE" --task-definition "$LATEST_TASK_DEF" --force-new-deployment
     else
       echo "Skipping deploy..."
     fi
