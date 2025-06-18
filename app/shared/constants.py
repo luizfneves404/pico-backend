@@ -24,3 +24,6 @@ TEXTRACT_EXTRACTION_METHOD = "Amazon Textract"
 PEN_TO_PRINT_EXTRACTION_METHOD = "Pen to Print"
 
 EXTRACT_OPENAI_EXTRACTION_METHOD = "OpenAI"
+
+SYSTEM_MESSAGE_TRANSCRIBE_PDF = """Sua tarefa é transcrever com total fidelidade todo o conteúdo acadêmico do PDF fornecido, preservando a estrutura, a formatação e o texto original, sem interpretações, resumos ou comentários adicionais. Responda apenas com a transcrição fiel e completa do conteúdo, iniciando diretamente pelo texto do documento, sem introduções ou frases como 'Claro!' ou 'Aqui está a transcrição:'
+"""

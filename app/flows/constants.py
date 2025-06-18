@@ -245,7 +245,7 @@ Retorne as questões no formato especificado, com os campos de cada questão:
 """
 
 
-USER_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH = """Você é um assistente que gera questões de múltipla escolha no estilo dos grandes vestibulares brasileiros com 4 alternativas com base em um conteúdo transcrito. 
+SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH = """Você é um assistente que gera questões de múltipla escolha no estilo dos grandes vestibulares brasileiros com 4 alternativas com base em um conteúdo transcrito. 
 Não mencione diretamente o conteúdo transcrito, mas se baseie nele para gerar as questões. Quando julgar apropriado, balanceie o uso de questões de cálculo com questões teóricas.
 Nas choices, não utilize prefixos como "A)", "B)", etc.
 
@@ -284,3 +284,69 @@ Retorne as questões no formato especificado, com os campos:
 - choices: array com as 4 alternativas (apenas o texto, sem prefixos como "A)", "B)", etc.)
 - correct_choice: letra da alternativa correta (A, B, C, D)
 """
+
+# File processing constants
+MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50MB limit
+SUPPORTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/jpg", "image/webp"]
+SUPPORTED_DOCUMENT_TYPES = ["application/pdf", "text/plain"]
+CHUNK_SIZE = 8192  # 8KB chunks for file reading
+
+# Transcription processing
+MAX_TRANSCRIPTION_LENGTH = 100000  # Maximum characters per transcription block
+MAX_COMBINED_TRANSCRIPTION_LENGTH = (
+    500000  # Maximum total transcription length for AI processing
+)
+
+SYSTEM_MESSAGE_BLOCK_TITLE = """
+    Você é um especialista em educação que sabe extrair conceitos-chave de textos.
+    Sua tarefa é criar uma query de busca com no máximo 4 palavras que represente o tema principal da transcrição fornecida.
+    A query deve capturar o conceito central ou tópico mais relevante do texto, sendo específica o suficiente para uma busca eficaz.
+    Retorne apenas as palavras-chave, sem pontuação ou explicações adicionais.
+"""
+
+# System messages for new utility functions
+SYSTEM_MESSAGE_GENERATE_TITLE_FROM_TRANSCRIPTIONS = """
+Você é um especialista em criar títulos educacionais concisos e informativos.
+Baseado nos títulos das transcrições fornecidas, crie um título único e atrativo que represente o conteúdo geral.
+O título deve:
+- Ser conciso (máximo 60 caracteres)
+- Capturar o tema principal comum entre as transcrições
+- Ser claro e atrativo para estudantes
+- Evitar redundâncias se os títulos forem similares
+
+Responda apenas com o título gerado, sem aspas ou explicações adicionais.
+"""
+
+SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT = """
+Você é um classificador de conteúdo educacional especializado em identificar se um ou mais tópicos envolvem cálculos matemáticos.
+Analise o título/tópico fornecido e determine se ele envolve ou requer cálculos matemáticos, fórmulas, equações ou raciocínio quantitativo.
+
+Considere como envolvendo matemática:
+- Problemas que requerem cálculos numéricos
+- Tópicos com fórmulas, equações ou expressões matemáticas
+- Geometria, trigonometria, álgebra, cálculo
+- Física com cálculos, química quantitativa
+- Estatística, probabilidade
+- Problemas de proporção, regra de três, porcentagem
+
+NÃO considere como envolvendo matemática:
+- Tópicos puramente teóricos ou conceituais
+- História, literatura, filosofia
+- Biologia descritiva, geografia humana
+- Conceitos qualitativos sem cálculos
+
+Responda apenas "SIM" se envolve cálculos matemáticos ou "NÃO" se não envolve.
+"""
+
+# Pydantic models for OpenAI structured output
+from pydantic import BaseModel
+
+
+class QuestionInstance(BaseModel):
+    text: str
+    choices: list[str]
+    correct_choice: str
+
+
+class QuestionSet(BaseModel):
+    questions: list[QuestionInstance]
