@@ -115,7 +115,7 @@ class FlowQuestionInFeed(BaseModel):
         )
 
 
-class FlowInFeed(BaseModel):
+class FlowBase(BaseModel):
     id: int
     code: UUID
     created_at: AwareDatetime
@@ -129,12 +129,11 @@ class FlowInFeed(BaseModel):
     difficulty: FlowDifficulty
     max_num_questions: int
 
-    elements: list[FlowQuestionInFeed]  # first 5 questions? ask gpt if this is needed
     num_total_elements: int
     num_users_answered: int
 
     @classmethod
-    async def from_orm_model(cls, flow: Flow) -> "FlowInFeed":
+    async def from_orm_model(cls, flow: Flow) -> "FlowBase":
         return cls(
             id=flow.id,
             code=flow.code,
@@ -150,19 +149,40 @@ class FlowInFeed(BaseModel):
             ),
             difficulty=flow.difficulty,
             max_num_questions=flow.max_num_questions,
+            num_total_elements=flow.num_total_elements,
+            num_users_answered=flow.num_users_answered,
+        )
+
+
+class FlowInFeed(FlowBase):
+    elements: list[FlowQuestionInFeed]
+
+    @classmethod
+    async def from_orm_model(cls, flow: Flow) -> "FlowInFeed":
+        flow_base = await FlowBase.from_orm_model(flow)
+        return cls(
+            id=flow_base.id,
+            code=flow_base.code,
+            created_at=flow_base.created_at,
+            title=flow_base.title,
+            cover_image_url=flow_base.cover_image_url,
+            action_link=flow_base.action_link,
+            action_text=flow_base.action_text,
+            created_by=flow_base.created_by,
+            difficulty=flow_base.difficulty,
+            max_num_questions=flow_base.max_num_questions,
             elements=[
                 await FlowQuestionInFeed.from_orm_model(element)
                 for i, element in enumerate(flow.elements)
                 if isinstance(element, FlowQuestion)
                 and (i == 0 or flow.elements[i - 1].order == flow.elements[i].order - 1)
             ],
-            num_total_elements=flow.num_total_elements,
-            num_users_answered=flow.num_users_answered,
+            num_total_elements=flow_base.num_total_elements,
+            num_users_answered=flow_base.num_users_answered,
         )
 
 
 class FlowDetail(FlowInFeed):
-    # but now with all questions
     num_user_total_answers: int
     num_user_correct_answers: int
 
@@ -188,28 +208,30 @@ class FlowDetail(FlowInFeed):
         )
 
 
-class FlowInSearch(FlowDetail):
+class FlowInSearch(FlowBase):
+    num_user_total_answers: int
+    num_user_correct_answers: int
+
     @classmethod
     async def from_orm_model_for_user(
         cls, flow: Flow, *, user_id: int
     ) -> "FlowInSearch":
-        flow_detail = await FlowDetail.from_orm_model_for_user(flow, user_id=user_id)
+        flow_base = await FlowBase.from_orm_model(flow)
         return cls(
-            id=flow_detail.id,
-            code=flow_detail.code,
-            created_at=flow_detail.created_at,
-            title=flow_detail.title,
-            cover_image_url=flow_detail.cover_image_url,
-            action_link=flow_detail.action_link,
-            action_text=flow_detail.action_text,
-            created_by=flow_detail.created_by,
-            max_num_questions=flow_detail.max_num_questions,
-            difficulty=flow_detail.difficulty,
-            elements=flow_detail.elements,
-            num_total_elements=flow_detail.num_total_elements,
-            num_users_answered=flow_detail.num_users_answered,
-            num_user_total_answers=flow_detail.num_user_total_answers,
-            num_user_correct_answers=flow_detail.num_user_correct_answers,
+            id=flow_base.id,
+            code=flow_base.code,
+            created_at=flow_base.created_at,
+            title=flow_base.title,
+            cover_image_url=flow_base.cover_image_url,
+            action_link=flow_base.action_link,
+            action_text=flow_base.action_text,
+            created_by=flow_base.created_by,
+            max_num_questions=flow_base.max_num_questions,
+            difficulty=flow_base.difficulty,
+            num_total_elements=flow_base.num_total_elements,
+            num_users_answered=flow_base.num_users_answered,
+            num_user_total_answers=flow.num_user_total_answers(user_id),
+            num_user_correct_answers=flow.num_user_correct_answers(user_id),
         )
 
 

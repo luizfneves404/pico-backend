@@ -34,6 +34,7 @@ from app.flows.models import (
 )
 from app.pagination import PaginationParams, paginate_query
 from app.users.models import User
+from app.community.models import CommunityUser
 from app.flows.schemas import QuestionDensity
 from app.users.service import get_user
 from app.flows import question_service
@@ -310,31 +311,29 @@ async def _generate_flow_questions(
 
 
 async def community_feed(
-    db_session: AsyncSession, *, user_id: int, pagination: PaginationParams
+    db_session: AsyncSession,
+    *,
+    community_id: int,
+    pagination: PaginationParams,
 ) -> list[Flow]:
-    """Get a list of flows from the community feed"""
+    """Get a list of flows from the community feed created by users in the community."""
     query = (
         select(Flow)
         .join(FlowElement, Flow.id == FlowElement.flow_id)
+        .join(User, Flow.created_by_id == User.id)
+        .join(CommunityUser, User.id == CommunityUser.user_id)
         .outerjoin(FlowQuestionUser, FlowElement.id == FlowQuestionUser.flow_element_id)
+        .where(CommunityUser.community_id == community_id)
         .group_by(Flow.id)
         .order_by(Flow.created_at.desc())
         .options(*get_flow_loader(num_elements=NUM_ELEMENTS_TO_LOAD_IN_FEED))
         .limit(pagination.size)
         .offset((pagination.page - 1) * pagination.size)
     )
-    result = await db_session.execute(query)
-    flows = list(result.scalars())
+    result = await db_session.scalars(query)
+    flows = list(result)
 
-    # Mark these flows as seen by this user
-    for flow in flows:
-        flow_user_feed = FlowUserFeed(user_id=user_id, flow_id=flow.id)
-        db_session.add(flow_user_feed)
-
-    # Commit the seen records
-    await db_session.flush()
-
-    return flows  # Fixed: added missing return statement
+    return flows
 
 
 async def submit_answer_multiple_choice(
