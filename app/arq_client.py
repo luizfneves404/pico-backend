@@ -1,7 +1,6 @@
 import contextlib
-from typing import Any, AsyncIterator
-
 import logging
+from typing import Any, AsyncIterator
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
@@ -70,7 +69,20 @@ async def enqueue_job(function: str, *args: Any, **kwargs: Any) -> None:
         **kwargs: Keyword arguments to pass to the function
     """
     client = _get_redis()
-    logger.info(f"Enqueuing job {function} with args {args} and kwargs {kwargs}")
+
+    # Strip args and kwargs if too big for logging
+    def truncate_if_large(obj: Any, max_length: int = 200) -> str:
+        obj_str = str(obj)
+        if len(obj_str) > max_length:
+            return obj_str[:max_length] + "... (truncated)"
+        return obj_str
+
+    args_str = truncate_if_large(args)
+    kwargs_str = truncate_if_large(kwargs)
+
+    logger.info(
+        f"Enqueuing job {function} with args {args_str} and kwargs {kwargs_str}"
+    )
     await client.enqueue_job(function, *args, **kwargs)
 
 
