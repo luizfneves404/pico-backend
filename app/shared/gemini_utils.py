@@ -1,13 +1,13 @@
 # stdlib
 import logging
-from typing import IO, Final
+from typing import IO, Any, Final
 
 # third‑party
 from google import genai
-from google.genai import types, errors
+from google.genai import errors, types
 
-from app.shared.constants import SYSTEM_MESSAGE_TRANSCRIBE_PDF
 from app.config import settings
+from app.shared.constants import SYSTEM_MESSAGE_TRANSCRIBE_PDF
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +15,36 @@ logger = logging.getLogger(__name__)
 _GEMINI_MODEL: Final[str] = "gemini-2.5-flash-preview-05-20"
 PDF_SIZE_LIMIT: Final[int] = 20 * 1024 * 1024  # 20 MB hard‑limit
 
+
+class MockGeminiResponse:
+    """Mock response object for Gemini API"""
+
+    def __init__(self, text: str):
+        self.text = text
+
+
+class MockGeminiClient:
+    """Mock client that mimics the Gemini client interface"""
+
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.aio = self
+        self.models = self
+
+    async def generate_content(
+        self, model: str, contents: list[Any], config: types.GenerateContentConfig
+    ) -> MockGeminiResponse:
+        """Mock generate_content method"""
+        mock_id = f"mock_gemini_{model}_{config.temperature}_{hash(str(contents))}"
+        return MockGeminiResponse(f"Mocked Gemini transcription for {mock_id}")
+
+
 # ---------- client único (reutilizável) ----------
-client = genai.Client(api_key=settings.gemini_api_key)
+client = (
+    MockGeminiClient(api_key=settings.gemini_api_key)
+    if settings.mock_gemini
+    else genai.Client(api_key=settings.gemini_api_key)
+)
 
 
 async def transcribe_uploaded_pdf(file_like: IO[bytes]) -> str:
@@ -24,7 +52,7 @@ async def transcribe_uploaded_pdf(file_like: IO[bytes]) -> str:
     Recebe um objeto file-like (IO[bytes]) representando **uma página PDF** (<20 MB),
     envia como bytes _inline_ ao Gemini e devolve a transcrição limpa.
 
-    ● 100 % assíncrona, sem bloqueios no event‑loop.
+    ● 100 % assíncrona, sem bloqueios no event-loop.
     ● Imune a consumo excessivo de memória, pois valida tamanho antes de `read()`.
     ● Propaga `errors.APIError` como ValueError com log apropriado.
     """
@@ -33,7 +61,7 @@ async def transcribe_uploaded_pdf(file_like: IO[bytes]) -> str:
     size = len(data)
 
     if size > PDF_SIZE_LIMIT:
-        raise ValueError(f"PDF tem {size/1_048_576:.1f} MB > limite de 20 MB.")
+        raise ValueError(f"PDF tem {size / 1_048_576:.1f} MB > limite de 20 MB.")
 
     # 2) chamar Gemini (API assíncrona nativa) ----------------------------------
     try:
@@ -49,7 +77,7 @@ async def transcribe_uploaded_pdf(file_like: IO[bytes]) -> str:
             ),
         )
     except errors.APIError as e:
-        logger.error("Gemini APIError %s – %s", e.code, e.message)
+        logger.error("Gemini APIError %s - %s", e.code, e.message)
         raise ValueError("Falha no OCR do PDF.") from e
 
     text = (response.text or "").strip()

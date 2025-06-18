@@ -90,6 +90,7 @@ class Settings(BaseSettings):
     openapi_url: str = Field(default=...)
     openapi_api_key: str = Field(default=...)
     mock_openai: bool = Field(default=...)
+    mock_gemini: bool = Field(default=...)
     docs_url: str = Field(default=...)
 
     admin_names: list[str] = Field(default=...)
