@@ -42,7 +42,7 @@
                                         {% if level.name == "DEBUG" %}
                                             - Shows all SQL statements and parameters
                                         {% elif level.name == "INFO" %}
-                                            - Shows SQL statements without parameters (default)
+                                            - Shows SQL statements without parameters
                                         {% elif level.name == "WARNING" %}
                                             - Shows only warnings and errors
                                         {% elif level.name == "ERROR" %}
@@ -117,7 +117,7 @@
                                 <h5>SQL Logging Levels:</h5>
                                 <ul class="list-unstyled">
                                     <li><strong>DEBUG:</strong> Shows all SQL statements with parameters - useful for debugging but very verbose</li>
-                                    <li><strong>INFO:</strong> Shows SQL statements without parameters (default production setting)</li>
+                                    <li><strong>INFO:</strong> Shows SQL statements without parameters</li>
                                     <li><strong>WARNING:</strong> Shows only warnings and errors</li>
                                     <li><strong>ERROR:</strong> Shows only SQL errors</li>
                                     <li><strong>CRITICAL:</strong> Shows only critical SQL errors</li>

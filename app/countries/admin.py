@@ -57,7 +57,7 @@ class CountryAdmin(CustomModelView, model=Country):
         "phone_code",
     ]
 
-    def to_orm_model(self, validated_data: CountryImportSchema) -> Country:
+    async def to_orm_model(self, validated_data: CountryImportSchema) -> Country:
         return Country(
             code=validated_data.code,
             name=validated_data.name,

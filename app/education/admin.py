@@ -1,5 +1,6 @@
 from typing import Any, ClassVar, Sequence, Union
 
+from geoalchemy2 import WKTElement
 from pydantic import BaseModel
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -19,9 +20,12 @@ class InstitutionImportSchema(BaseModel):
     name: str
     user_submitted: bool
     institution_type: InstitutionType
+    government_issued_code: str | None
     country_id: int
     level_id: int
     administrative_category: AdministrativeCategory
+    latitude: float | None
+    longitude: float | None
 
 
 class InstitutionAdmin(CustomModelView, model=Institution):
@@ -47,7 +51,16 @@ class InstitutionAdmin(CustomModelView, model=Institution):
         Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
     ] = [Institution.id, Institution.name, Institution.user_submitted]
 
-    form_columns = ["name", "user_submitted", "courses"]
+    form_columns = [
+        Institution.name,
+        Institution.user_submitted,
+        Institution.institution_type,
+        Institution.country,
+        Institution.level,
+        Institution.administrative_category,
+        Institution.government_issued_code,
+        Institution.location,
+    ]
 
     can_import = True
     import_schema = InstitutionImportSchema
@@ -58,6 +71,9 @@ class InstitutionAdmin(CustomModelView, model=Institution):
         "country_id": 1,
         "level_id": 1,
         "administrative_category": "PUBLIC",
+        "government_issued_code": "1234567890",
+        "latitude": 12.34567890,
+        "longitude": 12.34567890,
     }
 
     async def to_orm_model(
@@ -70,6 +86,12 @@ class InstitutionAdmin(CustomModelView, model=Institution):
             country_id=validated_data.country_id,
             level_id=validated_data.level_id,
             administrative_category=validated_data.administrative_category,
+            government_issued_code=validated_data.government_issued_code or "",
+            location=WKTElement(
+                f"POINT({validated_data.longitude} {validated_data.latitude})"
+            )
+            if validated_data.latitude and validated_data.longitude
+            else None,  # type: ignore # this should work according to geoalchemy2
         )
 
 

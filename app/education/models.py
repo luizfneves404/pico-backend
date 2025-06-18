@@ -21,7 +21,6 @@ class AdministrativeCategory(StrEnum):
 
 
 class InstitutionType(StrEnum):
-    INSTITUTION = "institution"
     SCHOOL = "school"
     COLLEGE = "college"
 
@@ -42,7 +41,7 @@ class Institution(Base, kw_only=True):
     )
     institution_type: Mapped[InstitutionType] = mapped_column()
     user_submitted: Mapped[bool] = mapped_column()
-    administrative_category: Mapped[AdministrativeCategory] = mapped_column(String(50))
+    administrative_category: Mapped[AdministrativeCategory] = mapped_column()
 
     government_issued_code: Mapped[str] = mapped_column(String(50), default="")
     location: Mapped[WKBElement | None] = mapped_column(
@@ -50,11 +49,6 @@ class Institution(Base, kw_only=True):
     )
     address: Mapped[str] = mapped_column(Text, default="")
     city: Mapped[str] = mapped_column(Text, default="")
-
-    __mapper_args__ = {
-        "polymorphic_identity": InstitutionType.INSTITUTION,
-        "polymorphic_on": institution_type,
-    }
 
     __table_args__ = (
         Index(
@@ -68,18 +62,6 @@ class Institution(Base, kw_only=True):
 
     def __str__(self) -> str:
         return self.name
-
-
-class School(Institution, kw_only=True):
-    __mapper_args__ = {
-        "polymorphic_identity": InstitutionType.SCHOOL,
-    }
-
-
-class College(Institution, kw_only=True):
-    __mapper_args__ = {
-        "polymorphic_identity": InstitutionType.COLLEGE,
-    }
 
 
 class Course(Base, kw_only=True):

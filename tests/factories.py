@@ -28,7 +28,6 @@ from app.community.models import Community
 from app.countries.models import Country
 from app.education.models import (
     AdministrativeCategory,
-    College,
     Course,
     EducationInfo,
     EducationLevel,
@@ -90,16 +89,12 @@ def hashed_password_func() -> str:
     return get_password_hash("defaultpassword")
 
 
-def school_name_sequence(n: int) -> str:
-    return f"School {n}"
+def institution_name_sequence(n: int) -> str:
+    return f"Institution {n}"
 
 
 def course_name_i18n_sequence(n: int) -> dict[str, str]:
     return {"en": f"Course {n}", "pt": f"Curso {n}"}
-
-
-def college_name_sequence(n: int) -> str:
-    return f"College {n}"
 
 
 def community_name_sequence(n: int) -> str:
@@ -243,18 +238,6 @@ class CountryFactory(AsyncSQLAlchemyFactory[Country]):
     phone_code = Sequence(country_phone_code_sequence)
 
 
-class SchoolFactory(AsyncSQLAlchemyFactory[Institution]):
-    class Meta:
-        model = Institution
-
-    name = Sequence(school_name_sequence)
-    institution_type = InstitutionType.SCHOOL
-    user_submitted = False
-    country = SubFactory(CountryFactory)
-    level = SubFactory(EducationLevelFactory)
-    administrative_category = AdministrativeCategory.UNKNOWN
-
-
 class LevelStageFactory(AsyncSQLAlchemyFactory[LevelStage]):
     class Meta:
         model = LevelStage
@@ -273,16 +256,15 @@ class CourseFactory(AsyncSQLAlchemyFactory[Course]):
     user_submitted = False
 
 
-class CollegeFactory(AsyncSQLAlchemyFactory[College]):
+class InstitutionFactory(AsyncSQLAlchemyFactory[Institution]):
     class Meta:
-        model = College
+        model = Institution
 
-    name = Sequence(college_name_sequence)
-    institution_type = "college"
+    name = Sequence(institution_name_sequence)
+    institution_type = InstitutionType.SCHOOL
     user_submitted = False
-    courses = RelatedFactoryList(CourseFactory, size=3)
-    level = SubFactory(EducationLevelFactory)
     country = SubFactory(CountryFactory)
+    level = SubFactory(EducationLevelFactory)
     administrative_category = AdministrativeCategory.UNKNOWN
 
 
@@ -303,7 +285,7 @@ class EducationFactory(AsyncSQLAlchemyFactory[EducationInfo]):
         model = EducationInfo
 
     level = SubFactory(EducationLevelFactory)
-    institution = SubFactory(SchoolFactory)
+    institution = SubFactory(InstitutionFactory)
     course = SubFactory(CourseFactory)
 
 

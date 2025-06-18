@@ -18,9 +18,8 @@ from app.users.exceptions import (
 from app.users.external_auth import AppleIdToken, GoogleIdToken
 from app.users.models import User
 from tests.factories import (
-    CollegeFactory,
     CourseFactory,
-    SchoolFactory,
+    InstitutionFactory,
     UserFactory,
 )
 
@@ -809,8 +808,7 @@ class TestUserUpdates:
     ):
         """Test updating education information."""
         async with session.begin():
-            school = await SchoolFactory.create(session=session)
-            college = await CollegeFactory.create(session=session)
+            institution = await InstitutionFactory.create(session=session)
             course = await CourseFactory.create(session=session)
 
         # Update current education
@@ -818,7 +816,7 @@ class TestUserUpdates:
             "updates": {
                 "current_education": {
                     "level": "TGHS",
-                    "institution_id": school.id,
+                    "institution_id": institution.id,
                     "course_id": course.id,
                 }
             }
@@ -828,7 +826,10 @@ class TestUserUpdates:
         response_data = response.json()
         assert "current_education" in response_data["updated_fields"]
         assert response_data["user"]["current_education"]["level"] == "TGHS"
-        assert response_data["user"]["current_education"]["institution_id"] == school.id
+        assert (
+            response_data["user"]["current_education"]["institution_id"]
+            == institution.id
+        )
         assert response_data["user"]["current_education"]["course_id"] == course.id
 
         # Update intended education
@@ -836,7 +837,7 @@ class TestUserUpdates:
             "updates": {
                 "intended_education": {
                     "level": "COL",
-                    "institution_id": college.id,
+                    "institution_id": institution.id,
                     "course_id": course.id,
                 }
             }
@@ -847,7 +848,8 @@ class TestUserUpdates:
         assert "intended_education" in response_data["updated_fields"]
         assert response_data["user"]["intended_education"]["level"] == "COL"
         assert (
-            response_data["user"]["intended_education"]["institution_id"] == college.id
+            response_data["user"]["intended_education"]["institution_id"]
+            == institution.id
         )
         assert response_data["user"]["intended_education"]["course_id"] == course.id
 
@@ -901,6 +903,27 @@ class TestUserUpdates:
         }
         response = await user_client.patch("/api/users/me", json=data)
         assert response.status_code == 401
+
+    async def test_update_location(
+        self, user_client: AsyncClient, user: User, session: AsyncSession
+    ):
+        """Test updating user location."""
+        data = {
+            "updates": {
+                "location": {"latitude": 12.34567890, "longitude": 12.34567890}
+            },
+        }
+        response = await user_client.patch("/api/users/me", json=data)
+        assert response.status_code == 200
+        response_data = response.json()
+        assert "location" in response_data["updated_fields"]
+        # check if actually updated in the database
+        async with session.begin():
+            location = (
+                await session.execute(select(User.location).where(User.id == user.id))
+            ).scalar_one()
+            assert location is not None
+            assert location.desc == "POINT(12.3456789 12.3456789)"
 
 
 class TestUserDeletion:
@@ -1069,9 +1092,9 @@ class TestSocialFeatures:
         # Create education resources first
         async with session.begin():
             institution = (
-                await SchoolFactory.create(session=session)
+                await InstitutionFactory.create(session=session)
                 if level == EducationLevel.HIGH_SCHOOL
-                else await CollegeFactory.create(session=session)
+                else await InstitutionFactory.create(session=session)
             )
             course = await CourseFactory.create(session=session)
 

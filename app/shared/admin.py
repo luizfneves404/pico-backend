@@ -1,27 +1,34 @@
 import csv
 import io
+import re
 from dataclasses import dataclass
 from typing import Any, Callable, ClassVar, TypeVar
 
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
+from geoalchemy2 import Geography
 from markupsafe import Markup
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import (
+    ColumnProperty,
     DeclarativeBase,
     InstrumentedAttribute,
 )
 from starlette.datastructures import UploadFile
+from wtforms import StringField
 
 from app.shared.bootstrap_sqladmin import monkey_patch_sqladmin
 
-monkey_patch_sqladmin()  # needs to run this before importing sqladmin
+monkey_patch_sqladmin()  # needs to run this before importing sqladmin. add sqladmin imports below!!!
 from sqladmin import ModelView
 from sqladmin.application import Admin as SQLAdminAdmin
+from sqladmin.forms import ModelConverter, converts
 
 MODEL_ATTR = str | InstrumentedAttribute[Any]
 ModelType = TypeVar("ModelType", bound=DeclarativeBase)
+
+WKT_RE = re.compile(r"^POINT\(\s*([-0-9\.]+)\s+([-0-9\.]+)\s*\)$")
 
 
 def bool_formatter(value: bool) -> Markup:
@@ -144,6 +151,40 @@ class AdminWithImport(SQLAdminAdmin):
         )
 
 
+class LocationField(StringField):
+    """
+    Renders as a text box containing e.g. "POINT(-46.633  -23.550)"
+    but you can customize the widget to render two floats if you like.
+    """
+
+    def process_formdata(self, valuelist):
+        # valuelist is a single‑item list: [ "POINT(lon lat)" ]
+        if not valuelist:
+            self.data = None
+            return
+
+        text = valuelist[0].strip()
+        m = WKT_RE.match(text)
+        if not m:
+            raise ValidationError("Must be WKT like: POINT(lon lat)")
+        self.data = text  # SQLAdmin will pass this string as $param
+
+    def _value(self):
+        # When rendering the form, show whatever string we have
+        return self.data or ""
+
+
+class CustomFormConverter(ModelConverter):
+    @converts("geoalchemy2.types.Geography")
+    def conv_location(
+        self,
+        model: type,
+        prop: ColumnProperty[Geography],
+        kwargs: dict[str, Any],
+    ) -> LocationField:
+        return LocationField(**kwargs)
+
+
 class CustomModelView(ModelView):
     """Enhanced ModelView with simple CSV import functionality.
 
@@ -171,6 +212,8 @@ class CustomModelView(ModelView):
     ```
     """
 
+    form_converter = CustomFormConverter
+
     column_type_formatters: ClassVar[dict[type, Callable[[Any], Any]]] = {
         bool: bool_formatter,
         type(None): lambda value: "[NONE]",
@@ -195,7 +238,7 @@ class CustomModelView(ModelView):
 
     session_maker: async_sessionmaker[AsyncSession]
 
-    def to_orm_model(self, validated_data: Any) -> Any:
+    async def to_orm_model(self, validated_data: Any) -> Any:
         """Convert Pydantic model to ORM model."""
         return self.model(**validated_data.model_dump())
 
@@ -224,7 +267,7 @@ class CustomModelView(ModelView):
                     # Validate with Pydantic schema
                     validated_data = self.import_schema.model_validate(cleaned_row)
 
-                    orm_instance = self.to_orm_model(validated_data)
+                    orm_instance = await self.to_orm_model(validated_data)
 
                     if not dry_run:
                         session.add(orm_instance)
