@@ -20,6 +20,7 @@ from app.fcm.fcm_service import init_firebase, task_send_notifications
 from app.flows.tasks import task_mark_question_timed_out
 from app.logging_config import get_logging_config
 from app.mail import task_send_email
+from app.flows.question_service import task_generate_transcriptions
 
 
 async def ping(ctx: dict[Any, Any]) -> Literal["pong"]:
@@ -53,6 +54,7 @@ def make_worker_settings(
             task_mark_question_timed_out,
             task_send_email,
             task_send_notifications,
+            task_generate_transcriptions,
         ]
         redis_settings: RedisSettings = RedisSettings.from_dsn(redis_url)
         on_startup: StartupShutdown | None = startup

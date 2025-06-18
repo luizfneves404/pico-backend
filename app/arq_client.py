@@ -1,12 +1,16 @@
 import contextlib
 from typing import Any, AsyncIterator
 
+import logging
+
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
 
 from app.config import settings
 
 _redis: ArqRedis | None = None
+
+logger = logging.getLogger(__name__)
 
 
 async def init() -> None:
@@ -66,6 +70,7 @@ async def enqueue_job(function: str, *args: Any, **kwargs: Any) -> None:
         **kwargs: Keyword arguments to pass to the function
     """
     client = _get_redis()
+    logger.info(f"Enqueuing job {function} with args {args} and kwargs {kwargs}")
     await client.enqueue_job(function, *args, **kwargs)
 
 
