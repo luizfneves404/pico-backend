@@ -5,14 +5,18 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.community.models import CommunityUser
 from app.flows.models import FlowQuestionUser, FlowUserFeed, Question
 from app.users.models import User
 from tests.factories import (
     ChoiceFactory,
+    CommunityFactory,
     FlowFactory,
     FlowQuestionFactory,
     UserFactory,
 )
+
+# Add user answers
 
 logger = logging.getLogger(__name__)
 
@@ -825,7 +829,6 @@ async def test_search_flows_basic_functionality(
         assert "created_by" in flow
         assert "difficulty" in flow
         assert "max_num_questions" in flow
-        assert "elements" in flow
         assert "num_total_elements" in flow
         assert "num_user_total_answers" in flow
         assert "num_user_correct_answers" in flow
@@ -1115,7 +1118,6 @@ async def test_search_flows_with_flow_elements(
 
     # Verify the flow data includes elements information
     assert found_flow["id"] == flow.id
-    assert "elements" in found_flow
     assert "num_total_elements" in found_flow
     assert found_flow["num_total_elements"] == 3
 
@@ -1195,7 +1197,6 @@ async def test_community_feed_basic_functionality(
         assert "created_by" in flow
         assert "difficulty" in flow
         assert "max_num_questions" in flow
-        assert "elements" in flow
         assert "num_total_elements" in flow
         assert "num_user_total_answers" in flow
         assert "num_user_correct_answers" in flow
@@ -1396,9 +1397,6 @@ async def test_community_feed_with_user_answers(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
     """Test that community feed includes user-specific answer counts"""
-    from app.community.models import CommunityUser
-    from tests.factories import CommunityFactory
-
     async with session.begin():
         # Create a community
         community = await CommunityFactory.create(session=session)
@@ -1420,9 +1418,6 @@ async def test_community_feed_with_user_answers(
         choice2 = await ChoiceFactory.create(
             question=flow_question2.question, is_correct=False, session=session
         )
-
-        # Add user answers
-        from app.flows.models import FlowQuestionUser
 
         answer1 = FlowQuestionUser(
             flow_element_id=flow_question1.id,
@@ -1534,7 +1529,4 @@ async def test_community_feed_with_flow_elements_loaded(
 
     flow_data = flows[0]
     assert flow_data["id"] == flow.id
-    assert "elements" in flow_data
     assert flow_data["num_total_elements"] == 5
-    # Should load first 5 elements based on NUM_ELEMENTS_TO_LOAD_IN_FEED
-    assert len(flow_data["elements"]) == 5

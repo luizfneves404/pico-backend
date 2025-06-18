@@ -118,6 +118,26 @@ async def search_flows(
     return paginate(flows_in_search, pagination)
 
 
+@flows_router.get("/community-feed/{community_id}")
+async def community_feed(
+    db_session: DBSessionAnnotated,
+    current_user: CurrentUserAnnotated,
+    community_id: int,
+    pagination: Annotated[PaginationParams, Depends(get_pagination_params)],
+) -> PaginatedResponse[FlowInSearch]:
+    """Get the community feed"""
+    flows = await flow_service.community_feed(
+        db_session,
+        community_id=community_id,
+        pagination=pagination,
+    )
+    flows_in_feed = [
+        await FlowInSearch.from_orm_model_for_user(flow, user_id=current_user.id)
+        for flow in flows
+    ]
+    return paginate(flows_in_feed, pagination)
+
+
 @flows_router.get("/{id}/details", response_model=FlowDetail)
 async def flow_detail(
     db_session: DBSessionAnnotated,

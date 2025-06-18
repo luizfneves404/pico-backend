@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.countries.models import Country
 from app.countries.service import CountryNotFound, get_country
 from app.education.models import (
     AdministrativeCategory,
@@ -285,8 +286,9 @@ async def list_levels(
     """
     stages_loader = EducationLevel.stages
     if country_code:
-        country = await get_country(db_session, country_code)
-        stages_loader = stages_loader.and_(LevelStage.country_id == country.id)
+        stages_loader = stages_loader.and_(
+            LevelStage.country.has(Country.code == country_code)
+        )
 
     result = await db_session.scalars(
         select(EducationLevel).options(selectinload(stages_loader))
