@@ -453,6 +453,18 @@ class Question(Base, kw_only=True):
     def correct_choice_id(self) -> int | None:
         return next(choice.id for choice in self.choices if choice.is_correct)
 
+    def __str__(self) -> str:
+        question_insp = inspect(self)
+        if (
+            "official_source" not in question_insp.unloaded
+            and self.official_source_id
+            and self.official_source
+        ):
+            official_source_insp = inspect(self.official_source)
+            if "exam" not in official_source_insp.unloaded:
+                return f"Question {self.id} - {self.official_source.exam.name} - {self.official_source.year}"
+        return f"Question {self.id}"
+
 
 class QuestionArea(Base, kw_only=True):
     name: Mapped[str] = mapped_column(Text)

@@ -158,6 +158,11 @@ class FlowAdmin(CustomModelView, model=Flow):
         },
     }
 
+    form_overrides = {
+        "major_tags": TagsTextAreaField,
+        "minor_tags": TagsTextAreaField,
+    }
+
     def list_query(self, request: Request) -> Select[tuple[Flow]]:
         return select(Flow).options(
             selectinload(Flow.created_by),
@@ -330,30 +335,6 @@ class QuestionAdmin(CustomModelView, model=Question):
         "minor_tags": TagsTextAreaField,
     }
 
-    form_args = {
-        "major_tags": {
-            "validators": [Optional()],
-            "description": "Digite as tags principais separadas por vírgula (ex: matemática, álgebra, geometria)",
-        },
-        "minor_tags": {
-            "validators": [Optional()],
-            "description": "Digite as tags secundárias separadas por vírgula (ex: básico, intermediário, avançado)",
-        },
-    }
-
-    form_widget_args = {
-        "major_tags": {
-            "rows": 3,
-            "style": "width: 100%",
-            "placeholder": "tag1, tag2, tag3",
-        },
-        "minor_tags": {
-            "rows": 3,
-            "style": "width: 100%",
-            "placeholder": "tag1, tag2, tag3",
-        },
-    }
-
     form_widget_args = {
         "content_blocks": {
             "rows": 30,
@@ -434,9 +415,9 @@ class QuestionAreaAdmin(CustomModelView, model=QuestionArea):
     form_columns = [
         QuestionArea.name,
         QuestionArea.tags,
-        QuestionArea.education_level_id,
-        QuestionArea.country_id,
-        QuestionArea.course_id,
+        QuestionArea.education_level,
+        QuestionArea.country,
+        QuestionArea.course,
     ]
 
     form_args = {
@@ -540,8 +521,8 @@ class FlowUserFeedAdmin(CustomModelView, model=FlowUserFeed):
     ]
 
     form_columns = [
-        FlowUserFeed.user_id,
-        FlowUserFeed.flow_id,
+        FlowUserFeed.user,
+        FlowUserFeed.flow,
     ]
 
 
@@ -593,8 +574,8 @@ class CampaignAdmin(CustomModelView, model=Campaign):
         Campaign.text,
         Campaign.external_link,
         Campaign.external_link_text,
-        Campaign.image1_id,
-        Campaign.image2_id,
+        Campaign.image1,
+        Campaign.image2,
         Campaign.probability,
         Campaign.campaign_type,
     ]
@@ -651,26 +632,26 @@ class FlowQuestionAdmin(CustomModelView, model=FlowQuestion):
 
     column_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
         FlowQuestion.id,
-        FlowQuestion.flow_id,
-        FlowQuestion.question_id,
+        FlowQuestion.flow,
+        FlowQuestion.question,
         FlowQuestion.order,
         "num_total_answers",
         FlowQuestion.created_at,
     ]
     column_searchable_list = [
-        FlowQuestion.flow_id,
-        FlowQuestion.question_id,
+        FlowQuestion.flow,
+        FlowQuestion.question,
     ]
     column_sortable_list = [
         FlowQuestion.id,
-        FlowQuestion.flow_id,
+        FlowQuestion.flow,
         FlowQuestion.order,
         FlowQuestion.created_at,
     ]
     column_details_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
         FlowQuestion.id,
-        FlowQuestion.flow_id,
-        FlowQuestion.question_id,
+        FlowQuestion.flow,
+        FlowQuestion.question,
         FlowQuestion.order,
         "num_total_answers",
         FlowQuestion.created_at,
@@ -678,13 +659,13 @@ class FlowQuestionAdmin(CustomModelView, model=FlowQuestion):
 
     column_labels: ClassVar[dict[MODEL_ATTR, str]] = {
         "num_total_answers": "Total Answers",
-        "flow_id": "Flow",
-        "question_id": "Question",
+        "flow": "Flow",
+        "question": "Question",
     }
 
     form_columns = [
-        FlowQuestion.flow_id,
-        FlowQuestion.question_id,
+        FlowQuestion.flow,
+        FlowQuestion.question,
         FlowQuestion.order,
     ]
 

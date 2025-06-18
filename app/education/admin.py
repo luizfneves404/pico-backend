@@ -97,11 +97,10 @@ class EducationLevelAdmin(CustomModelView, model=EducationLevel):
         EducationLevel.id,
         EducationLevel.name_i18n,
         EducationLevel.created_at,
+        EducationLevel.stages,
     ]
 
-    form_columns = [
-        "name_i18n",
-    ]
+    form_columns = ["name_i18n", "stages"]
 
 
 class LevelStageImportSchema(BaseModel):
@@ -142,8 +141,8 @@ class LevelStageAdmin(CustomModelView, model=LevelStage):
 
     form_columns = [
         "name",
-        "level_id",
-        "country_id",
+        "level",
+        "country",
         "is_default",
     ]
 
@@ -154,7 +153,7 @@ class CourseImportSchema(BaseModel):
     user_submitted: bool
 
 
-class CourseModelAdmin(CustomModelView, model=Course):
+class CourseAdmin(CustomModelView, model=Course):
     icon = "fa-solid fa-book-open"
 
     column_list = [
@@ -183,7 +182,7 @@ class CourseModelAdmin(CustomModelView, model=Course):
 
     form_columns = [
         "name_i18n",
-        "level_id",
+        "level",
         "user_submitted",
     ]
 

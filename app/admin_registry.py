@@ -9,7 +9,7 @@ from app.config import settings
 from app.countries.admin import CountryAdmin
 from app.database import db_manager
 from app.education.admin import (
-    CourseModelAdmin,
+    CourseAdmin,
     EducationInfoAdmin,
     EducationLevelAdmin,
     InstitutionAdmin,
@@ -64,7 +64,7 @@ admin_views.append(CountryAdmin)
 # Education
 admin_views.append(EducationLevelAdmin)
 admin_views.append(LevelStageAdmin)
-admin_views.append(CourseModelAdmin)
+admin_views.append(CourseAdmin)
 admin_views.append(InstitutionAdmin)
 admin_views.append(EducationInfoAdmin)
 
