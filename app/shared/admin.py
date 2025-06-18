@@ -164,6 +164,10 @@ class LocationField(StringField):
             return
 
         text = valuelist[0].strip()
+        if not text:
+            self.data = None
+            return
+            
         m = WKT_RE.match(text)
         if not m:
             raise ValidationError("Must be WKT like: POINT(lon lat)")
