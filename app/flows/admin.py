@@ -260,7 +260,7 @@ class FlowElementAdmin(CustomModelView, model=FlowElement):
     ]
 
     form_columns = [
-        FlowElement.flow_id,
+        FlowElement.flow,
         FlowElement.order,
         FlowElement.element_type,
         FlowElement.question_id,

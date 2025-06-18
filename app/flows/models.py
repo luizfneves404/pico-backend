@@ -135,10 +135,10 @@ class Flow(Base, kw_only=True):
     input_topic: Mapped[str] = mapped_column(Text, default="")
 
     major_tags: Mapped[list[str]] = mapped_column(
-        postgresql.ARRAY(Text), default_factory=list
+        postgresql.ARRAY(Text), insert_default=list
     )  # should be derived from questions tags + questions official source
     minor_tags: Mapped[list[str]] = mapped_column(
-        postgresql.ARRAY(Text), default_factory=list
+        postgresql.ARRAY(Text), insert_default=list
     )
     has_quantitative_questions: Mapped[bool] = mapped_column(default=False)
 
@@ -529,6 +529,10 @@ class OfficialQuestionSource(Base, kw_only=True):
 
 class FlowQuestion(FlowElement):
     __mapper_args__ = {"polymorphic_identity": "flow_question"}
+
+    element_type: Mapped[str] = mapped_column(
+        Text, use_existing_column=True, init=False, insert_default="flow_question"
+    )
 
     question: Mapped["Question"] = relationship(lazy="raise_on_sql", default=None)
 
