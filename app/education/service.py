@@ -4,7 +4,7 @@ from geoalchemy2.types import Geography
 from sqlalchemy import ColumnElement, case, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload, with_loader_criteria
 
 from app.countries.models import Country
 from app.countries.service import CountryNotFound, get_country
@@ -276,21 +276,16 @@ async def build_education(
 async def list_levels(
     db_session: AsyncSession, *, country_code: str | None
 ) -> list[EducationLevel]:
-    """List all education levels with their stages, limiting stages to the given country.
+    stmt = select(EducationLevel).options(
+        joinedload(EducationLevel.stages).joinedload(LevelStage.country)
+    )
 
-    Args:
-        db_session: The database session
-        country_code: The country code to limit the stages to
-    Returns:
-        List of all education levels with their stages
-    """
-    stages_loader = EducationLevel.stages
     if country_code:
-        stages_loader = stages_loader.and_(
-            LevelStage.country.has(Country.code == country_code)
+        stmt = stmt.options(
+            with_loader_criteria(
+                LevelStage, LevelStage.country.has(Country.code == country_code)
+            )
         )
 
-    result = await db_session.scalars(
-        select(EducationLevel).options(selectinload(stages_loader))
-    )
-    return list(result)
+    result = await db_session.execute(stmt)
+    return list(result.scalars().unique())

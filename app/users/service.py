@@ -101,6 +101,7 @@ __all__ = [
 ]
 
 PASSWORD_REQUIRED_FIELDS = {"username", "phone_number", "email", "password"}
+HASH_PREFIX = "$argon2id$"
 
 
 async def _set_education_field(

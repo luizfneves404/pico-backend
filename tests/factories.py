@@ -226,6 +226,9 @@ class EducationLevelFactory(AsyncSQLAlchemyFactory[EducationLevel]):
         model = EducationLevel
 
     name_i18n = Sequence(education_level_name_i18n_sequence)
+    stages = RelatedFactoryList(
+        "tests.factories.LevelStageFactory", size=3, factory_related_name="level"
+    )
 
 
 class CountryFactory(AsyncSQLAlchemyFactory[Country]):

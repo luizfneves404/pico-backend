@@ -663,6 +663,13 @@ class FlowQuestionAdmin(CustomModelView, model=FlowQuestion):
         "question": "Question",
     }
 
+    form_ajax_refs: ClassVar[dict[str, dict[str, Any]]] = {
+        "question": {
+            "fields": ("id",),
+            "order_by": "id",
+        }
+    }
+
     form_columns = [
         FlowQuestion.flow,
         FlowQuestion.question,
@@ -715,7 +722,7 @@ class FlowQuestionUserAdmin(CustomModelView, model=FlowQuestionUser):
         FlowQuestionUser.id,
         FlowQuestionUser.flow_element_id,
         FlowQuestionUser.user_id,
-        FlowQuestionUser.choice_id,
+        FlowQuestionUser.choice,
         FlowQuestionUser.submitted_text,
         FlowQuestionUser.feedback,
         FlowQuestionUser.grade,

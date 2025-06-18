@@ -2,7 +2,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from geoalchemy2 import Geography, WKBElement
-from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint, inspect
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -117,9 +117,7 @@ class LevelStage(Base, kw_only=True):
     country_id: Mapped[int | None] = mapped_column(
         ForeignKey("country.id"), default=None
     )
-    country: Mapped["Country | None"] = relationship(
-        lazy="raise_on_sql", init=False, default=None
-    )
+    country: Mapped["Country | None"] = relationship(lazy="raise_on_sql", default=None)
     is_default: Mapped[bool] = mapped_column(default=False)
 
     __table_args__ = (
@@ -200,4 +198,19 @@ class EducationInfo(Base, kw_only=True):
     )
 
     def __str__(self) -> str:
-        return f"Current education info of user {self.current_education_user.id if self.current_education_user else self.intended_education_user.id if self.intended_education_user else None}"
+        insp = inspect(self)
+        string = f"Education Info {self.id}"
+
+        if "level" not in insp.unloaded:
+            string += f" - {self.level.name_i18n['en'] if 'en' in self.level.name_i18n else self.level.name_i18n}"
+
+        if "institution" not in insp.unloaded and self.institution:
+            string += f" - {self.institution.name}"
+
+        if "stage" not in insp.unloaded and self.stage:
+            string += f" - {self.stage.name}"
+
+        if "course" not in insp.unloaded and self.course:
+            string += f" - {self.course.name_i18n['en'] if 'en' in self.course.name_i18n else self.course.name_i18n}"
+
+        return string

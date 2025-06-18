@@ -160,6 +160,9 @@ class Flow(Base, kw_only=True):
         default_factory=list,
     )
 
+    def __str__(self) -> str:
+        return f"Flow {self.id} - {self.title}"
+
     @hybrid_property
     def num_total_questions(self) -> int:
         """Count total questions for this flow."""

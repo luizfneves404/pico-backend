@@ -4,7 +4,9 @@ from fastapi import Request
 from pydantic import BaseModel
 from sqlalchemy import Select, select
 from sqlalchemy.orm import InstrumentedAttribute, selectinload
+from wtforms import PasswordField
 
+from app.education.models import EducationInfo
 from app.shared.admin import CustomModelView
 from app.users import service as user_service
 from app.users.models import SignupSource, User
@@ -104,6 +106,10 @@ class UserAdmin(CustomModelView, model=User):
         },
     }
 
+    form_overrides = {
+        "hashed_password": PasswordField,
+    }
+
     form_columns = [
         "name",
         "username",
@@ -129,13 +135,31 @@ class UserAdmin(CustomModelView, model=User):
             selectinload(User.referred_by),
         )
 
+    def form_edit_query(self, request: Request) -> Select[tuple[User]]:
+        return select(User).options(
+            selectinload(User.referrals),
+            selectinload(User.current_education),
+            selectinload(User.intended_education),
+            selectinload(User.referred_by),
+        )
+
     async def get_object_for_details(self, value: Any) -> Any:
         stmt = (
             select(User)
             .options(
                 selectinload(User.referrals),
-                selectinload(User.current_education),
-                selectinload(User.intended_education),
+                selectinload(User.current_education).options(
+                    selectinload(EducationInfo.level),
+                    selectinload(EducationInfo.institution),
+                    selectinload(EducationInfo.stage),
+                    selectinload(EducationInfo.course),
+                ),
+                selectinload(User.intended_education).options(
+                    selectinload(EducationInfo.level),
+                    selectinload(EducationInfo.institution),
+                    selectinload(EducationInfo.stage),
+                    selectinload(EducationInfo.course),
+                ),
                 selectinload(User.referred_by),
             )
             .where(User.id == int(value))
@@ -147,7 +171,7 @@ class UserAdmin(CustomModelView, model=User):
     ) -> None:
         if "hashed_password" in data and data["hashed_password"]:
             if is_created or (
-                not data["hashed_password"].startswith("$2b$")
+                not data["hashed_password"].startswith(user_service.HASH_PREFIX)
                 and data["hashed_password"] != model.hashed_password
             ):
                 data["hashed_password"] = user_service.get_password_hash(
