@@ -78,6 +78,7 @@ class EducationLevelOut(BaseModel):
     id: int
     name_i18n: dict[str, str]
     stages: list[LevelStageOut]
+    courses: list[CourseOut]
 
     @classmethod
     def from_orm_model(cls, model: EducationLevel) -> "EducationLevelOut":
@@ -85,4 +86,5 @@ class EducationLevelOut(BaseModel):
             id=model.id,
             name_i18n=model.name_i18n,
             stages=[LevelStageOut.from_orm_model(stage) for stage in model.stages],
+            courses=[CourseOut.from_orm_model(course) for course in model.courses],
         )

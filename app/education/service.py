@@ -277,7 +277,8 @@ async def list_levels(
     db_session: AsyncSession, *, country_code: str | None
 ) -> list[EducationLevel]:
     stmt = select(EducationLevel).options(
-        joinedload(EducationLevel.stages).joinedload(LevelStage.country)
+        joinedload(EducationLevel.stages).joinedload(LevelStage.country),
+        selectinload(EducationLevel.courses),
     )
 
     if country_code:

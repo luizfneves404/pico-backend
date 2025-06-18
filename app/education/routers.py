@@ -25,15 +25,6 @@ async def list_levels(
     return [EducationLevelOut.from_orm_model(level) for level in levels]
 
 
-@router.get("/courses", response_model=list[CourseOut])
-async def list_courses(
-    db_session: DBSessionAnnotated,
-    level_id: int | None = None,
-) -> list[CourseOut]:
-    courses = await education_service.list_courses(db_session, level_id=level_id)
-    return [CourseOut.from_orm_model(course) for course in courses]
-
-
 @router.get("/courses/{id}", response_model=CourseOut)
 async def get_course_detail(db_session: DBSessionAnnotated, id: int) -> CourseOut:
     try:
