@@ -27,9 +27,6 @@ MEDIA_URL = "/media/"
 
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
-SERVER_EMAIL = "automatic-test-pico@usepico.com.br"
-DEFAULT_FROM_EMAIL = SERVER_EMAIL
-
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_TASK_STORE_EAGER_RESULT = True
