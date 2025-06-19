@@ -26,6 +26,8 @@ class InstitutionImportSchema(BaseModel):
     administrative_category: AdministrativeCategory
     latitude: float | None
     longitude: float | None
+    address: str | None
+    city: str | None
 
 
 class InstitutionAdmin(CustomModelView, model=Institution):
@@ -43,13 +45,22 @@ class InstitutionAdmin(CustomModelView, model=Institution):
         Institution.administrative_category,
         Institution.government_issued_code,
         Institution.location,
+        Institution.created_at,
+        Institution.address,
+        Institution.city,
     ]
     column_searchable_list: ClassVar[
         Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
-    ] = [Institution.name]
+    ] = [Institution.name, Institution.address, Institution.city]
     column_sortable_list: ClassVar[
         Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
-    ] = [Institution.id, Institution.name, Institution.user_submitted]
+    ] = [
+        Institution.id,
+        Institution.name,
+        Institution.user_submitted,
+        Institution.address,
+        Institution.city,
+    ]
 
     form_columns = [
         Institution.name,
@@ -60,6 +71,8 @@ class InstitutionAdmin(CustomModelView, model=Institution):
         Institution.administrative_category,
         Institution.government_issued_code,
         Institution.location,
+        Institution.address,
+        Institution.city,
     ]
 
     can_import = True
@@ -74,6 +87,8 @@ class InstitutionAdmin(CustomModelView, model=Institution):
         "government_issued_code": "1234567890",
         "latitude": 12.34567890,
         "longitude": 12.34567890,
+        "address": "Rua das Flores, 123",
+        "city": "São Paulo",
     }
 
     async def to_orm_model(
@@ -92,6 +107,8 @@ class InstitutionAdmin(CustomModelView, model=Institution):
             )
             if validated_data.latitude and validated_data.longitude
             else None,  # type: ignore # this should work according to geoalchemy2
+            address=validated_data.address or "",
+            city=validated_data.city or "",
         )
 
 

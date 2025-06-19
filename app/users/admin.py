@@ -43,6 +43,7 @@ class UserAdmin(CustomModelView, model=User):
         User.username,
         User.email,
         User.phone_number,
+        User.created_at,
         User.is_superuser,
         User.is_bot,
         User.signup_source,
@@ -62,6 +63,7 @@ class UserAdmin(CustomModelView, model=User):
         User.name,
         User.username,
         User.email,
+        User.created_at,
         User.is_superuser,
         User.is_bot,
         User.signup_source,
@@ -91,16 +93,14 @@ class UserAdmin(CustomModelView, model=User):
         "referral_count",
     ]
     column_labels: ClassVar[dict[str | InstrumentedAttribute[Any], str]] = {
+        "created_at": "Created At",
         "hashed_password": "Password",
         "is_superuser": "Admin?",
         "is_bot": "Bot?",
         "referral_count": "Number of Referrals",
         "signup_source": "Signup Source",
     }
-    form_widget_args = {
-        "created_at": {
-            "readonly": True,
-        },
+    form_widget_args = CustomModelView.form_widget_args | {
         "referral_count": {
             "readonly": True,
         },
@@ -125,6 +125,7 @@ class UserAdmin(CustomModelView, model=User):
         "referred_by",
         "social_score",
         "xp_score",
+        "created_at",
     ]
 
     def list_query(self, request: Request) -> Select[tuple[User]]:

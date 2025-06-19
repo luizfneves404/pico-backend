@@ -375,7 +375,7 @@ class QuestionAdmin(CustomModelView, model=Question):
             if not data["content_blocks"]:
                 data["content_blocks"] = []
             model.content_blocks = validate_content_block_list(data["content_blocks"])
-        if "answer_content_blocks" in data
+        if "answer_content_blocks" in data:
             if not data["answer_content_blocks"]:
                 data["answer_content_blocks"] = []
             model.answer_content_blocks = validate_content_block_list(

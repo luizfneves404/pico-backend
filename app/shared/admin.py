@@ -167,7 +167,7 @@ class LocationField(StringField):
         if not text:
             self.data = None
             return
-            
+
         m = WKT_RE.match(text)
         if not m:
             raise ValueError("Must be WKT like: POINT(lon lat)")
@@ -224,10 +224,14 @@ class CustomModelView(ModelView):
         str: lambda value: value if value else "[EMPTY STRING]",
     }
 
-    form_excluded_columns = [
-        "created_at",
-        "updated_at",
-    ]
+    form_widget_args = {
+        "created_at": {
+            "readonly": True,
+        },
+        "updated_at": {
+            "readonly": True,
+        },
+    }
 
     # Import configuration
     can_import: ClassVar[bool] = False
