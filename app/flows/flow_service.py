@@ -247,9 +247,11 @@ async def create_flow_with_optional_files(
         requires_math = (
             False  # Will be determined later when transcriptions are processed
         )
+        logger.info(f"Creating flow with files for user {user.id}")
     else:
         title = topic
         requires_math = await check_if_topic_involves_math_calculations(title)
+        logger.info(f"Creating flow with topic for user {user.id}")
 
     flow = Flow(
         title=title,
@@ -260,6 +262,8 @@ async def create_flow_with_optional_files(
         created_by_id=user.id,
         source_type=FlowSourceType.OFFICIAL,  # Default source type for new flows
         has_quantitative_questions=requires_math,
+        major_tags=[],
+        minor_tags=[],
     )
 
     db_session.add(flow)
@@ -267,6 +271,7 @@ async def create_flow_with_optional_files(
 
     await db_session.refresh(flow, ["elements", "created_by"])
 
+    logger.info(f"Flow {flow.id} created for user {user.id}")
     if topic and requires_math:
         logger.info(f"Topic {topic} requires math for flow {flow.id}")
 
@@ -611,7 +616,6 @@ async def add_questions_to_flow_official(
     # Add questions to flow elements
     await question_service.add_questions_to_flow(db_session, flow_id, questions)
 
-    # Use proper loader options instead of simple refresh
     loader_options = get_flow_loader(num_elements=None)
     query = select(Flow).where(Flow.id == flow_id).options(*loader_options)
     result = await db_session.execute(query)
@@ -832,7 +836,6 @@ async def add_questions_to_flow_full(
     else:
         raise ValueError(f"Unsupported flow input type: {flow_input_type}")
 
-    # Use proper loader options instead of simple refresh
     loader_options = get_flow_loader(num_elements=None)
     query = select(Flow).where(Flow.id == flow_id).options(*loader_options)
     result = await db_session.execute(query)
