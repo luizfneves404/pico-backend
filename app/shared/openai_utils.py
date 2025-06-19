@@ -468,9 +468,9 @@ def sanitize_messages_for_log(
                     # Safely access and modify image URL
                     image_url = content_part.get("image_url")
                     if isinstance(image_url, dict) and "url" in image_url:
-                        sanitized_message["content"][idx]["image_url"]["url"] = (
-                            "[IMAGE]"
-                        )
+                        sanitized_message["content"][idx]["image_url"][
+                            "url"
+                        ] = "[IMAGE]"
         sanitized_messages.append(sanitized_message)
     return sanitized_messages
 
@@ -706,7 +706,7 @@ async def transcribe_image(image_url: str) -> str:
     """
     Generates a transcription for an image using OpenAI's vision model.
     """
-    logger.info("Transcribing image with model=gpt-4o")
+    logger.info("Transcribing image with model=gpt-4.1-nano")
     response = await openai_request(
         endpoint="chat_completion",
         model="gpt-4.1-nano",

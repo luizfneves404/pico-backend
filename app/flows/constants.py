@@ -299,9 +299,10 @@ MAX_COMBINED_TRANSCRIPTION_LENGTH = (
 
 SYSTEM_MESSAGE_BLOCK_TITLE = """
     Você é um especialista em educação que sabe extrair conceitos-chave de textos.
-    Sua tarefa é criar uma query de busca com no máximo 4 palavras que represente o tema principal da transcrição fornecida.
-    A query deve capturar o conceito central ou tópico mais relevante do texto, sendo específica o suficiente para uma busca eficaz.
+    Sua tarefa é criar uma query de busca com no máximo 5 palavras que represente o tema principal da transcrição fornecida.
+    A query deve capturar com especificidade o tópico mais relevante do texto.
     Retorne apenas as palavras-chave, sem pontuação ou explicações adicionais.
+    Não crie títulos genéricos, mas capture a essência do texto.
 """
 
 # System messages for new utility functions
@@ -309,7 +310,7 @@ SYSTEM_MESSAGE_GENERATE_TITLE_FROM_TRANSCRIPTIONS = """
 Você é um especialista em criar títulos educacionais concisos e informativos.
 Baseado nos títulos das transcrições fornecidas, crie um título único e atrativo que represente o conteúdo geral.
 O título deve:
-- Ser conciso (máximo 60 caracteres)
+- Ser conciso (máximo 5 palavras)
 - Capturar o tema principal comum entre as transcrições
 - Ser claro e atrativo para estudantes
 - Evitar redundâncias se os títulos forem similares
