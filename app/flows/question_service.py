@@ -496,6 +496,7 @@ async def get_topic_user_generated_questions(
                 ],
             )
             question = Question(
+                is_active = False,
                 content_blocks=[text_block],
                 is_quantitative=requires_math,
                 answer_type=QuestionAnswerType.MULTIPLE_CHOICE,
@@ -711,6 +712,7 @@ async def get_files_user_generated_questions(
                         ],
                     )
                     question = Question(
+                        is_active = False,
                         content_blocks=[text_block],
                         is_quantitative=requires_math,
                         answer_type=QuestionAnswerType.MULTIPLE_CHOICE,
