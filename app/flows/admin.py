@@ -38,15 +38,15 @@ class ContentBlocksField(JSONField):
             )
             return json_str
         else:
-            return "{}"
+            return "[]"
 
     def process_formdata(self, valuelist: list[str]) -> None:
         if valuelist:
             value = valuelist[0]
 
-            # allow saving blank field as None
+            # allow saving blank field as empty list
             if not value:
-                self.data = None
+                self.data = []
                 return
 
             try:
@@ -371,12 +371,13 @@ class QuestionAdmin(CustomModelView, model=Question):
         request: Request | None = None,
     ) -> None:
         """Process array fields before saving."""
-        if "content_blocks" in data and data["content_blocks"] is not None:
+        if "content_blocks" in data:
+            if not data["content_blocks"]:
+                data["content_blocks"] = []
             model.content_blocks = validate_content_block_list(data["content_blocks"])
-        if (
-            "answer_content_blocks" in data
-            and data["answer_content_blocks"] is not None
-        ):
+        if "answer_content_blocks" in data
+            if not data["answer_content_blocks"]:
+                data["answer_content_blocks"] = []
             model.answer_content_blocks = validate_content_block_list(
                 data["answer_content_blocks"]
             )
