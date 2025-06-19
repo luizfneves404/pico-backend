@@ -170,7 +170,7 @@ class LocationField(StringField):
             
         m = WKT_RE.match(text)
         if not m:
-            raise ValidationError("Must be WKT like: POINT(lon lat)")
+            raise ValueError("Must be WKT like: POINT(lon lat)")
         self.data = text  # SQLAdmin will pass this string as $param
 
     def _value(self):
