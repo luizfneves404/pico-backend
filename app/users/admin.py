@@ -187,7 +187,7 @@ class UserAdmin(CustomModelView, model=User):
             ):
                 data["bot_difficulty"] = 0.5  # Default difficulty
 
-    def to_orm_model(self, validated_data: UserImportSchema) -> User:
+    async def to_orm_model(self, validated_data: UserImportSchema) -> User:
         return User(
             name=validated_data.name,
             username=validated_data.username,
