@@ -616,6 +616,11 @@ async def add_questions_to_flow_official(
     # Add questions to flow elements
     await question_service.add_questions_to_flow(db_session, flow_id, questions)
 
+    # Ensure all changes are committed to database
+    await db_session.flush()
+    # Expunge all objects to force fresh load from database
+    db_session.expunge_all()
+
     loader_options = get_flow_loader(num_elements=None)
     query = select(Flow).where(Flow.id == flow_id).options(*loader_options)
     result = await db_session.execute(query)
@@ -687,6 +692,11 @@ async def add_questions_to_flow_ai(
 
     # Add questions to flow elements
     await question_service.add_questions_to_flow(db_session, flow_id, questions)
+
+    # Ensure all changes are committed to database
+    await db_session.flush()
+    # Expunge all objects to force fresh load from database
+    db_session.expunge_all()
 
     loader_options = get_flow_loader(num_elements=None)
     query = select(Flow).where(Flow.id == flow_id).options(*loader_options)
@@ -835,6 +845,11 @@ async def add_questions_to_flow_full(
             )
     else:
         raise ValueError(f"Unsupported flow input type: {flow_input_type}")
+
+    # Ensure all changes are committed to database
+    await db_session.flush()
+    # Expunge all objects to force fresh load from database
+    db_session.expunge_all()
 
     loader_options = get_flow_loader(num_elements=None)
     query = select(Flow).where(Flow.id == flow_id).options(*loader_options)
