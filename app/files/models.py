@@ -26,7 +26,7 @@ class File(Base, kw_only=True):
     file_id: Mapped[str] = mapped_column(String(length=255), unique=True)
     original_name: Mapped[str] = mapped_column(String(length=255))
     updated_at: Mapped[auto_now_update_timestamp] = mapped_column(init=False)
-    size: Mapped[int] = mapped_column()
+    size: Mapped[int | None] = mapped_column()
 
     def __str__(self) -> str:
         return self.original_name
@@ -106,8 +106,8 @@ async def create_files(
     Raises:
         ValueError: If any upload_file has no filename or size
     """
-    created_files = []
-    uploaded_file_ids = []
+    created_files: list[File] = []
+    uploaded_file_ids: list[str] = []
 
     for upload_file in upload_files:
         if upload_file.filename is None:
@@ -119,9 +119,6 @@ async def create_files(
             upload_file.filename,
         )
         uploaded_file_ids.append(file_id)
-
-        if not upload_file.size:
-            raise ValueError("File size somehow is None")
 
         file = File(
             file_id=file_id,
