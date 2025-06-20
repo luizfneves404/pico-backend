@@ -1,6 +1,6 @@
-import random
-import asyncio
 import logging
+import os
+import random
 
 from fastapi import UploadFile
 from sqlalchemy import (
@@ -14,13 +14,17 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.arq_client import enqueue_job
+from app.community.models import CommunityUser
 from app.files.models import create_files
+from app.flows import question_service
 from app.flows.constants import (
     SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT,
 )
 from app.flows.models import (
     Choice,
     Flow,
+    FlowDifficulty,
     FlowElement,
     FlowInputType,
     FlowQuestion,
@@ -30,16 +34,16 @@ from app.flows.models import (
     OfficialQuestionSource,
     Question,
     QuestionAnswerType,
-    FlowDifficulty,
+)
+from app.flows.schemas import (
+    AddQuestionsToFlowAI,
+    AddQuestionsToFlowFull,
+    AddQuestionsToFlowOfficial,
+    QuestionDensity,
 )
 from app.pagination import PaginationParams, paginate_query
-from app.users.models import User
-from app.community.models import CommunityUser
-from app.flows.schemas import QuestionDensity
-from app.users.service import get_user
-from app.flows import question_service
 from app.shared.openai_utils import get_completion
-from app.arq_client import enqueue_job
+from app.users.models import User
 
 NUM_ELEMENTS_TO_LOAD_IN_FEED = 5
 
@@ -229,9 +233,30 @@ async def create_flow_with_optional_files(
     if files:
         for file in files:
             content_type = file.content_type
-            logger.info(f"Content type: {content_type}")  #! DEBUG
+
+            # ── Debug: log basic metadata coming from the frontend ─────────────────
+            try:
+                # Using seek/tell instead of read to avoid consuming the stream.
+                current_pos = file.file.tell()
+                file.file.seek(0, os.SEEK_END)
+                size_bytes = file.file.tell()
+                file.file.seek(current_pos)
+            except Exception as e:  # pragma: no cover – defensive logging only
+                size_bytes = "unknown"
+                logger.warning(
+                    "Could not determine size of file '%s': %s", file.filename, e
+                )
+
+            logger.info(
+                "Received file '%s' (content_type=%s, size=%s bytes)",
+                file.filename,
+                content_type,
+                size_bytes,
+            )
+
             if not content_type:
                 raise InvalidFileTypeError("File has no content type")
+
             # Match Django's VALID_MIME_TYPES_FOR_TRANSCRIPTION
             if not (
                 content_type.startswith("application/pdf")
@@ -556,7 +581,7 @@ async def add_questions_to_flow_official(
     db_session: AsyncSession,
     user_id: int,
     flow_id: int,
-    add_questions_to_flow_official,
+    add_questions_to_flow_official: AddQuestionsToFlowOfficial,
 ):
     """Add official questions to a flow - matches Django add_questions_to_quiz_official"""
     # Check if flow exists and user has permission
@@ -633,7 +658,7 @@ async def add_questions_to_flow_ai(
     db_session: AsyncSession,
     user_id: int,
     flow_id: int,
-    add_questions_to_flow_ai,
+    add_questions_to_flow_ai: AddQuestionsToFlowAI,
 ):
     """Add AI-generated questions to a flow - matches Django add_questions_to_quiz_ai"""
     # Check if flow exists and user has permission
@@ -710,7 +735,7 @@ async def add_questions_to_flow_full(
     db_session: AsyncSession,
     user_id: int,
     flow_id: int,
-    add_questions_to_flow_full,
+    add_questions_to_flow_full: AddQuestionsToFlowFull,
 ):
     """Add AI and official questions to a flow - matches Django add_questions_full"""
     # Check if flow exists and user has permission

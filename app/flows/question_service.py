@@ -7,40 +7,31 @@ transcription processing, and official question retrieval.
 import asyncio
 import logging
 import random
-from typing import Any, Optional, Union
-from fastapi import UploadFile
-from sqlalchemy import func, select, and_, or_
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-from sqlalchemy.sql import text
-from pylatexenc.latex2text import LatexNodes2Text
+from typing import Any
 
+from pylatexenc.latex2text import LatexNodes2Text
+from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import db_manager
+from app.files.models import File
+from app.flows.db_types import RichText, TextBlock
 from app.flows.models import (
+    Choice,
+    Exam,
     Flow,
-    FlowTranscriptionBlock,
     FlowElement,
     FlowQuestion,
-    Question,
-    Choice,
-    QuestionSourceType,
-    QuestionDifficulty,
-    QuestionAnswerType,
+    FlowTranscriptionBlock,
     OfficialQuestionSource,
-    Exam,
+    Question,
+    QuestionAnswerType,
     QuestionArea,
-    ENEM_AREAS,
-    SUBJECT_TO_AREA,
-    FlowSourceType,
+    QuestionDifficulty,
+    QuestionSourceType,
 )
 from app.flows.schemas import PromptType
-from app.users.models import User
-from app.shared import openai_utils, ai_utils, gemini_utils
-from app.config import settings
-from app.files.models import File
-from app.files.storage import storage
-from app.files.service import create_file
-from app.flows.db_types import TextBlock, RichText
-from app.database import db_manager
+from app.shared import ai_utils, gemini_utils, openai_utils
 
 logger = logging.getLogger(__name__)
 
@@ -67,20 +58,13 @@ TOKENS_PER_BLOCK = 300
 
 # Import constants from flows constants
 from app.flows.constants import (
-    SYSTEM_MESSAGE_QUESTION_GENERATION_THEME,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_THEME_MATH,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH,
+    SYSTEM_MESSAGE_BLOCK_TITLE,
     SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT,
     SYSTEM_MESSAGE_GENERATE_TITLE_FROM_TRANSCRIPTIONS,
-    MAX_FILE_SIZE_BYTES,
-    SUPPORTED_IMAGE_TYPES,
-    SUPPORTED_DOCUMENT_TYPES,
-    CHUNK_SIZE,
-    MAX_TRANSCRIPTION_LENGTH,
-    MAX_COMBINED_TRANSCRIPTION_LENGTH,
-    SYSTEM_MESSAGE_BLOCK_TITLE,
-    QuestionInstance,
+    SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION,
+    SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH,
+    SYSTEM_MESSAGE_QUESTION_GENERATION_THEME,
+    SYSTEM_MESSAGE_QUESTION_GENERATION_THEME_MATH,
     QuestionSet,
 )
 
@@ -287,7 +271,6 @@ async def task_generate_transcriptions(
         raise ValueError("Envie pelo menos um arquivo.")
 
     async with db_manager.session_with_transaction() as db_session:
-
         files = (
             await db_session.scalars(select(File).where(File.id.in_(file_ids)))
         ).all()
@@ -321,7 +304,7 @@ async def task_generate_transcriptions(
                     *(openai_utils.transcribe_image(url) for url in urls)
                 )
 
-            except Exception as e:
+            except Exception:
                 logger.exception("Falha na transcrição das imagens")
                 raise
 
@@ -341,7 +324,7 @@ async def task_generate_transcriptions(
                     *(transcribe_pdf_from_file(pdf) for pdf in pdfs)
                 )
 
-            except Exception as e:
+            except Exception:
                 logger.exception("Falha na transcrição dos PDFs")
                 raise
 
@@ -496,7 +479,7 @@ async def get_topic_user_generated_questions(
                 ],
             )
             question = Question(
-                is_active = False,
+                is_active=False,
                 content_blocks=[text_block],
                 is_quantitative=requires_math,
                 answer_type=QuestionAnswerType.MULTIPLE_CHOICE,
@@ -539,7 +522,6 @@ async def get_topic_user_generated_questions(
 
             # Create Choice objects with the new shuffled order
             for new_order, choice_data in enumerate(choice_data_list):
-
                 choice = Choice(
                     question_id=question.id,
                     text=choice_data["text"],
@@ -712,7 +694,7 @@ async def get_files_user_generated_questions(
                         ],
                     )
                     question = Question(
-                        is_active = False,
+                        is_active=False,
                         content_blocks=[text_block],
                         is_quantitative=requires_math,
                         answer_type=QuestionAnswerType.MULTIPLE_CHOICE,
@@ -758,7 +740,6 @@ async def get_files_user_generated_questions(
 
                     # Create Choice objects with the new shuffled order
                     for new_order, choice_data in enumerate(choice_data_list):
-
                         choice = Choice(
                             question_id=question.id,
                             text=choice_data["text"],
@@ -918,7 +899,7 @@ async def get_files_query_official_questions(
         embeddings = await asyncio.gather(*embedding_tasks, return_exceptions=True)
 
         # Phase 2: Get questions sequentially (fast DB queries with proper deduplication)
-        logger.info(f"Getting questions sequentially for proper deduplication")
+        logger.info("Getting questions sequentially for proper deduplication")
 
         all_questions = []
         unique_question_ids = set()
