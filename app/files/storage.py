@@ -78,6 +78,7 @@ class S3Storage(StorageBackend):
         if isinstance(file_obj_or_path, str):
             self.client.upload_file(file_obj_or_path, self.bucket_name, file_id)
         else:
+            file_obj_or_path.seek(0)
             self.client.upload_fileobj(file_obj_or_path, self.bucket_name, file_id)
 
         logger.info("Uploaded file to S3 storage")

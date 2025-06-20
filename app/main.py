@@ -28,7 +28,6 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 import app.arq_client as arq_client
 from app.admin_registry import admin_views, authentication_backend, require_admin_login
-from app.amp import track_amplitude_endpoint_event
 from app.community.routers import router as community_router
 from app.config import Environment, settings
 from app.database import db_manager
@@ -104,22 +103,22 @@ fastapi_app.add_middleware(
 )
 
 
-@fastapi_app.middleware("http")
-async def analytics_middleware(
-    request: Request, call_next: Callable[[Request], Awaitable[Response]]
-):
-    response = await call_next(request)
-    try:
-        if (
-            response.status_code >= 200
-            and response.status_code < 300
-            and request.url.path.startswith("/api/")
-        ):
-            await track_amplitude_endpoint_event(request, response)
-    except Exception as e:
-        logger.error(f"Error tracking amplitude event: {e}")
-    finally:
-        return response
+# @fastapi_app.middleware("http")
+# async def analytics_middleware(
+#     request: Request, call_next: Callable[[Request], Awaitable[Response]]
+# ):
+#     response = await call_next(request)
+#     try:
+#         if (
+#             response.status_code >= 200
+#             and response.status_code < 300
+#             and request.url.path.startswith("/api/")
+#         ):
+#             await track_amplitude_endpoint_event(request, response)
+#     except Exception as e:
+#         logger.error(f"Error tracking amplitude event: {e}")
+#     finally:
+#         return response
 
 
 @fastapi_app.middleware("http")
