@@ -460,7 +460,6 @@ class FlowQuestionFactory(AsyncSQLAlchemyFactory[FlowQuestion]):
 
     flow = SubFactory(FlowFactory)
     order = Sequence(lambda n: n)
-    element_type = "flow_question"
     question = SubFactory(QuestionFactory)
 
 

@@ -162,32 +162,35 @@ async def search_flows(
     pagination: PaginationParams,
 ) -> list[Flow]:
     """
-    Full-text search over major_tags and minor_tags arrays using PostgreSQL FTS.
-    Major matches count double for relevance.
+    Full-text search over title, major_tags and minor_tags arrays using PostgreSQL FTS.
+    Title matches count highest, major matches count double, minor matches count normal.
     """
     # Turn the tag arrays into searchable text
     major_text = func.array_to_string(Flow.major_tags, " ")
     minor_text = func.array_to_string(Flow.minor_tags, " ")
 
     # Build tsvector expressions
-    major_fts = func.to_tsvector("simple", major_text)
-    minor_fts = func.to_tsvector("simple", minor_text)
+    title_fts = func.to_tsvector("portuguese", Flow.title)
+    major_fts = func.to_tsvector("portuguese", major_text)
+    minor_fts = func.to_tsvector("portuguese", minor_text)
 
     # Build tsquery from the user input
-    ts_query = func.plainto_tsquery("simple", query)
+    ts_query = func.plainto_tsquery("portuguese", query)
 
     # Boolean matches
+    match_title = title_fts.op("@@")(ts_query)
     match_major = major_fts.op("@@")(ts_query)
     match_minor = minor_fts.op("@@")(ts_query)
 
     # If you want a finer-grained rank, you can use ts_rank:
+    title_rank = func.ts_rank(title_fts, ts_query)
     major_rank = func.ts_rank(major_fts, ts_query)
     minor_rank = func.ts_rank(minor_fts, ts_query)
-    relevance_score = major_rank * 2 + minor_rank
+    relevance_score = title_rank * 3 + major_rank * 2 + minor_rank
 
     stmt = (
         select(Flow)
-        .where(or_(match_major, match_minor))
+        .where(or_(match_title, match_major, match_minor))
         .order_by(
             desc(relevance_score),
             desc(Flow.id),
