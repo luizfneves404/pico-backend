@@ -8,6 +8,7 @@ from app.shared.admin import CustomModelView
 
 class InAppNotificationAdmin(CustomModelView, model=InAppNotification):
     icon = "fa-solid fa-bell"
+    can_create = False
 
     column_list = [
         InAppNotification.id,
@@ -16,6 +17,8 @@ class InAppNotificationAdmin(CustomModelView, model=InAppNotification):
         InAppNotification.seen,
         InAppNotification.in_app_notification_type,
         InAppNotification.created_at,
+        FlowInAppNotification.flow_id,
+        ExternalInAppNotification.external_url,
     ]
     column_searchable_list = [
         InAppNotification.user_id,
@@ -39,12 +42,10 @@ class InAppNotificationAdmin(CustomModelView, model=InAppNotification):
     ]
 
     form_columns = [
-        "user_id",
+        "user",
         "text",
         "seen",
         "in_app_notification_type",
-        "flow_id",
-        "external_url",
     ]
 
 
@@ -79,12 +80,7 @@ class ExternalInAppNotificationAdmin(CustomModelView, model=ExternalInAppNotific
         ExternalInAppNotification.created_at,
     ]
 
-    form_columns = [
-        "user_id",
-        "text",
-        "external_url",
-        "seen",
-    ]
+    form_columns = ["user", "text", "seen", "external_url"]
 
 
 class FlowInAppNotificationAdmin(CustomModelView, model=FlowInAppNotification):
@@ -119,9 +115,4 @@ class FlowInAppNotificationAdmin(CustomModelView, model=FlowInAppNotification):
         FlowInAppNotification.created_at,
     ]
 
-    form_columns = [
-        "user_id",
-        "flow_id",
-        "text",
-        "seen",
-    ]
+    form_columns = ["user", "text", "seen", "flow"]
