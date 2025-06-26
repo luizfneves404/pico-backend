@@ -38,6 +38,8 @@ services:
       - UVICORN_RELOAD=false
       - GOOGLE_CLIENT_ID=123456
       - APPLE_APP_ID=123456
+      - MOCK_OPENAI=true
+      - MOCK_GEMINI=true
 
       # API Keys
       - AMPLITUDE_API_KEY
