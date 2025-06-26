@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any, Callable, Coroutine
 
@@ -1211,11 +1212,6 @@ async def test_community_feed_ordering(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
     """Test that community feed returns flows ordered by created_at desc"""
-    import asyncio
-
-    from app.community.models import CommunityUser
-    from tests.factories import CommunityFactory
-
     async with session.begin():
         # Create a community
         community = await CommunityFactory.create(session=session)

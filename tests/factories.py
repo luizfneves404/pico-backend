@@ -15,11 +15,13 @@ from factory.declarations import (
     Iterator,
     LazyFunction,
     RelatedFactoryList,
+    SelfAttribute,
     Sequence,
     SubFactory,
 )
 from factory.faker import Faker as FactoryFaker
 from faker import Faker
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_scoped_session
 
 import app.database as database
@@ -133,6 +135,7 @@ def country_name_sequence(n: int) -> str:
 
 
 def country_phone_code_sequence(n: int) -> str:
+    n = n % (1000)  # Wrap around after 1000
     return f"{n:03d}"
 
 
@@ -216,19 +219,6 @@ class AsyncSQLAlchemyFactory(Factory[T]):
         return instances
 
 
-class EducationLevelFactory(AsyncSQLAlchemyFactory[EducationLevel]):
-    class Meta:
-        model = EducationLevel
-
-    name_i18n = Sequence(education_level_name_i18n_sequence)
-    stages = RelatedFactoryList(
-        "tests.factories.LevelStageFactory", size=3, factory_related_name="level"
-    )
-    courses = RelatedFactoryList(
-        "tests.factories.CourseFactory", size=3, factory_related_name="level"
-    )
-
-
 class CountryFactory(AsyncSQLAlchemyFactory[Country]):
     class Meta:
         model = Country
@@ -238,13 +228,36 @@ class CountryFactory(AsyncSQLAlchemyFactory[Country]):
     phone_code = Sequence(country_phone_code_sequence)
 
 
+class EducationLevelFactory(AsyncSQLAlchemyFactory[EducationLevel]):
+    class Meta:
+        model = EducationLevel
+
+    name_i18n = Sequence(education_level_name_i18n_sequence)
+    stages = RelatedFactoryList(
+        "tests.factories.LevelStageFactory",
+        size=3,
+        factory_related_name="level",
+        country=SelfAttribute("..related_country"),
+    )
+    courses = RelatedFactoryList(
+        "tests.factories.CourseFactory",
+        size=3,
+        factory_related_name="level",
+    )
+
+    class Params:
+        related_country = SubFactory(CountryFactory)
+
+
 class LevelStageFactory(AsyncSQLAlchemyFactory[LevelStage]):
     class Meta:
         model = LevelStage
 
     name = Sequence(level_stage_name_sequence)
     country = SubFactory(CountryFactory)
-    level = SubFactory(EducationLevelFactory)
+    level = SubFactory(
+        EducationLevelFactory, related_country=SelfAttribute("..country")
+    )
 
 
 class CourseFactory(AsyncSQLAlchemyFactory[Course]):
@@ -252,8 +265,13 @@ class CourseFactory(AsyncSQLAlchemyFactory[Course]):
         model = Course
 
     name_i18n = Sequence(course_name_i18n_sequence)
-    level = SubFactory(EducationLevelFactory)
+    level = SubFactory(
+        EducationLevelFactory, related_country=SelfAttribute("..related_country")
+    )
     user_submitted = False
+
+    class Params:
+        related_country = SubFactory(CountryFactory)
 
 
 class InstitutionFactory(AsyncSQLAlchemyFactory[Institution]):
@@ -264,7 +282,9 @@ class InstitutionFactory(AsyncSQLAlchemyFactory[Institution]):
     institution_type = InstitutionType.SCHOOL
     user_submitted = False
     country = SubFactory(CountryFactory)
-    level = SubFactory(EducationLevelFactory)
+    level = SubFactory(
+        EducationLevelFactory, related_country=SelfAttribute("..country")
+    )
     administrative_category = AdministrativeCategory.UNKNOWN
 
 
@@ -284,9 +304,17 @@ class EducationFactory(AsyncSQLAlchemyFactory[EducationInfo]):
     class Meta:
         model = EducationInfo
 
-    level = SubFactory(EducationLevelFactory)
-    institution = SubFactory(InstitutionFactory)
+    level = SubFactory(
+        EducationLevelFactory, related_country=SelfAttribute("..related_country")
+    )
+    institution = SubFactory(
+        InstitutionFactory,
+        country=SelfAttribute("..related_country"),
+    )
     course = SubFactory(CourseFactory)
+
+    class Params:
+        related_country = SubFactory(CountryFactory)
 
 
 class UserFactory(AsyncSQLAlchemyFactory[User]):
@@ -306,8 +334,12 @@ class UserFactory(AsyncSQLAlchemyFactory[User]):
     is_bot = False
     bot_difficulty = None
     signup_source = "social"
-    current_education = SubFactory(EducationFactory)
-    intended_education = SubFactory(EducationFactory)
+    current_education = SubFactory(
+        EducationFactory, related_country=SelfAttribute("..country")
+    )
+    intended_education = SubFactory(
+        EducationFactory, related_country=SelfAttribute("..country")
+    )
     country = SubFactory(CountryFactory)
 
 
@@ -459,8 +491,48 @@ class FlowQuestionFactory(AsyncSQLAlchemyFactory[FlowQuestion]):
         model = FlowQuestion
 
     flow = SubFactory(FlowFactory)
-    order = Sequence(lambda n: n)
     question = SubFactory(QuestionFactory)
+    # Order should be sequential **within** a flow, starting at 0 for every new flow.
+    # Using a global Sequence causes order values to grow across tests, which can
+    # make newly-created questions exceed the cutoff (< 5) used by
+    # `get_flow_loader`, resulting in empty `flow.elements` collections.  We
+    # therefore assign the order dynamically based on the current maximum order
+    # of the given flow.
+
+    @classmethod
+    async def create(cls, session: AsyncSession, **kwargs: Any) -> FlowQuestion:
+        """Create a FlowQuestion ensuring `order` is sequential inside each flow.
+
+        If the caller didn't specify an explicit ``order``, we compute the next
+        available order for the provided ``flow`` (or a newly-created flow) by
+        querying the maximum existing order and adding one.  This guarantees
+        that orders start at 0 for every flow and remain contiguous, no matter
+        how many FlowQuestions have been created in other tests.
+        """
+
+        flow: Flow | None = kwargs.get("flow")
+
+        if flow is not None and "order" not in kwargs:
+            # Fetch the current maximum order for this flow (-1 if none exist)
+            max_order_query = select(
+                func.coalesce(func.max(FlowElement.order), -1)
+            ).where(FlowElement.flow_id == flow.id)
+            result = await session.execute(max_order_query)
+            max_order: int = result.scalar_one()
+            kwargs["order"] = max_order + 1
+
+        return await super().create(session, **kwargs)
+
+    @classmethod
+    async def create_batch(
+        cls, size: int, session: AsyncSession, **kwargs: Any
+    ) -> list[FlowQuestion]:
+        """Create a batch of ``FlowQuestion`` instances ensuring correct ordering.
+
+        This implementation ensures each call goes through :meth:`create`,
+        preserving the per-flow sequential ordering logic.
+        """
+        return [await cls.create(session=session, **kwargs) for _ in range(size)]
 
 
 class ExternalInAppNotificationFactory(

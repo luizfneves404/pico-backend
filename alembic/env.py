@@ -1,11 +1,12 @@
 import asyncio
 from contextvars import ContextVar
 from logging.config import fileConfig
-from typing import Any
+from typing import Any, Callable, Literal, TypedDict
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.sql.schema import SchemaItem
 
 import app.database  # noqa: F401 # type: ignore
 from alembic import context
@@ -43,7 +44,18 @@ target_metadata = Base.metadata
 
 
 def include_object(
-    object: Any, name: str, type_: str, reflected: bool, compare_to: Any
+    object: SchemaItem,
+    name: str | None,
+    type_: Literal[
+        "schema",
+        "table",
+        "column",
+        "index",
+        "unique_constraint",
+        "foreign_key_constraint",
+    ],
+    reflected: bool,
+    compare_to: SchemaItem | None,
 ) -> bool:
     # 1) skip the built-in PostGIS table
     if type_ == "table" and name == "spatial_ref_sys":
@@ -64,6 +76,35 @@ def include_object(
     return True
 
 
+class ConfigOptions(TypedDict):
+    compare_type: bool
+    compare_server_default: bool
+    include_object: Callable[
+        [
+            SchemaItem,
+            str | None,
+            Literal[
+                "schema",
+                "table",
+                "column",
+                "index",
+                "unique_constraint",
+                "foreign_key_constraint",
+            ],
+            bool,
+            SchemaItem | None,
+        ],
+        bool,
+    ]
+
+
+config_options: ConfigOptions = ConfigOptions(
+    compare_type=True,
+    compare_server_default=True,
+    include_object=include_object,
+)
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -82,7 +123,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        include_object=include_object,
+        **config_options,
     )
 
     with context.begin_transaction():
@@ -94,7 +135,7 @@ def do_run_migrations(connection: Connection) -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            include_object=include_object,
+            **config_options,
         )
 
         with context.begin_transaction():
@@ -109,7 +150,7 @@ def do_run_migrations(connection: Connection) -> None:
             context.configure(
                 connection=connection,
                 target_metadata=target_metadata,
-                include_object=include_object,
+                **config_options,
             )
             with context.begin_transaction():
                 context.run_migrations()

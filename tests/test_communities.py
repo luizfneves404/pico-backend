@@ -4,7 +4,7 @@ from sqlalchemy.future import select
 
 from app.community.models import CommunityUser
 from app.users.models import User
-from tests.factories import CommunityFactory, UserFactory
+from tests.factories import CommunityFactory, CountryFactory, UserFactory
 
 
 class TestCommunityCreation:
@@ -388,7 +388,10 @@ class TestCommunityBoundaryConditions:
         """Test a community with many users."""
         async with session.begin():
             community = await CommunityFactory.create(session=session)
-            users = await UserFactory.create_batch(size=50, session=session)
+            country = await CountryFactory.create(session=session)
+            users = await UserFactory.create_batch(
+                size=50, session=session, country=country
+            )
 
             # Add all users to community
             for user in users:

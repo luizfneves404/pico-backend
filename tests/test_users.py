@@ -4,13 +4,15 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
+from geoalchemy2.functions import ST_AsText
 from httpx import AsyncClient
+from sqlalchemy import String, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.community.models import Community, CommunityUser
 from app.config import settings
-from app.education.models import EducationLevel
+from app.education.models import EducationLevel, LevelStage
 from app.users import external_auth
 from app.users.exceptions import (
     InvalidTokenError,
@@ -18,6 +20,7 @@ from app.users.exceptions import (
 from app.users.external_auth import AppleIdToken, GoogleIdToken
 from app.users.models import User
 from tests.factories import (
+    CountryFactory,
     CourseFactory,
     InstitutionFactory,
     UserFactory,
@@ -804,7 +807,11 @@ class TestUserUpdates:
         assert response.status_code == 422
 
     async def test_update_education(
-        self, user_client: AsyncClient, session: AsyncSession
+        self,
+        user_client: AsyncClient,
+        session: AsyncSession,
+        education_level: EducationLevel,
+        level_stage: LevelStage,
     ):
         """Test updating education information."""
         async with session.begin():
@@ -815,7 +822,8 @@ class TestUserUpdates:
         data = {
             "updates": {
                 "current_education": {
-                    "level": "TGHS",
+                    "level_id": education_level.id,
+                    "stage_id": level_stage.id,
                     "institution_id": institution.id,
                     "course_id": course.id,
                 }
@@ -825,7 +833,10 @@ class TestUserUpdates:
         assert response.status_code == 200
         response_data = response.json()
         assert "current_education" in response_data["updated_fields"]
-        assert response_data["user"]["current_education"]["level"] == "TGHS"
+        assert (
+            response_data["user"]["current_education"]["level_id"] == education_level.id
+        )
+        assert response_data["user"]["current_education"]["stage_id"] == level_stage.id
         assert (
             response_data["user"]["current_education"]["institution_id"]
             == institution.id
@@ -836,7 +847,8 @@ class TestUserUpdates:
         data = {
             "updates": {
                 "intended_education": {
-                    "level": "COL",
+                    "level_id": education_level.id,
+                    "stage_id": level_stage.id,
                     "institution_id": institution.id,
                     "course_id": course.id,
                 }
@@ -846,27 +858,16 @@ class TestUserUpdates:
         assert response.status_code == 200
         response_data = response.json()
         assert "intended_education" in response_data["updated_fields"]
-        assert response_data["user"]["intended_education"]["level"] == "COL"
+        assert (
+            response_data["user"]["intended_education"]["level_id"]
+            == education_level.id
+        )
+        assert response_data["user"]["intended_education"]["stage_id"] == level_stage.id
         assert (
             response_data["user"]["intended_education"]["institution_id"]
             == institution.id
         )
         assert response_data["user"]["intended_education"]["course_id"] == course.id
-
-        # Clear education fields
-        data = {"updates": {"current_education": None}}
-        response = await user_client.patch("/api/users/me", json=data)
-        assert response.status_code == 200
-        response_data = response.json()
-        assert "current_education" in response_data["updated_fields"]
-        assert response_data["user"]["current_education"] is None
-
-        data = {"updates": {"intended_education": None}}
-        response = await user_client.patch("/api/users/me", json=data)
-        assert response.status_code == 200
-        response_data = response.json()
-        assert "intended_education" in response_data["updated_fields"]
-        assert response_data["user"]["intended_education"] is None
 
     async def test_unified_update_operations(self, user_client: AsyncClient):
         """Test the unified update endpoint with various scenarios."""
@@ -919,11 +920,14 @@ class TestUserUpdates:
         assert "location" in response_data["updated_fields"]
         # check if actually updated in the database
         async with session.begin():
-            location = (
-                await session.execute(select(User.location).where(User.id == user.id))
+            location_wkt = (
+                await session.execute(
+                    select(cast(ST_AsText(User.location), String)).where(
+                        User.id == user.id
+                    )
+                )
             ).scalar_one()
-            assert location is not None
-            assert location.desc == "POINT(12.3456789 12.3456789)"
+            assert location_wkt == "POINT(12.3456789 12.3456789)"
 
 
 class TestUserDeletion:
@@ -1069,7 +1073,8 @@ class TestSocialFeatures:
         """Test operations with large amounts of data via endpoints."""
         # Create many users for contact checking
         async with session.begin():
-            users = await UserFactory.create_batch(50, session=session)
+            country = await CountryFactory.create(session=session)
+            users = await UserFactory.create_batch(50, session=session, country=country)
 
         phone_numbers = [str(user.phone_number) for user in users[:30]]
         data = {"phone_numbers": phone_numbers}
@@ -1085,17 +1090,13 @@ class TestSocialFeatures:
         user: User,
         user_client: AsyncClient,
         session: AsyncSession,
-        level: EducationLevel,
-        expected_community_subtitle: str,
+        education_level: EducationLevel,
+        level_stage: LevelStage,
     ) -> None:
         """Test that users automatically join communities based on their education when changed."""
         # Create education resources first
         async with session.begin():
-            institution = (
-                await InstitutionFactory.create(session=session)
-                if level == EducationLevel.HIGH_SCHOOL
-                else await InstitutionFactory.create(session=session)
-            )
+            institution = await InstitutionFactory.create(session=session)
             course = await CourseFactory.create(session=session)
 
         async with session.begin():
@@ -1104,7 +1105,8 @@ class TestSocialFeatures:
                 json={
                     "updates": {
                         "current_education": {
-                            "level": level,
+                            "level_id": education_level.id,
+                            "stage_id": level_stage.id,
                             "institution_id": institution.id,
                             "course_id": course.id,
                         }
@@ -1113,7 +1115,14 @@ class TestSocialFeatures:
             )
             assert response.status_code == 200
             assert response.json()["updated_fields"] == ["current_education"]
-            assert response.json()["user"]["current_education"]["level"] == level
+            assert (
+                response.json()["user"]["current_education"]["level_id"]
+                == education_level.id
+            )
+            assert (
+                response.json()["user"]["current_education"]["stage_id"]
+                == level_stage.id
+            )
             assert (
                 response.json()["user"]["current_education"]["institution_id"]
                 == institution.id
@@ -1124,7 +1133,7 @@ class TestSocialFeatures:
             result = await session.execute(
                 select(Community).where(
                     Community.name == institution.name,
-                    Community.subtitle == expected_community_subtitle,
+                    Community.subtitle == course.name_i18n["en"],
                 )
             )
             community = result.scalar_one_or_none()

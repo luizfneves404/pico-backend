@@ -157,7 +157,7 @@ def _generate_community_subtitle(
         Generated community subtitle
     """
     if course:
-        return course.name_i18n["en"]
+        return course.name_i18n["en"]  # TODO: needs to adjust to language of user
     if stage:
         return stage.name
 

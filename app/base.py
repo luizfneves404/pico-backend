@@ -29,12 +29,14 @@ ASYNC_PARENT_FOREIGN_KEY_OPTIONS = "save-update, merge, expunge, delete, delete-
 logger = logging.getLogger(__name__)
 
 auto_now_insert_timestamp = Annotated[
-    datetime.datetime, mapped_column(server_default=func.now())
+    datetime.datetime, mapped_column(server_default=func.clock_timestamp())
 ]
 
 auto_now_update_timestamp = Annotated[
     datetime.datetime,
-    mapped_column(server_default=func.now(), onupdate=func.now()),
+    mapped_column(
+        server_default=func.clock_timestamp(), onupdate=func.clock_timestamp()
+    ),
 ]
 
 

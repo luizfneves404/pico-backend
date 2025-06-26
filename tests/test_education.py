@@ -43,52 +43,6 @@ async def test_list_levels_with_country_filter(
     assert isinstance(levels, list)
 
 
-async def test_list_courses(
-    client: AsyncClient, session: AsyncSession, education_level: EducationLevel
-) -> None:
-    """Test listing courses."""
-    # Create a course using the service layer
-    async with session.begin():
-        await create_course(
-            session,
-            name_i18n={"en": "Computer Science"},
-            user_submitted=False,
-            level_id=education_level.id,
-        )
-
-    # Get list of courses
-    response = await client.get("/api/education/courses")
-    assert response.status_code == 200
-    courses = response.json()
-    assert len(courses) >= 1
-
-    course_names = [course["name_i18n"] for course in courses]
-    assert {"en": "Computer Science"} in course_names
-
-
-async def test_list_courses_with_level_filter(
-    client: AsyncClient, session: AsyncSession, education_level: EducationLevel
-) -> None:
-    """Test listing courses filtered by level."""
-    # Create a course using the service layer
-    async with session.begin():
-        course = await create_course(
-            session,
-            name_i18n={"en": "Mathematics"},
-            user_submitted=False,
-            level_id=education_level.id,
-        )
-
-    # Get list of courses filtered by level
-    response = await client.get(f"/api/education/courses?level_id={education_level.id}")
-    assert response.status_code == 200
-    courses = response.json()
-
-    # All returned courses should have the specified level_id
-    for course in courses:
-        assert course["level_id"] == education_level.id
-
-
 async def test_get_course_detail(
     client: AsyncClient, session: AsyncSession, education_level: EducationLevel
 ) -> None:

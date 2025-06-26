@@ -12,7 +12,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-import app.amp as amp
 import app.community.service as community_service
 import app.mail as mail
 import app.users.external_auth as external_auth
@@ -125,16 +124,22 @@ async def _set_education_field(
         if education_data.level_id is not UNSET:
             education_info.level_id = education_data.level_id
 
+        if education_data.stage_id is not UNSET:
+            education_info.stage_id = education_data.stage_id
+
         if education_data.institution_id is not UNSET:
             education_info.institution_id = education_data.institution_id
 
         if education_data.course_id is not UNSET:
             education_info.course_id = education_data.course_id
+
         try:
             await db_session.flush()
         except IntegrityError as e:
             if "level_id" in str(e.orig):
                 raise InvalidLevelIdError
+            elif "stage_id" in str(e.orig):
+                raise InvalidStageIdError
             elif "institution_id" in str(e.orig):
                 raise InvalidInstitutionIdError
             elif "course_id" in str(e.orig):
@@ -734,7 +739,7 @@ async def delete_user(
     if not verify_password(current_password, user.hashed_password):
         raise InvalidCredentialsError
     logger.info(f"Deleting user {user.id}")
-    await amp.delete_user(user.id)
+    # TODO: delete from analytics too
     await db_session.delete(user)
     await db_session.flush()
 
