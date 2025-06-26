@@ -1,0 +1,30 @@
+# Use PostGIS as the base image
+ARG POSTGRES_VERSION=17
+FROM postgis/postgis:${POSTGRES_VERSION}-3.5
+
+# Install build dependencies for pgvector
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    git \
+    postgresql-server-dev-${PG_MAJOR} \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone and build pgvector
+ARG PGVECTOR_VERSION=v0.8.0
+RUN git clone --branch ${PGVECTOR_VERSION} https://github.com/pgvector/pgvector.git /tmp/pgvector \
+    && cd /tmp/pgvector \
+    && make \
+    && make install \
+    && rm -rf /tmp/pgvector
+
+# Clean up build dependencies to reduce image size
+RUN apt-get purge -y \
+    build-essential \
+    git \
+    postgresql-server-dev-${PG_MAJOR} \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set shared_preload_libraries to include pgvector (optional but recommended for performance)
+RUN echo "shared_preload_libraries = 'vector'" >> /usr/share/postgresql/${PG_MAJOR}/postgresql.conf.sample 
