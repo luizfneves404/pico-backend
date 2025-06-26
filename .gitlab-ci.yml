@@ -36,6 +36,8 @@ variables:
   TINIFY_API_KEY: $TINIFY_API_KEY
   GOOGLE_CLIENT_ID: 123456
   APPLE_APP_ID: 123456
+  MOCK_OPENAI: true
+  MOCK_GEMINI: true
 
 pipeline-job:
   image: registry.gitlab.com/gitlab-org/cloud-deploy/aws-base:latest
