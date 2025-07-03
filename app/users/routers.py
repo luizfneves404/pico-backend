@@ -52,7 +52,7 @@ async def login(
     - password: the password of the user
     """
     user = await service.authenticate_user_by_password(
-        db_session, form_data.username.strip(), form_data.password
+        db_session, form_data.username, form_data.password
     )
 
     if not user:

@@ -660,13 +660,13 @@ async def get_user(
     """
 
     if username is not None:
-        stmt = select(User).where(User.username == username)
+        stmt = select(User).where(User.username == username.strip())
     elif id is not None:
         stmt = select(User).where(User.id == id)
     elif phone_number is not None:
         stmt = select(User).where(User.phone_number == phone_number)
     elif email is not None:
-        stmt = select(User).where(User.email == email)
+        stmt = select(User).where(User.email == email.strip().lower())
     elif google_id is not None:
         stmt = select(User).where(User.google_id == google_id)
     elif apple_id is not None:
