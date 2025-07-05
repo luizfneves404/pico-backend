@@ -1,8 +1,9 @@
 import logging
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.pagination import PaginationParams, paginate_query
@@ -10,6 +11,8 @@ from app.shared.validation import CustomPhoneNumber
 from app.users.models import User
 
 logger = logging.getLogger(__name__)
+
+NUM_RANKED_USERS = 100
 
 phone_number_adapter: TypeAdapter[CustomPhoneNumber] = TypeAdapter(CustomPhoneNumber)
 
@@ -67,16 +70,24 @@ async def search_username(
     return list(await db_session.scalars(stmt))
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UserInRanking:
+    id: int
+    score: float
+    rank: int
+
+
 async def get_ranking(
     db_session: AsyncSession,
     *,
     asking_user_id: int,
     score_type: Literal["xp", "social"],
     institution_id: int | None,
+    stage_id: int | None,
     course_id: int | None,
     education_level_id: int | None,
-    subject: str | None = None,
-) -> list[User]:
+    subject: str | None,
+) -> list[UserInRanking]:
     """Get user ranking based on various filters.
 
     Args:
@@ -84,9 +95,9 @@ async def get_ranking(
         asking_user_id: ID of the user asking for the ranking
         score_type: Type of scoring to use
         institution_id: Filter by institution ID
+        stage_id: Filter by stage ID
         course_id: Filter by course ID
         education_level_id: Filter by education level ID
-        subject: Subject for percentage-based ranking
 
     Returns:
         List of ranked user statistics
@@ -95,26 +106,49 @@ async def get_ranking(
         This function needs to be updated to work with the new education structure
         For now, keeping the basic structure but this will need more work
     """
-    # Note: This function needs to be updated to work with the new education structure
-    # For now, keeping the basic structure but this will need more work
-    stmt = select(User.id)
-    if institution_id:
-        stmt = stmt.where(User.institution_id == institution_id)
-    if course_id:
-        stmt = stmt.where(User.course_id == course_id)
-    if education_level_id:
-        stmt = stmt.where(User.education_level_id == education_level_id)
+    score_column = User.xp_score if score_type == "xp" else User.social_score
 
-    users_ids = await db_session.scalars(stmt)
-    # Note: quiz_service is not imported, this will need to be fixed
-    # if score_type == "xp":
-    #     return await quiz_service.get_ranked_users_stats_by_dynamic_score(
-    #         users_ids, NUM_RANKED_USERS, asking_user_id
-    #     )
-    # elif score_type == "social":
-    #     return await quiz_service.get_ranked_users_stats_by_percentage(
-    #         users_ids, NUM_RANKED_USERS, asking_user_id, subject
-    #     )
-    # else:
-    #     raise ValueError(f"Invalid score type: {score_type}")
-    return []  # Placeholder
+    # Create CTE with all ranked users matching filters
+    ranked_users_cte = select(
+        User.id,
+        score_column.label("score"),
+        func.rank().over(order_by=score_column.desc()).label("rank"),
+    )
+    if institution_id:
+        ranked_users_cte = ranked_users_cte.where(
+            User.current_education.has(institution_id=institution_id)
+        )
+    if course_id:
+        ranked_users_cte = ranked_users_cte.where(
+            User.current_education.has(course_id=course_id)
+        )
+    if stage_id:
+        ranked_users_cte = ranked_users_cte.where(
+            User.current_education.has(stage_id=stage_id)
+        )
+    if education_level_id:
+        ranked_users_cte = ranked_users_cte.where(
+            User.current_education.has(level_id=education_level_id)
+        )
+
+    ranked_users_cte = ranked_users_cte.cte("ranked_users")
+
+    # Select top users plus asking user if not in top
+    stmt = (
+        select(
+            ranked_users_cte.c.id,
+            ranked_users_cte.c.score,
+            ranked_users_cte.c.rank,
+        )
+        .where(
+            (ranked_users_cte.c.rank <= NUM_RANKED_USERS)
+            | (ranked_users_cte.c.id == asking_user_id)
+        )
+        .order_by(ranked_users_cte.c.rank)
+    )
+
+    results = await db_session.execute(stmt)
+    return [
+        UserInRanking(id=result[0], score=result[1], rank=result[2])
+        for result in results
+    ]

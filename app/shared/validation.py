@@ -35,3 +35,6 @@ type_UNSET = Literal[UnsetType.UNSET]
 class Location(BaseModel):
     latitude: float
     longitude: float
+
+
+RoundedFloat = Annotated[float, AfterValidator(lambda x: round(x, 1))]

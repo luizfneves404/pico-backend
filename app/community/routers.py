@@ -1,8 +1,10 @@
+from typing import Literal
+
 from fastapi import APIRouter
 
 import app.ws.service as ws_service
 from app.community import service
-from app.community.schemas import CommunityOut
+from app.community.schemas import CommunityOut, UserInCommunityRanking
 from app.deps import CurrentUserAnnotated, DBSessionAnnotated
 
 router = APIRouter(prefix="/community", tags=["community"])
@@ -22,3 +24,16 @@ async def my_communities(
     return [
         CommunityOut.from_orm_model(community, online_info) for community in communities
     ]
+
+
+@router.get("/{id}/ranking")
+async def get_community_ranking(
+    db_session: DBSessionAnnotated,
+    current_user: CurrentUserAnnotated,
+    id: int,
+    score_type: Literal["xp", "social"],
+) -> list[UserInCommunityRanking]:
+    ranking = await service.get_community_ranking(
+        db_session, community_id=id, score_type=score_type
+    )
+    return ranking

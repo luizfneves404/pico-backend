@@ -433,6 +433,7 @@ async def user_ranking(
     institution_id: int | None = None,
     course_id: int | None = None,
     education_level_id: int | None = None,
+    stage_id: int | None = None,
 ) -> list[UserInRanking]:
     """Get user ranking based on various filters. If you pass null, it is not filtered by that criteria."""
     if score_type == "xp" and subject is not None:
@@ -448,8 +449,12 @@ async def user_ranking(
         institution_id=institution_id,
         education_level_id=education_level_id,
         course_id=course_id,
+        stage_id=stage_id,
     )
-    return [UserInRanking.from_orm_model(user) for user in users]
+    return [
+        UserInRanking.from_orm_model(user, score_type, rank)
+        for rank, user in enumerate(users)
+    ]
 
 
 @user_authenticated_router.post(
