@@ -189,7 +189,8 @@ def get_size_for_file_id() -> int:
 
 class AsyncSQLAlchemyFactory(Factory[T]):
     """Factory for creating SQLAlchemy model instances asynchronously.
-    To get type hints do not use await Factory(), use await Factory.create()"""
+    To get type hints do not use await Factory(), use await Factory.create().
+    DO NOT OVERRIDE FOREIGN KEYS BY PASSING _id fields, pass the object instead."""
 
     _options_class = SQLAlchemyOptions
 
