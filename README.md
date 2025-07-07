@@ -34,7 +34,7 @@ relationship(
 ## FastAPI Usage
 
 - Prefer to return the pydantic models directly in the router functions, instead of using response_model=... and returning your ORM models. This is better because it allows for better type checking. And don't create those pydantic models using model_validate, because model_validate doesn't give linting errors.
-- To make this more reusable, consider adding a classmethod on the pydantic model that takes in a db model and constructs the pydantic model instance. Or alternatively, create a function inside routers.py that takes an ORM model and returns a pydantic model.
+- To make this more reusable, consider adding a classmethod on the pydantic model that takes in a db model and constructs the pydantic model instance. Or alternatively, create a function inside routers.py that takes an ORM model and returns a pydantic model. If your service function does not return the ORM model but instead a dataclass (for limiting the amount of data returned from DB, for example), you can write the transformation to pydantic model directly in the router function (i don't think a separate function is needed).
 - The DBSessionAnnotated dependency takes care of committing, so don't call await db_session.commit() in the router function (or in services).
 
 
