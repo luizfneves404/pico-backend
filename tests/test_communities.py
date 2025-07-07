@@ -408,3 +408,294 @@ class TestCommunityBoundaryConditions:
             )
             community_users = list(result.scalars())
             assert len(community_users) == 50
+
+
+class TestCommunityRankingAPI:
+    """Test community ranking API endpoints."""
+
+    async def test_get_community_ranking_xp_score(
+        self, user_client: AsyncClient, user: User, session: AsyncSession
+    ):
+        """Test getting community ranking with XP scores."""
+        async with session.begin():
+            community = await CommunityFactory.create(session=session)
+
+            # Create users with different XP scores
+            user_high = await UserFactory.create(
+                session=session, xp_score=1000, username="highxp"
+            )
+            user_mid = await UserFactory.create(
+                session=session, xp_score=500, username="midxp"
+            )
+            user_low = await UserFactory.create(
+                session=session, xp_score=100, username="lowxp"
+            )
+
+            # Add all users to the community
+            community_users = [
+                CommunityUser(community_id=community.id, user_id=user.id),
+                CommunityUser(community_id=community.id, user_id=user_high.id),
+                CommunityUser(community_id=community.id, user_id=user_mid.id),
+                CommunityUser(community_id=community.id, user_id=user_low.id),
+            ]
+            for cu in community_users:
+                session.add(cu)
+            await session.flush()
+
+        response = await user_client.get(
+            f"/api/community/{community.id}/ranking?score_type=xp"
+        )
+        assert response.status_code == 200
+
+        ranking = response.json()
+        assert len(ranking) == 4
+
+        # Verify ranking order (highest to lowest)
+        assert ranking[0]["id"] == user_high.id
+        assert ranking[0]["score"] == 1000
+        assert ranking[0]["rank"] == 1
+        assert ranking[0]["username"] == "highxp"
+
+        assert ranking[1]["id"] == user_mid.id
+        assert ranking[1]["score"] == 500
+        assert ranking[1]["rank"] == 2
+
+        assert ranking[2]["id"] == user_low.id
+        assert ranking[2]["score"] == 100
+        assert ranking[2]["rank"] == 3
+
+        # Original user should be last with 0 score
+        assert ranking[3]["id"] == user.id
+        assert ranking[3]["score"] == 0
+        assert ranking[3]["rank"] == 4
+
+    async def test_get_community_ranking_social_score(
+        self, user_client: AsyncClient, user: User, session: AsyncSession
+    ):
+        """Test getting community ranking with social scores."""
+        async with session.begin():
+            community = await CommunityFactory.create(session=session)
+
+            # Create users with different social scores
+            user_social_high = await UserFactory.create(
+                session=session, social_score=800, username="highsocial"
+            )
+            user_social_mid = await UserFactory.create(
+                session=session, social_score=400, username="midsocial"
+            )
+
+            # Add users to community
+            community_users = [
+                CommunityUser(community_id=community.id, user_id=user.id),
+                CommunityUser(community_id=community.id, user_id=user_social_high.id),
+                CommunityUser(community_id=community.id, user_id=user_social_mid.id),
+            ]
+            for cu in community_users:
+                session.add(cu)
+            await session.flush()
+
+        response = await user_client.get(
+            f"/api/community/{community.id}/ranking?score_type=social"
+        )
+        assert response.status_code == 200
+
+        ranking = response.json()
+        assert len(ranking) == 3
+
+        # Verify ranking order for social scores
+        assert ranking[0]["id"] == user_social_high.id
+        assert ranking[0]["score"] == 800
+        assert ranking[0]["rank"] == 1
+
+        assert ranking[1]["id"] == user_social_mid.id
+        assert ranking[1]["score"] == 400
+        assert ranking[1]["rank"] == 2
+
+        assert ranking[2]["id"] == user.id
+        assert ranking[2]["score"] == 0
+        assert ranking[2]["rank"] == 3
+
+    async def test_get_community_ranking_asking_user_included_outside_top_10(
+        self, user_client: AsyncClient, user: User, session: AsyncSession
+    ):
+        """Test that asking user is included in ranking even if outside top 10."""
+        async with session.begin():
+            community = await CommunityFactory.create(session=session)
+            country = await CountryFactory.create(session=session)
+
+            # Create 12 users with higher XP scores than the asking user, different xp scores
+            high_score_users = [
+                await UserFactory.create(
+                    session=session,
+                    xp_score=1000 * i,
+                    country=country,
+                    username=f"user{i}",
+                )
+                for i in range(1, 13)
+            ]
+
+            # Add all users to community
+            community_users = [
+                CommunityUser(community_id=community.id, user_id=user.id),
+                *[
+                    CommunityUser(community_id=community.id, user_id=high_user.id)
+                    for high_user in high_score_users
+                ],
+            ]
+
+            for cu in community_users:
+                session.add(cu)
+            await session.flush()
+
+        response = await user_client.get(
+            f"/api/community/{community.id}/ranking?score_type=xp"
+        )
+        assert response.status_code == 200
+
+        ranking = response.json()
+        # Should include top 10 + asking user (who is rank 13)
+        assert len(ranking) == 11
+
+        # First 10 should be the high scorers
+        for i in range(10):
+            assert ranking[i]["score"] == (12000 - 1000 * i)  # 12000, 11000, 10000, ...
+            assert ranking[i]["rank"] == i + 1
+
+        # Last entry should be the asking user
+        assert ranking[10]["id"] == user.id
+        assert ranking[10]["score"] == 0
+        assert ranking[10]["rank"] == 13  # Rank 13
+
+    async def test_get_community_ranking_with_tied_scores(
+        self, user_client: AsyncClient, user: User, session: AsyncSession
+    ):
+        """Test ranking behavior with tied scores."""
+        async with session.begin():
+            community = await CommunityFactory.create(session=session)
+
+            # Create users with tied scores
+            user_tied1 = await UserFactory.create(
+                session=session, xp_score=500, username="tied1"
+            )
+            user_tied2 = await UserFactory.create(
+                session=session, xp_score=500, username="tied2"
+            )
+            user_unique = await UserFactory.create(
+                session=session, xp_score=300, username="unique"
+            )
+
+            # Add users to community
+            community_users = [
+                CommunityUser(community_id=community.id, user_id=user.id),
+                CommunityUser(community_id=community.id, user_id=user_tied1.id),
+                CommunityUser(community_id=community.id, user_id=user_tied2.id),
+                CommunityUser(community_id=community.id, user_id=user_unique.id),
+            ]
+            for cu in community_users:
+                session.add(cu)
+            await session.flush()
+
+        response = await user_client.get(
+            f"/api/community/{community.id}/ranking?score_type=xp"
+        )
+        assert response.status_code == 200
+
+        ranking = response.json()
+        assert len(ranking) == 4
+
+        # Both tied users should have rank 1
+        tied_users = [r for r in ranking if r["score"] == 500]
+        assert len(tied_users) == 2
+        for tied_user in tied_users:
+            assert tied_user["rank"] == 1
+
+        # User with 300 score should have rank 2
+        unique_user = next(r for r in ranking if r["score"] == 300)
+        assert unique_user["rank"] == 2
+
+    async def test_get_community_ranking_nonexistent_community(
+        self, user_client: AsyncClient
+    ):
+        """Test getting ranking for non-existent community."""
+        response = await user_client.get("/api/community/99999/ranking?score_type=xp")
+        assert response.status_code == 200
+        ranking = response.json()
+        assert ranking == []
+
+    async def test_get_community_ranking_invalid_score_type(
+        self, user_client: AsyncClient, session: AsyncSession
+    ):
+        """Test ranking with invalid score type."""
+        async with session.begin():
+            community = await CommunityFactory.create(session=session)
+
+        response = await user_client.get(
+            f"/api/community/{community.id}/ranking?score_type=invalid"
+        )
+        assert response.status_code == 422
+
+    async def test_get_community_ranking_missing_score_type(
+        self, user_client: AsyncClient, session: AsyncSession
+    ):
+        """Test ranking without score_type parameter."""
+        async with session.begin():
+            community = await CommunityFactory.create(session=session)
+
+        response = await user_client.get(f"/api/community/{community.id}/ranking")
+        assert response.status_code == 422
+
+    async def test_get_community_ranking_authorization_required(
+        self, client: AsyncClient, session: AsyncSession
+    ):
+        """Test that authorization is required for community ranking endpoint."""
+        async with session.begin():
+            community = await CommunityFactory.create(session=session)
+
+        response = await client.get(
+            f"/api/community/{community.id}/ranking?score_type=xp"
+        )
+        assert response.status_code == 401
+
+    async def test_get_community_ranking_empty_community(
+        self, user_client: AsyncClient, session: AsyncSession
+    ):
+        """Test ranking for community with no users."""
+        async with session.begin():
+            community = await CommunityFactory.create(session=session)
+
+        response = await user_client.get(
+            f"/api/community/{community.id}/ranking?score_type=xp"
+        )
+        assert response.status_code == 200
+        ranking = response.json()
+
+        assert len(ranking) == 0
+
+    async def test_get_community_ranking_response_schema(
+        self, user_client: AsyncClient, user: User, session: AsyncSession
+    ):
+        """Test that ranking response matches expected schema."""
+        async with session.begin():
+            community = await CommunityFactory.create(session=session)
+            community_user = CommunityUser(community_id=community.id, user_id=user.id)
+            session.add(community_user)
+            await session.flush()
+
+        response = await user_client.get(
+            f"/api/community/{community.id}/ranking?score_type=xp"
+        )
+        assert response.status_code == 200
+        ranking = response.json()
+
+        assert len(ranking) == 1
+        user_rank = ranking[0]
+
+        # Verify all required fields are present and correct types
+        assert isinstance(user_rank["id"], int)
+        assert isinstance(user_rank["username"], str)
+        assert isinstance(user_rank["rank"], int)
+        assert isinstance(user_rank["score"], int)
+        assert user_rank["id"] == user.id
+        assert user_rank["username"] == user.username
+        assert user_rank["rank"] == 1
+        assert user_rank["score"] == 0

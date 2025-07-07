@@ -3,16 +3,18 @@ from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import func, join, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.education.models import EducationInfo
 from app.pagination import PaginationParams, paginate_query
 from app.shared.validation import CustomPhoneNumber
+from app.users.constants import SENTINEL_USERNAMES
 from app.users.models import User
 
 logger = logging.getLogger(__name__)
 
-NUM_RANKED_USERS = 100
+NUM_RANKED_USERS = 10
 
 phone_number_adapter: TypeAdapter[CustomPhoneNumber] = TypeAdapter(CustomPhoneNumber)
 
@@ -70,11 +72,21 @@ async def search_username(
     return list(await db_session.scalars(stmt))
 
 
+@dataclass
+class CurrentEducationForRanking:
+    level_id: int
+    institution_id: int
+    course_id: int
+    stage_id: int
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class UserInRanking:
     id: int
-    score: float
+    score: int
     rank: int
+    current_education: CurrentEducationForRanking | None
+    username: str
 
 
 async def get_ranking(
@@ -86,69 +98,97 @@ async def get_ranking(
     stage_id: int | None,
     course_id: int | None,
     education_level_id: int | None,
-    subject: str | None,
 ) -> list[UserInRanking]:
-    """Get user ranking based on various filters.
-
-    Args:
-        db_session: The database session
-        asking_user_id: ID of the user asking for the ranking
-        score_type: Type of scoring to use
-        institution_id: Filter by institution ID
-        stage_id: Filter by stage ID
-        course_id: Filter by course ID
-        education_level_id: Filter by education level ID
-
-    Returns:
-        List of ranked user statistics
-
-    Note:
-        This function needs to be updated to work with the new education structure
-        For now, keeping the basic structure but this will need more work
+    """
+    Get user ranking based on various filters, returning a maximum of
+    NUM_RANKED_USERS + 1 (the asking user).
     """
     score_column = User.xp_score if score_type == "xp" else User.social_score
 
-    # Create CTE with all ranked users matching filters
-    ranked_users_cte = select(
+    ranked_users_cte_stmt = select(
         User.id,
+        User.username,
         score_column.label("score"),
-        func.rank().over(order_by=score_column.desc()).label("rank"),
+        func.dense_rank().over(order_by=score_column.desc()).label("rank"),
+        EducationInfo.level_id,
+        EducationInfo.institution_id,
+        EducationInfo.course_id,
+        EducationInfo.stage_id,
+    ).select_from(
+        join(
+            User,
+            EducationInfo,
+            User.current_education_id == EducationInfo.id,
+            isouter=True,
+        )
     )
+    ranked_users_cte_stmt = ranked_users_cte_stmt.where(
+        ~User.username.in_(SENTINEL_USERNAMES)
+    )
+
     if institution_id:
-        ranked_users_cte = ranked_users_cte.where(
-            User.current_education.has(institution_id=institution_id)
+        ranked_users_cte_stmt = ranked_users_cte_stmt.where(
+            EducationInfo.institution_id == institution_id
         )
     if course_id:
-        ranked_users_cte = ranked_users_cte.where(
-            User.current_education.has(course_id=course_id)
+        ranked_users_cte_stmt = ranked_users_cte_stmt.where(
+            EducationInfo.course_id == course_id
         )
     if stage_id:
-        ranked_users_cte = ranked_users_cte.where(
-            User.current_education.has(stage_id=stage_id)
+        ranked_users_cte_stmt = ranked_users_cte_stmt.where(
+            EducationInfo.stage_id == stage_id
         )
     if education_level_id:
-        ranked_users_cte = ranked_users_cte.where(
-            User.current_education.has(level_id=education_level_id)
+        ranked_users_cte_stmt = ranked_users_cte_stmt.where(
+            EducationInfo.level_id == education_level_id
         )
 
-    ranked_users_cte = ranked_users_cte.cte("ranked_users")
+    ranked_users_cte = ranked_users_cte_stmt.cte("ranked_users")
 
-    # Select top users plus asking user if not in top
-    stmt = (
-        select(
-            ranked_users_cte.c.id,
-            ranked_users_cte.c.score,
-            ranked_users_cte.c.rank,
-        )
-        .where(
-            (ranked_users_cte.c.rank <= NUM_RANKED_USERS)
-            | (ranked_users_cte.c.id == asking_user_id)
-        )
+    top_users_query = (
+        select(ranked_users_cte)
         .order_by(ranked_users_cte.c.rank)
+        .limit(NUM_RANKED_USERS)
     )
 
+    asking_user_query = select(ranked_users_cte).where(
+        ranked_users_cte.c.id == asking_user_id
+    )
+
+    final_union = top_users_query.union(asking_user_query)
+    union_subquery = final_union.subquery()
+
+    stmt = select(union_subquery).order_by(union_subquery.c.rank)
+
+    results = await db_session.execute(
+        select(func.distinct(EducationInfo.institution_id)).order_by(
+            EducationInfo.institution_id
+        )
+    )
+    print(results.all())
+    results = await db_session.execute(
+        select(func.count(EducationInfo.id)).where(
+            EducationInfo.institution_id == institution_id
+        )
+    )
+    print(results.all())
+
     results = await db_session.execute(stmt)
+
     return [
-        UserInRanking(id=result[0], score=result[1], rank=result[2])
-        for result in results
+        UserInRanking(
+            id=row.id,
+            score=row.score,
+            rank=row.rank,
+            current_education=CurrentEducationForRanking(
+                level_id=row.level_id,
+                institution_id=row.institution_id,
+                course_id=row.course_id,
+                stage_id=row.stage_id,
+            )
+            if row.level_id is not None
+            else None,
+            username=row.username,
+        )
+        for row in results
     ]

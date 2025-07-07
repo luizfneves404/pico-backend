@@ -1,7 +1,6 @@
 from pydantic import BaseModel
 
 from app.community.models import Community
-from app.shared.validation import RoundedFloat
 from app.users.schemas import OnlineInfo as OnlineInfoOut
 from app.ws.service import OnlineInfo
 
@@ -45,4 +44,4 @@ class UserInCommunityRanking(BaseModel):
     id: int
     username: str
     rank: int
-    score: RoundedFloat
+    score: int

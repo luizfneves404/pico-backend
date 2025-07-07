@@ -33,7 +33,18 @@ async def get_community_ranking(
     id: int,
     score_type: Literal["xp", "social"],
 ) -> list[UserInCommunityRanking]:
-    ranking = await service.get_community_ranking(
-        db_session, community_id=id, score_type=score_type
+    users = await service.get_community_ranking(
+        db_session,
+        asking_user_id=current_user.id,
+        community_id=id,
+        score_type=score_type,
     )
-    return ranking
+    return [
+        UserInCommunityRanking(
+            id=user.id,
+            username=user.username,
+            rank=user.rank,
+            score=user.score,
+        )
+        for user in users
+    ]

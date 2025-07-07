@@ -22,6 +22,7 @@ from app.users.models import User
 from tests.factories import (
     CountryFactory,
     CourseFactory,
+    EducationLevelFactory,
     InstitutionFactory,
     UserFactory,
 )
@@ -1148,3 +1149,363 @@ class TestSocialFeatures:
             )
             community_user = result.scalar_one_or_none()
             assert community_user is not None
+
+
+class TestUserRankingAPI:
+    """Test general user ranking API endpoints."""
+
+    async def test_get_user_ranking_xp_score_basic(
+        self, user_client: AsyncClient, user: User, session: AsyncSession
+    ):
+        """Test getting user ranking with XP scores."""
+        async with session.begin():
+            # Create users with different XP scores
+            user_high = await UserFactory.create(
+                session=session, xp_score=1000, username="highxp"
+            )
+            user_mid = await UserFactory.create(
+                session=session, xp_score=500, username="midxp"
+            )
+            user_low = await UserFactory.create(
+                session=session, xp_score=100, username="lowxp"
+            )
+
+        response = await user_client.get("/api/users/ranking?score_type=xp")
+        assert response.status_code == 200
+
+        ranking = response.json()
+        assert len(ranking) == 4
+
+        # Verify ranking order (highest to lowest)
+        assert ranking[0]["id"] == user_high.id
+        assert ranking[0]["score"] == 1000
+        assert ranking[0]["rank"] == 1
+        assert ranking[0]["username"] == "highxp"
+
+        assert ranking[1]["id"] == user_mid.id
+        assert ranking[1]["score"] == 500
+        assert ranking[1]["rank"] == 2
+
+        assert ranking[2]["id"] == user_low.id
+        assert ranking[2]["score"] == 100
+        assert ranking[2]["rank"] == 3
+
+        # Original user should be last with 0 score
+        assert ranking[3]["id"] == user.id
+        assert ranking[3]["score"] == 0
+        assert ranking[3]["rank"] == 4
+
+    async def test_get_user_ranking_social_score_basic(
+        self, user_client: AsyncClient, user: User, session: AsyncSession
+    ):
+        """Test getting user ranking with social scores."""
+        async with session.begin():
+            # Create users with different social scores
+            user_social_high = await UserFactory.create(
+                session=session, social_score=800, username="highsocial"
+            )
+            user_social_mid = await UserFactory.create(
+                session=session, social_score=400, username="midsocial"
+            )
+
+        response = await user_client.get("/api/users/ranking?score_type=social")
+        assert response.status_code == 200
+
+        ranking = response.json()
+        assert len(ranking) == 3
+
+        # Verify ranking order for social scores
+        assert ranking[0]["id"] == user_social_high.id
+        assert ranking[0]["score"] == 800
+        assert ranking[0]["rank"] == 1
+
+        assert ranking[1]["id"] == user_social_mid.id
+        assert ranking[1]["score"] == 400
+        assert ranking[1]["rank"] == 2
+
+        assert ranking[2]["id"] == user.id
+        assert ranking[2]["score"] == 0
+        assert ranking[2]["rank"] == 3
+
+    async def test_get_user_ranking_filter_by_institution(
+        self,
+        user_client: AsyncClient,
+        user: User,
+        session: AsyncSession,
+        education_level: EducationLevel,
+    ):
+        """Test filtering ranking by institution."""
+        async with session.begin():
+            institution1 = await InstitutionFactory.create(
+                session=session, name="University A"
+            )
+            institution2 = await InstitutionFactory.create(
+                session=session, name="University B"
+            )
+
+            user_inst1 = await UserFactory.create(
+                session=session,
+                xp_score=800,
+                username="inst1user",
+            )
+            assert user_inst1.current_education is not None
+
+            user_inst1.current_education.institution = institution1
+            user_inst2 = await UserFactory.create(
+                session=session,
+                xp_score=900,
+                username="inst2user",
+            )
+            assert user_inst2.current_education is not None
+            user_inst2.current_education.institution = institution2
+
+            assert user.current_education is not None
+            user.current_education.institution = institution1
+
+        # Filter by institution1 - should only include users from that institution
+        response = await user_client.get(
+            f"/api/users/ranking?score_type=xp&institution_id={institution1.id}"
+        )
+        assert response.status_code == 200
+
+        ranking = response.json()
+        assert len(ranking) == 2  # user_inst1 and asking user
+
+        # Should only include users from institution1
+        user_ids = {r["id"] for r in ranking}
+        assert user_inst1.id in user_ids
+        assert user.id in user_ids
+        assert user_inst2.id not in user_ids
+
+    async def test_get_user_ranking_filter_by_course(
+        self,
+        user_client: AsyncClient,
+        user: User,
+        session: AsyncSession,
+        education_level: EducationLevel,
+    ):
+        """Test filtering ranking by course."""
+        async with session.begin():
+            course1 = await CourseFactory.create(
+                session=session, name_i18n={"en": "Computer Science"}
+            )
+            course2 = await CourseFactory.create(
+                session=session, name_i18n={"en": "Mathematics"}
+            )
+
+            # Create users with different courses
+            user_cs = await UserFactory.create(
+                session=session, xp_score=700, username="csuser"
+            )
+            assert user_cs.current_education is not None
+            user_cs.current_education.course = course1
+
+            user_math = await UserFactory.create(
+                session=session,
+                xp_score=800,
+                username="mathuser",
+            )
+            assert user_math.current_education is not None
+            user_math.current_education.course = course2
+
+            assert user.current_education is not None
+            user.current_education.course = course1
+
+        # Filter by Computer Science course
+        response = await user_client.get(
+            f"/api/users/ranking?score_type=xp&course_id={course1.id}"
+        )
+        assert response.status_code == 200
+
+        ranking = response.json()
+
+        # Should only include users from CS course + asking user
+        user_ids = {r["id"] for r in ranking}
+        assert user_cs.id in user_ids
+        assert user.id in user_ids
+        assert user_math.id not in user_ids
+
+    async def test_get_user_ranking_filter_by_education_level(
+        self, user_client: AsyncClient, user: User, session: AsyncSession
+    ):
+        """Test filtering ranking by education level."""
+        async with session.begin():
+            level1 = await EducationLevelFactory.create(
+                session=session, name_i18n={"en": "Bachelor"}
+            )
+            level2 = await EducationLevelFactory.create(
+                session=session, name_i18n={"en": "Master"}
+            )
+
+            # Create users with different education levels
+            user_bachelor = await UserFactory.create(
+                session=session,
+                xp_score=600,
+                username="bachelor",
+            )
+            assert user_bachelor.current_education is not None
+            user_bachelor.current_education.level = level1
+
+            user_master = await UserFactory.create(
+                session=session, xp_score=700, username="master"
+            )
+            assert user_master.current_education is not None
+            user_master.current_education.level = level2
+
+        # Filter by Bachelor level
+        response = await user_client.get(
+            f"/api/users/ranking?score_type=xp&education_level_id={level1.id}"
+        )
+        assert response.status_code == 200
+
+        ranking = response.json()
+
+        # Should only include users from Bachelor level + asking user
+        user_ids = {r["id"] for r in ranking}
+        assert user_bachelor.id in user_ids
+        assert user_master.id not in user_ids
+
+    async def test_get_user_ranking_asking_user_included_outside_top_10(
+        self, user_client: AsyncClient, user: User, session: AsyncSession
+    ):
+        """Test that asking user is included in ranking even if outside top 10."""
+        async with session.begin():
+            country = await CountryFactory.create(session=session)
+
+            # Create 12 users with higher XP scores than the asking user
+            await UserFactory.create_batch(
+                12, session=session, xp_score=1000, country=country
+            )
+
+        response = await user_client.get("/api/users/ranking?score_type=xp")
+        assert response.status_code == 200
+
+        ranking = response.json()
+        # Should include top 10 + asking user (who is rank 13)
+        assert len(ranking) == 11
+
+        # First 10 should be the high scorers
+        for i in range(10):
+            assert ranking[i]["score"] == 1000
+            assert ranking[i]["rank"] == 1  # They all have the same score, so same rank
+
+        # Last entry should be the asking user
+        assert ranking[10]["id"] == user.id
+        assert ranking[10]["score"] == 0
+        assert ranking[10]["rank"] == 2
+
+    async def test_get_user_ranking_invalid_score_type(self, user_client: AsyncClient):
+        """Test ranking with invalid score type."""
+        response = await user_client.get("/api/users/ranking?score_type=invalid")
+        assert response.status_code == 422
+
+    async def test_get_user_ranking_missing_score_type(self, user_client: AsyncClient):
+        """Test ranking without score_type parameter."""
+        response = await user_client.get("/api/users/ranking")
+        assert response.status_code == 422
+
+    async def test_get_user_ranking_authorization_required(self, client: AsyncClient):
+        """Test that authorization is required for user ranking endpoint."""
+        response = await client.get("/api/users/ranking?score_type=xp")
+        assert response.status_code == 401
+
+    async def test_get_user_ranking_with_tied_scores(
+        self, user_client: AsyncClient, user: User, session: AsyncSession
+    ):
+        """Test ranking behavior with tied scores."""
+        async with session.begin():
+            # Create users with tied scores
+            await UserFactory.create(session=session, xp_score=500, username="tied1")
+            await UserFactory.create(session=session, xp_score=500, username="tied2")
+            await UserFactory.create(session=session, xp_score=300, username="unique")
+
+        response = await user_client.get("/api/users/ranking?score_type=xp")
+        assert response.status_code == 200
+
+        ranking = response.json()
+        assert len(ranking) == 4
+
+        # Both tied users should have rank 1
+        tied_users = [r for r in ranking if r["score"] == 500]
+        assert len(tied_users) == 2
+        for tied_user in tied_users:
+            assert tied_user["rank"] == 1
+
+        # User with 300 score should have rank 2
+        unique_user = next(r for r in ranking if r["score"] == 300)
+        assert unique_user["rank"] == 2
+
+    async def test_get_user_ranking_response_schema(
+        self, user_client: AsyncClient, user: User, session: AsyncSession
+    ):
+        """Test that ranking response matches expected schema."""
+        response = await user_client.get("/api/users/ranking?score_type=xp")
+        assert response.status_code == 200
+        ranking = response.json()
+
+        assert len(ranking) >= 1
+        user_rank = ranking[-1]  # Asking user should be last if they have 0 score
+
+        # Verify all required fields are present and correct types
+        assert isinstance(user_rank["id"], int)
+        assert isinstance(user_rank["username"], str)
+        assert isinstance(user_rank["rank"], int)
+        assert isinstance(user_rank["score"], int)
+        assert user_rank["id"] == user.id
+        assert user_rank["username"] == user.username
+
+        # current_education can be null or an object
+        if user_rank["current_education"] is not None:
+            education = user_rank["current_education"]
+            assert isinstance(education["level_id"], int)
+            assert isinstance(education["institution_id"], int)
+            assert isinstance(education["course_id"], int)
+            # stage_id can be null
+            if education["stage_id"] is not None:
+                assert isinstance(education["stage_id"], int)
+
+    async def test_get_user_ranking_multiple_filters_combined(
+        self,
+        user_client: AsyncClient,
+        user: User,
+        session: AsyncSession,
+        education_level: EducationLevel,
+    ):
+        """Test ranking with multiple filters applied simultaneously."""
+        async with session.begin():
+            institution = await InstitutionFactory.create(session=session)
+            course1 = await CourseFactory.create(session=session)
+            course2 = await CourseFactory.create(session=session)
+
+            # Create user matching all filters
+            user_match = await UserFactory.create(
+                session=session, xp_score=800, username="match"
+            )
+            assert user_match.current_education is not None
+            user_match.current_education.level = education_level
+            user_match.current_education.institution = institution
+            user_match.current_education.course = course1
+
+            # Create user matching only some filters
+            user_partial = await UserFactory.create(
+                session=session,
+                xp_score=900,
+                username="partial",
+            )
+            assert user_partial.current_education is not None
+            user_partial.current_education.level = education_level
+            user_partial.current_education.institution = institution
+            user_partial.current_education.course = course2
+
+        # Apply multiple filters
+        response = await user_client.get(
+            f"/api/users/ranking?score_type=xp&institution_id={institution.id}&course_id={course1.id}&education_level_id={education_level.id}"
+        )
+        assert response.status_code == 200
+
+        ranking = response.json()
+
+        # Should only include users matching all filters + asking user
+        user_ids = {r["id"] for r in ranking}
+        assert user_match.id in user_ids
+        assert user_partial.id not in user_ids  # Doesn't match course filter

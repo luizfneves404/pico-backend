@@ -17,6 +17,7 @@ from app.users import service
 from app.users.jwt_token import TokenError
 from app.users.schemas import (
     AppleAuthRequest,
+    EducationInfoOut,
     GoogleAuthRequest,
     OnlineInfo,
     OtherUserOut,
@@ -429,31 +430,37 @@ async def user_ranking(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
     score_type: Literal["xp", "social"],
-    subject: str | None = None,
     institution_id: int | None = None,
     course_id: int | None = None,
     education_level_id: int | None = None,
     stage_id: int | None = None,
 ) -> list[UserInRanking]:
     """Get user ranking based on various filters. If you pass null, it is not filtered by that criteria."""
-    if score_type == "xp" and subject is not None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Subject is not allowed for xp score type",
-        )
     users = await service.get_ranking(
         db_session,
         asking_user_id=current_user.id,
         score_type=score_type,
-        subject=subject,
         institution_id=institution_id,
         education_level_id=education_level_id,
         course_id=course_id,
         stage_id=stage_id,
     )
     return [
-        UserInRanking.from_orm_model(user, score_type, rank)
-        for rank, user in enumerate(users)
+        UserInRanking(
+            id=user.id,
+            username=user.username,
+            rank=user.rank,
+            score=user.score,
+            current_education=EducationInfoOut(
+                level_id=user.current_education.level_id,
+                stage_id=user.current_education.stage_id,
+                institution_id=user.current_education.institution_id,
+                course_id=user.current_education.course_id,
+            )
+            if user.current_education
+            else None,
+        )
+        for user in users
     ]
 
 

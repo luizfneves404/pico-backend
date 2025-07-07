@@ -1,4 +1,7 @@
-from sqlalchemy import delete, select
+from dataclasses import dataclass
+from typing import Literal
+
+from sqlalchemy import delete, func, join, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -6,6 +9,8 @@ from sqlalchemy.orm import selectinload
 from app.community.models import Community, CommunityUser
 from app.education.models import Course, Institution, LevelStage
 from app.users.models import User
+
+NUM_RANKED_USERS = 10
 
 
 async def get_user_communities(
@@ -162,3 +167,71 @@ def _generate_community_subtitle(
         return stage.name
 
     raise ValueError("Either course or stage is required")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class UserInCommunityRanking:
+    id: int
+    score: int
+    rank: int
+    username: str
+
+
+async def get_community_ranking(
+    db_session: AsyncSession,
+    *,
+    asking_user_id: int,
+    community_id: int,
+    score_type: Literal["xp", "social"],
+) -> list[UserInCommunityRanking]:
+    """
+    Gets the community ranking, ensuring a max of 11 results:
+    - The top 10 users by score (ties are cut off after the 10th position).
+    - The asking user, if they are not within the top 10.
+    """
+    score_column = User.xp_score if score_type == "xp" else User.social_score
+
+    ranked_users_cte = (
+        select(
+            User.id,
+            User.username,
+            score_column.label("score"),
+            func.dense_rank().over(order_by=score_column.desc()).label("rank"),
+        )
+        .select_from(join(User, CommunityUser, User.id == CommunityUser.user_id))
+        .where(CommunityUser.community_id == community_id)
+        .cte("ranked_users")
+    )
+
+    top_10_query = (
+        select(
+            ranked_users_cte.c.id,
+            ranked_users_cte.c.username,
+            ranked_users_cte.c.score,
+            ranked_users_cte.c.rank,
+        )
+        .order_by(ranked_users_cte.c.rank)
+        .limit(NUM_RANKED_USERS)
+    )
+
+    asking_user_query = select(
+        ranked_users_cte.c.id,
+        ranked_users_cte.c.username,
+        ranked_users_cte.c.score,
+        ranked_users_cte.c.rank,
+    ).where(ranked_users_cte.c.id == asking_user_id)
+
+    final_union = top_10_query.union(asking_user_query)
+
+    union_subquery = final_union.subquery()
+
+    stmt = select(union_subquery).order_by(union_subquery.c.rank)
+
+    results = await db_session.execute(stmt)
+
+    return [
+        UserInCommunityRanking(
+            id=row["id"], score=row["score"], rank=row["rank"], username=row["username"]
+        )
+        for row in results.mappings()
+    ]

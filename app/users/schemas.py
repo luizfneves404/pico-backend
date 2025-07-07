@@ -17,7 +17,6 @@ from app.shared.validation import (
     UNSET,
     CustomPhoneNumber,
     LowercaseEmailStr,
-    RoundedFloat,
     StripWhitespaceStr,
     type_UNSET,
 )
@@ -203,26 +202,7 @@ class UserInRanking(BaseModel):
     username: str
     rank: int
     current_education: EducationInfoOut | None
-    score: RoundedFloat
-
-    @classmethod
-    def from_orm_model(
-        cls, user: User, score_type: Literal["xp", "social"], rank: int
-    ) -> "UserInRanking":
-        return cls(
-            id=user.id,
-            username=user.username,
-            rank=rank,
-            current_education=EducationInfoOut(
-                level_id=user.current_education.level_id,
-                stage_id=user.current_education.stage_id,
-                institution_id=user.current_education.institution_id,
-                course_id=user.current_education.course_id,
-            )
-            if user.current_education
-            else None,
-            score=user.xp_score if score_type == "xp" else user.social_score,
-        )
+    score: int
 
 
 class UserIdsIn(BaseModel):
