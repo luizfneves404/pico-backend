@@ -142,6 +142,8 @@ class Flow(Base, kw_only=True):
     )
     has_quantitative_questions: Mapped[bool] = mapped_column(default=False)
 
+    is_ready: Mapped[bool] = mapped_column(default=False)
+
     transcription_blocks: Mapped[list["FlowTranscriptionBlock"]] = relationship(
         back_populates="flow",
         order_by="FlowTranscriptionBlock.block_number",

@@ -376,9 +376,15 @@ async def task_generate_transcriptions(
             for idx, (txt, title) in enumerate(zip(block_texts, block_titles))
         ]
         db_session.add_all(blocks)
+
+        # Mark flow as ready after transcription is complete
+        flow.is_ready = True
+        db_session.add(flow)
+
         await db_session.commit()
 
         logger.info(f"Created {len(blocks)} transcription blocks for flow {flow_id}")
+        logger.info(f"Flow {flow_id} marked as ready")
 
 
 async def check_if_titles_involve_math_calculations(block_titles: list[str]) -> bool:

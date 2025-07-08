@@ -292,6 +292,7 @@ async def create_flow_with_optional_files(
         has_quantitative_questions=requires_math,
         major_tags=[],
         minor_tags=[],
+        is_ready=not files,  # Ready immediately if no files, otherwise set by transcription process
     )
 
     db_session.add(flow)

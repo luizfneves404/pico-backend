@@ -155,7 +155,6 @@ async def flow_detail(
         )
 
 
-#! há um problema no loading das choices de cada questão
 @flows_router.post("", response_model=FlowDetail, status_code=status.HTTP_201_CREATED)
 async def create_flow(
     db_session: DBSessionAnnotated,
@@ -177,6 +176,22 @@ async def create_flow(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except flow_service.InvalidFileTypeError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@flows_router.get("/{id}/is-ready", response_model=bool)
+async def is_flow_ready_for_question_creation(
+    db_session: DBSessionAnnotated,
+    current_user: CurrentUserAnnotated,
+    id: int,
+) -> bool:
+    """Check if a flow is ready"""
+    try:
+        flow = await flow_service.get_flow(db_session, flow_id=id)
+        return flow.is_ready
+    except flow_service.FlowNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
+        )
 
 
 @flows_router.post("/{id}/add-questions-official", response_model=FlowDetail)
