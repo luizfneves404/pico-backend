@@ -1,3 +1,5 @@
+from pydantic import BaseModel
+
 from app.in_app_notifications.models import (
     ExternalInAppNotification,
     FlowInAppNotification,
@@ -49,6 +51,13 @@ class InAppNotificationAdmin(CustomModelView, model=InAppNotification):
     ]
 
 
+class ExternalInAppNotificationImportSchema(BaseModel):
+    user_id: int
+    text: str
+    external_url: str
+    seen: bool
+
+
 class ExternalInAppNotificationAdmin(CustomModelView, model=ExternalInAppNotification):
     icon = "fa-solid fa-external-link"
 
@@ -81,6 +90,32 @@ class ExternalInAppNotificationAdmin(CustomModelView, model=ExternalInAppNotific
     ]
 
     form_columns = ["user", "text", "seen", "external_url"]
+
+    can_import = True
+    import_schema = ExternalInAppNotificationImportSchema
+    import_template_data = {
+        "user_id": 1,
+        "text": "Hello, world!",
+        "external_url": "https://www.google.com",
+        "seen": False,
+    }
+
+    async def to_orm_model(
+        self, validated_data: ExternalInAppNotificationImportSchema
+    ) -> ExternalInAppNotification:
+        return ExternalInAppNotification(
+            user_id=validated_data.user_id,
+            text=validated_data.text,
+            external_url=validated_data.external_url,
+            seen=validated_data.seen,
+        )
+
+
+class FlowInAppNotificationImportSchema(BaseModel):
+    user_id: int
+    flow_id: int
+    text: str
+    seen: bool
 
 
 class FlowInAppNotificationAdmin(CustomModelView, model=FlowInAppNotification):
@@ -116,3 +151,22 @@ class FlowInAppNotificationAdmin(CustomModelView, model=FlowInAppNotification):
     ]
 
     form_columns = ["user", "text", "seen", "flow"]
+
+    can_import = True
+    import_schema = FlowInAppNotificationImportSchema
+    import_template_data = {
+        "user_id": 1,
+        "flow_id": 1,
+        "text": "Hello, world!",
+        "seen": False,
+    }
+
+    async def to_orm_model(
+        self, validated_data: FlowInAppNotificationImportSchema
+    ) -> FlowInAppNotification:
+        return FlowInAppNotification(
+            user_id=validated_data.user_id,
+            flow_id=validated_data.flow_id,
+            text=validated_data.text,
+            seen=validated_data.seen,
+        )
