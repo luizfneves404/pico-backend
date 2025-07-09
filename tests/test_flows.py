@@ -477,6 +477,10 @@ async def test_submit_flow_question_answer_repeated_flow_question(
     }
     response = await user_client.post(f"/api/flows/{flow.id}/submit", json=answer_data)
     assert response.status_code == 400
+    assert (
+        "You have already answered this question in this flow"
+        in response.json()["detail"]
+    )
     # Verify the repeated correct answer gets no XP
     async with session.begin():
         user_result = await session.execute(select(User).where(User.id == user.id))
@@ -606,7 +610,8 @@ async def test_submit_flow_question_answer_multiple_answers_same_question(
     response_data = response.json()
     xp_increase_response = response_data["xp_increase"]
     assert 2 <= xp_increase_response <= 5
-    # Submit second answer (correct) - this should work due to unique constraint allowing one answer per user per question
+    # Submit second answer (correct) - this should work because its a different user.
+    # unique constraint allows one answer per user per question
     answer_data_2 = {
         "question_id": flow_question.question_id,
         "choice_id": correct_choice.id,
