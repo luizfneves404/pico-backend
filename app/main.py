@@ -1,15 +1,5 @@
 import logging
 import logging.config
-import os
-import sys
-
-from app.logging_config import get_logging_config
-from app.shared.admin import AdminWithImport
-
-sys.path.insert(
-    1,
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "pico_django")),
-)
 import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Awaitable, Callable
@@ -23,7 +13,6 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.routing import Route
-from starlette.types import ASGIApp, Receive, Scope, Send
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 import app.arq_client as arq_client
@@ -37,8 +26,10 @@ from app.fcm.routers import router as fcm_router
 from app.files.routers import router as files_router
 from app.firebase_config import init_firebase
 from app.flows.routers import areas_router, exam_router, flows_router
+from app.logging_config import get_logging_config
 from app.notifications.routers import router as in_app_notifications_router
 from app.redis_client import use_redis
+from app.shared.admin import AdminWithImport
 from app.users.routers import token_router, user_router
 from app.ws.routers import router as websockets_router
 
@@ -196,35 +187,9 @@ base_api_router.include_router(authenticated_routers)
 fastapi_app.include_router(base_api_router)
 
 
-class HostRouter:
-    def __init__(self, host_app_map: dict[str, ASGIApp], default_app: ASGIApp):
-        self.host_app_map = host_app_map
-        self.default_app = default_app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send):
-        if scope["type"] != "http" and scope["type"] != "websocket":
-            return await self.default_app(scope, receive, send)
-
-        # Extract Host header
-        headers = dict((k.decode(), v.decode()) for k, v in scope["headers"])
-        host = headers.get("host", "").split(":")[0]
-
-        app = self.host_app_map.get(host, self.default_app)
-        return await app(scope, receive, send)
-
-
-application = HostRouter(
-    host_app_map={
-        # settings.django_host: django_application,
-        settings.fastapi_host: fastapi_app,
-    },
-    default_app=fastapi_app,
-)
-
-
 if __name__ == "__main__":
     uvicorn.run(
-        "app.main:application",
+        "app.main:fastapi_app",
         host=settings.uvicorn_host,
         port=settings.uvicorn_port,
         reload=settings.uvicorn_reload,

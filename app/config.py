@@ -96,9 +96,6 @@ class Settings(BaseSettings):
     admin_names: list[str] = Field(default=...)
     admin_emails: list[LowercaseEmailStr] = Field(default=...)
 
-    django_host: str = Field(default=...)
-    fastapi_host: str = Field(default=...)
-
     default_phone_number_country: str = "BR"
 
     secret_key: str = Field(default=...)
@@ -117,7 +114,6 @@ class Settings(BaseSettings):
     local_timezone: str = Field(default="America/Sao_Paulo")
 
     database_url: str = Field(default=...)
-    django_database_url: str = Field(default=...)
 
     redis_url: str = Field(default=...)
 
@@ -154,10 +150,6 @@ class Settings(BaseSettings):
 
     pen_to_print_rapidapi_key: str = Field(default=...)
 
-    amplitude_track_events: bool = Field(default=True)
-    amplitude_api_key: str = Field(default=...)
-    amplitude_secret_key: str = Field(default=...)
-
     firebase_json_service_key: str = Field(default=...)
     fcm_dry_run: bool = Field(default=False)
 
@@ -176,20 +168,6 @@ class Settings(BaseSettings):
     def firebase_service_key(self) -> FirebaseJsonServiceKey:
         cleaned = self.firebase_json_service_key.replace("\n", "\\n")
         return FirebaseJsonServiceKey.model_validate_json(cleaned)
-
-    @property
-    def allowed_hosts(self) -> list[str]:
-        hosts = [self.django_host, self.fastapi_host]
-        return hosts
-
-    @property
-    def django_settings_module(self) -> str:
-        if self.environment == Environment.TEST:
-            return "pico_backend.test_settings"
-        elif self.environment == Environment.DEV:
-            return "pico_backend.dev_settings"
-        else:
-            return "pico_backend.prod_settings"
 
 
 if any("test" in arg for arg in sys.argv) or any("migrate" in arg for arg in sys.argv):

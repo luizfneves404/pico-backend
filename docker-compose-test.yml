@@ -6,8 +6,8 @@ services:
       args:
         - INSTALL_TEST=true
     volumes:
-      - ./poetry_cache:/tmp/poetry_cache
-    command: /bin/bash docker/docker-test-entrypoint.sh
+      - ./uv_cache:/tmp/uv_cache
+    command: /bin/bash /code/docker/docker-test-entrypoint.sh
     depends_on:
       postgres:
         condition: service_healthy
@@ -16,14 +16,10 @@ services:
 
     environment:
       - ADMIN_URL=admin
-      - AMPLITUDE_TRACK_EVENTS=false
       - AWS_SES_FROM_EMAIL=pico@example.com
       - DATABASE_URL=postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@postgres:5432/picodb
-      - DJANGO_DATABASE_URL=postgresql://postgres:REDACTED_DB_PASSWORD@postgres:5432/picodb
-      - DJANGO_HOST=django.localtest.me
       - DOCS_URL=/docs
       - ENVIRONMENT=test
-      - FASTAPI_HOST=fastapi.localtest.me
       - FCM_DRY_RUN=true
       - OPENAPI_API_KEY=123456
       - OPENAPI_URL=/openapi.json
@@ -42,8 +38,6 @@ services:
       - MOCK_GEMINI=true
 
       # API Keys
-      - AMPLITUDE_API_KEY
-      - AMPLITUDE_SECRET_KEY
       - BRANCH_API_KEY
       - BRANCH_API_KEY_TEST
       - FIREBASE_JSON_SERVICE_KEY

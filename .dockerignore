@@ -3,5 +3,6 @@
 .gitignore
 .env
 .gitattributes
-poetry_cache
+.venv
+uv_cache
 storage

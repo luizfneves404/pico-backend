@@ -109,17 +109,6 @@ pytest -n auto
 ```
 note: this will not output live logs, only on test.log.
 
-To run django tests:
-
-```bash
-PYTHONPATH=./pico_django python -m pico_django.manage test
-```
-
-To migrate django:
-```bash
-PYTHONPATH=./pico_django python -m pico_django.manage migrate
-```
-
 ## Docker
 
 To run the setup in docker compose:
@@ -140,9 +129,9 @@ sudo docker compose --file docker-compose-test.yml up --build --abort-on-contain
 
 # Choices i made
 
-## Poetry
+## uv
 
-I used to use pipenv, but i now think Poetry is better.
+I used to use pipenv, then i thought Poetry was better. Now i think uv is better. IT RUNS SO FAST.
 
 ## Uvicorn
 
