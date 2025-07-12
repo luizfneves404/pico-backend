@@ -33,7 +33,7 @@ from app.countries.models import Country
 from app.database import DatabaseSessionManager, db_manager
 from app.deps import get_db_session
 from app.education.models import EducationLevel, LevelStage
-from app.fcm.fcm_service import init_firebase
+from app.firebase_config import init_firebase
 from app.logging_config import get_logging_config
 from app.main import fastapi_app
 from app.redis_client import get_redis, use_redis
@@ -216,13 +216,17 @@ async def redis_for_tests():
 
 
 @pytest.fixture()
-async def arq_worker(migrated_postgres_template: str) -> AsyncGenerator[Worker, None]:
+async def arq_worker(
+    migrated_postgres_template: str,
+    session_factory: Callable[[], AsyncContextManager[AsyncSession]],
+) -> AsyncGenerator[Worker, None]:
     async with arq_client.arq_redis():
         worker_settings = make_worker_settings(
             redis_url=settings.redis_url,
             database_url=migrated_postgres_template,
             burst_mode=True,
             log_configured=True,
+            session_factory=session_factory,
         )
         # Clear Redis at the start of the test session
         await arq_client.clear_redis()
@@ -326,10 +330,13 @@ def user_factory(session: AsyncSession) -> Callable[[int], Awaitable[Sequence[Us
     return factory
 
 
+type UserClientFactory = Callable[
+    ..., Coroutine[Any, Any, tuple[list[User], list[AsyncClient]]]
+]
+
+
 @pytest.fixture
-def user_client_factory(
-    session: AsyncSession, app: FastAPI
-) -> Callable[..., Coroutine[Any, Any, tuple[list[User], list[AsyncClient]]]]:
+def user_client_factory(session: AsyncSession, app: FastAPI) -> UserClientFactory:
     async def factory(n: int) -> tuple[list[User], list[AsyncClient]]:
         async with session.begin():
             users = await UserFactory.create_batch(n, session)

@@ -33,10 +33,11 @@ from app.config import Environment, settings
 from app.database import db_manager
 from app.deps import CurrentUserDep
 from app.education.routers import router as education_router
-from app.fcm.fcm_service import init_firebase
+from app.fcm.routers import router as fcm_router
 from app.files.routers import router as files_router
+from app.firebase_config import init_firebase
 from app.flows.routers import areas_router, exam_router, flows_router
-from app.in_app_notifications.routers import router as in_app_notifications_router
+from app.notifications.routers import router as in_app_notifications_router
 from app.redis_client import use_redis
 from app.users.routers import token_router, user_router
 from app.ws.routers import router as websockets_router
@@ -188,6 +189,7 @@ authenticated_routers.include_router(flows_router)
 authenticated_routers.include_router(exam_router)
 authenticated_routers.include_router(areas_router)
 authenticated_routers.include_router(in_app_notifications_router)
+authenticated_routers.include_router(fcm_router)
 
 # including base routers
 base_api_router.include_router(authenticated_routers)

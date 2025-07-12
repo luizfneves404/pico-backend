@@ -41,6 +41,10 @@ from app.flows.schemas import (
     AddQuestionsToFlowOfficial,
     QuestionDensity,
 )
+from app.notifications.service import (
+    notify_communities_flow_posted,
+    notify_user_flow_question_done,
+)
 from app.pagination import PaginationParams, paginate_query
 from app.shared.openai_utils import get_completion
 from app.users.models import User
@@ -327,23 +331,6 @@ async def create_flow_with_optional_files(
     return flow
 
 
-async def _generate_flow_questions(
-    db_session: AsyncSession,
-    *,
-    flow: Flow,
-    n_questions: int,
-) -> None:
-    """
-    Generate questions for a flow.
-    This would typically call an AI service or a question bank.
-    For now, it's a placeholder that should be implemented.
-    """
-    # This is a placeholder for the actual implementation
-    # In a real application, this would call a service to generate questions
-    # based on the flow's input_topic or files
-    pass
-
-
 async def community_feed(
     db_session: AsyncSession,
     *,
@@ -470,10 +457,17 @@ async def submit_answer_multiple_choice(
         xp_increase = round(base_xp * WRONG_ANSWER_XP_MULTIPLIER)
 
     # Increase XP score of the user who answered the question
-    await db_session.execute(
+    result = await db_session.execute(
         update(User)
         .where(User.id == user_id)
         .values(xp_score=User.xp_score + xp_increase)
+        .returning(User)
+    )
+
+    actor = result.scalar_one()
+
+    await notify_user_flow_question_done(
+        db_session, actor=actor, flow=flow_question.flow
     )
 
     return xp_increase
@@ -486,32 +480,6 @@ def get_question_xp() -> int:
         # Draw from N(30, 5) and clamp to [20, 40]
         xp = random.gauss(mu=30, sigma=5)
         return min(40, max(20, round(xp)))
-
-
-async def add_elements_to_flow(
-    db_session: AsyncSession,
-    *,
-    user_id: int,
-    flow_id: int,
-    query: str,
-    area: str,
-    source_filter: str,
-    difficulty: str,
-    n_questions: int = 5,
-) -> Flow:
-    """Add more elements (questions) to an existing flow"""
-    # Check if flow exists and belongs to user
-    flow = await get_flow(db_session, flow_id=flow_id)
-
-    if flow.created_by_id != user_id:
-        raise FlowNotFoundError()
-
-    # Generate additional questions
-    await _generate_flow_questions(db_session, flow=flow, n_questions=n_questions)
-
-    await db_session.refresh(flow, ["elements"])
-
-    return flow
 
 
 async def delete_flow(
@@ -530,19 +498,336 @@ async def delete_flow(
     await db_session.delete(flow)
 
 
-async def generate_pdf(
+async def add_questions_to_flow_official(
     db_session: AsyncSession,
-    *,
     user_id: int,
     flow_id: int,
-) -> str:
-    """Generate a PDF for a flow and return the URL"""
-    # Check if flow exists
-    flow = await get_flow(db_session, flow_id=flow_id)
+    add_questions_to_flow_official: AddQuestionsToFlowOfficial,
+):
+    """Add official questions to a flow"""
+    flow = await db_session.execute(
+        select(Flow).where(Flow.id == flow_id, Flow.created_by_id == user_id)
+    )
+    flow = flow.scalar_one_or_none()
+    if not flow:
+        raise FlowNotFoundError()
+    flow.source_type = FlowSourceType.OFFICIAL
 
-    # This would typically call a service to generate a PDF
-    # For now, it's a placeholder that returns a fake URL
-    return f"https://example.com/flows/{flow.id}/pdf"
+    # Map question density to number of questions
+    flow_input_type = flow.flow_input_type
+    n_questions_map = (
+        {
+            QuestionDensity.LOW: 2,
+            QuestionDensity.MEDIUM: 4,
+            QuestionDensity.HIGH: 6,
+        }
+        if flow_input_type == FlowInputType.FILES
+        else {
+            QuestionDensity.LOW: 10,
+            QuestionDensity.MEDIUM: 20,
+            QuestionDensity.HIGH: 30,
+        }
+    )
+
+    mapped_n_questions = n_questions_map[
+        add_questions_to_flow_official.question_density
+    ]
+
+    if flow_input_type == FlowInputType.TOPIC:
+        questions = await question_service.get_topic_query_official_questions(
+            db_session,
+            flow=flow,
+            n_questions=mapped_n_questions,
+            question_area_name=add_questions_to_flow_official.question_area_name,
+            exam_id=add_questions_to_flow_official.exam_id,
+            exam_country_code=add_questions_to_flow_official.exam_country_code,
+            exam_education_level_id=add_questions_to_flow_official.exam_education_level_id,
+            source_year=add_questions_to_flow_official.source_year,
+            question_type=QuestionAnswerType.MULTIPLE_CHOICE,  # Default question type
+        )
+    elif flow_input_type == FlowInputType.FILES:
+        questions = await question_service.get_files_query_official_questions(
+            db_session,
+            flow=flow,
+            n_questions=mapped_n_questions,
+            question_area_name=add_questions_to_flow_official.question_area_name,
+            exam_id=add_questions_to_flow_official.exam_id,
+            exam_country_code=add_questions_to_flow_official.exam_country_code,
+            exam_education_level_id=add_questions_to_flow_official.exam_education_level_id,
+            source_year=add_questions_to_flow_official.source_year,
+            question_type=QuestionAnswerType.MULTIPLE_CHOICE,  # Default question type
+        )
+    else:
+        raise ValueError(f"Unsupported flow input type: {flow_input_type}")
+
+    # Add questions to flow elements
+    await question_service.add_questions_to_flow(
+        db_session, flow_id, questions, start_order=0
+    )
+
+    # Ensure all changes are committed to database
+    await db_session.flush()
+    # Expunge all objects to force fresh load from database
+    db_session.expunge_all()
+
+    loader_options = get_flow_loader(num_elements=None)
+    query = select(Flow).where(Flow.id == flow_id).options(*loader_options)
+    result = await db_session.execute(query)
+    flow = result.scalar_one()
+
+    await notify_communities_flow_posted(db_session, actor=flow.created_by, flow=flow)
+
+    return flow
+
+
+async def add_questions_to_flow_ai(
+    db_session: AsyncSession,
+    user_id: int,
+    flow_id: int,
+    add_questions_to_flow_ai: AddQuestionsToFlowAI,
+):
+    """Add AI-generated questions to a flow"""
+    flow = await db_session.execute(
+        select(Flow).where(Flow.id == flow_id, Flow.created_by_id == user_id)
+    )
+    flow = flow.scalar_one_or_none()
+    if not flow:
+        raise FlowNotFoundError()
+
+    flow.source_type = FlowSourceType.AI_GENERATED
+
+    # Map question density to number of questions
+    flow_input_type = flow.flow_input_type
+    n_questions_map = (
+        {
+            QuestionDensity.LOW: 2,
+            QuestionDensity.MEDIUM: 4,
+            QuestionDensity.HIGH: 6,
+        }
+        if flow_input_type == FlowInputType.FILES
+        else {
+            QuestionDensity.LOW: 10,
+            QuestionDensity.MEDIUM: 20,
+            QuestionDensity.HIGH: 30,
+        }
+    )
+
+    mapped_n_questions = n_questions_map[add_questions_to_flow_ai.question_density]
+
+    if flow_input_type == FlowInputType.TOPIC:
+        questions = await question_service.get_topic_user_generated_questions(
+            db_session,
+            flow=flow,
+            n_questions=mapped_n_questions,
+            prompt_type=add_questions_to_flow_ai.prompt_type,
+            extra_instructions=add_questions_to_flow_ai.extra_instructions,
+            requires_math=flow.has_quantitative_questions,
+        )
+    elif flow_input_type == FlowInputType.FILES:
+        questions = await question_service.get_files_user_generated_questions(
+            db_session,
+            flow=flow,
+            n_questions=mapped_n_questions,
+            prompt_type=add_questions_to_flow_ai.prompt_type,
+            extra_instructions=add_questions_to_flow_ai.extra_instructions,
+            requires_math=flow.has_quantitative_questions,
+        )
+    else:
+        raise ValueError(f"Unsupported flow input type: {flow_input_type}")
+
+    # Add questions to flow elements
+    await question_service.add_questions_to_flow(
+        db_session, flow_id, questions, start_order=0
+    )
+
+    # Ensure all changes are committed to database
+    await db_session.flush()
+    # Expunge all objects to force fresh load from database
+    db_session.expunge_all()
+
+    loader_options = get_flow_loader(num_elements=None)
+    query = select(Flow).where(Flow.id == flow_id).options(*loader_options)
+    result = await db_session.execute(query)
+    flow = result.scalar_one()
+
+    await notify_communities_flow_posted(db_session, actor=flow.created_by, flow=flow)
+
+    return flow
+
+
+async def add_questions_to_flow_full(
+    db_session: AsyncSession,
+    user_id: int,
+    flow_id: int,
+    add_questions_to_flow_full: AddQuestionsToFlowFull,
+):
+    """Add AI and official questions to a flow"""
+    flow = await db_session.execute(
+        select(Flow).where(Flow.id == flow_id, Flow.created_by_id == user_id)
+    )
+    flow = flow.scalar_one_or_none()
+    if not flow:
+        raise FlowNotFoundError()
+
+    flow.source_type = FlowSourceType.FULL
+
+    # Map question density to number of questions
+    flow_input_type = flow.flow_input_type
+    n_questions_map = (
+        {
+            QuestionDensity.LOW: 2,
+            QuestionDensity.MEDIUM: 4,
+            QuestionDensity.HIGH: 6,
+        }
+        if flow_input_type == FlowInputType.FILES
+        else {
+            QuestionDensity.LOW: 10,
+            QuestionDensity.MEDIUM: 20,
+            QuestionDensity.HIGH: 30,
+        }
+    )
+
+    mapped_n_questions = n_questions_map[add_questions_to_flow_full.question_density]
+
+    # Split questions: first half AI-generated, second half official
+    ai_questions = mapped_n_questions // 2
+    official_questions = mapped_n_questions - ai_questions
+
+    # * Há um potencial de melhora, possivelmente buscando as questões ao mesmo tempo mas esperando as de IA ficarem prontas para adicionar primeiro.
+    if flow_input_type == FlowInputType.TOPIC:
+        # Generate both AI and official questions based on topic
+        # First generate AI questions
+        if ai_questions > 0:
+            ai_generated_questions = (
+                await question_service.get_topic_user_generated_questions(
+                    db_session,
+                    flow=flow,
+                    n_questions=ai_questions,
+                    prompt_type=add_questions_to_flow_full.prompt_type,
+                    extra_instructions=add_questions_to_flow_full.extra_instructions,
+                    requires_math=flow.has_quantitative_questions,
+                )
+            )
+            await question_service.add_questions_to_flow(
+                db_session, flow_id, ai_generated_questions, start_order=0
+            )
+            # Flush to ensure AI questions are persisted before adding official questions
+            await db_session.flush()
+
+        # Then get official questions
+        if official_questions > 0:
+            # Calculate the next available order by getting max order from existing elements
+            max_order_query = select(
+                func.coalesce(func.max(FlowElement.order), -1)
+            ).where(FlowElement.flow_id == flow_id)
+            max_order_result = await db_session.execute(max_order_query)
+            max_order = max_order_result.scalar_one()
+            next_order = max_order + 1
+
+            official_questions_list = await question_service.get_topic_query_official_questions(
+                db_session,
+                flow=flow,
+                n_questions=official_questions,
+                question_area_name=add_questions_to_flow_full.question_area_name,
+                exam_id=add_questions_to_flow_full.exam_id,
+                exam_country_code=add_questions_to_flow_full.exam_country_code,
+                exam_education_level_id=add_questions_to_flow_full.exam_education_level_id,
+                source_year=add_questions_to_flow_full.source_year,
+                question_type=QuestionAnswerType.MULTIPLE_CHOICE,
+            )
+            await question_service.add_questions_to_flow(
+                db_session, flow_id, official_questions_list, start_order=next_order
+            )
+
+    elif flow_input_type == FlowInputType.FILES:
+        # Generate both AI and official questions based on files
+        # First generate AI questions
+        if ai_questions > 0:
+            ai_generated_questions = (
+                await question_service.get_files_user_generated_questions(
+                    db_session,
+                    flow=flow,
+                    n_questions=ai_questions,
+                    prompt_type=add_questions_to_flow_full.prompt_type,
+                    extra_instructions=add_questions_to_flow_full.extra_instructions,
+                    requires_math=flow.has_quantitative_questions,
+                )
+            )
+            await question_service.add_questions_to_flow(
+                db_session, flow_id, ai_generated_questions, start_order=0
+            )
+            # Flush to ensure AI questions are persisted before adding official questions
+            await db_session.flush()
+
+        # Then get official questions
+        if official_questions > 0:
+            # Calculate the next available order by getting max order from existing elements
+            max_order_query = select(
+                func.coalesce(func.max(FlowElement.order), -1)
+            ).where(FlowElement.flow_id == flow_id)
+            max_order_result = await db_session.execute(max_order_query)
+            max_order = max_order_result.scalar_one()
+            next_order = max_order + 1
+
+            official_questions_list = await question_service.get_files_query_official_questions(
+                db_session,
+                flow=flow,
+                n_questions=official_questions,
+                question_area_name=add_questions_to_flow_full.question_area_name,
+                exam_id=add_questions_to_flow_full.exam_id,
+                exam_country_code=add_questions_to_flow_full.exam_country_code,
+                exam_education_level_id=add_questions_to_flow_full.exam_education_level_id,
+                source_year=add_questions_to_flow_full.source_year,
+                question_type=QuestionAnswerType.MULTIPLE_CHOICE,
+            )
+            # Add official questions to flow elements
+            await question_service.add_questions_to_flow(
+                db_session, flow_id, official_questions_list, start_order=next_order
+            )
+    else:
+        raise ValueError(f"Unsupported flow input type: {flow_input_type}")
+
+    # Ensure all changes are committed to database
+    await db_session.flush()
+    # Expunge all objects to force fresh load from database
+    db_session.expunge_all()
+
+    loader_options = get_flow_loader(num_elements=None)
+    query = select(Flow).where(Flow.id == flow_id).options(*loader_options)
+    result = await db_session.execute(query)
+    flow = result.scalar_one()
+    flow.max_num_questions = (
+        flow.max_num_questions * 2
+    )  # * As funções chamadas fazem isso mas nesse caso estamos //2 o n_questions -> solução simples, mas pode melhorar
+
+    await notify_communities_flow_posted(db_session, actor=flow.created_by, flow=flow)
+
+    return flow
+
+
+async def check_if_topic_involves_math_calculations(topic: str) -> bool:
+    """Check if a topic involves mathematical calculations using AI."""
+    if not topic.strip():
+        return False
+
+    try:
+        result = await get_completion(
+            model="gpt-4.1-nano",
+            temperature=0.3,
+            messages=[
+                {"role": "system", "content": SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT},
+                {"role": "user", "content": topic},
+            ],
+            json_mode=False,
+            timeout=15,
+        )
+
+        response = result.content.strip().upper()
+        return response == "SIM"
+
+    except Exception as e:
+        logger.error(f"Error checking math involvement for topic '{topic}': {e}")
+        return False  # Default to False if there's an error
 
 
 def get_flow_loader(num_elements: int | None):
@@ -579,338 +864,3 @@ def get_flow_loader(num_elements: int | None):
             ),
         ),
     ]
-
-
-async def add_questions_to_flow_official(
-    db_session: AsyncSession,
-    user_id: int,
-    flow_id: int,
-    add_questions_to_flow_official: AddQuestionsToFlowOfficial,
-):
-    """Add official questions to a flow - matches Django add_questions_to_quiz_official"""
-    # Check if flow exists and user has permission
-    flow = await db_session.execute(select(Flow).where(Flow.id == flow_id))
-    flow = flow.scalar_one_or_none()
-    if not flow:
-        raise FlowNotFoundError()
-    flow.source_type = FlowSourceType.OFFICIAL
-
-    # Map question density to number of questions - matching Django logic
-    flow_input_type = flow.flow_input_type
-    n_questions_map = (
-        {
-            QuestionDensity.LOW: 2,
-            QuestionDensity.MEDIUM: 4,
-            QuestionDensity.HIGH: 6,
-        }
-        if flow_input_type == FlowInputType.FILES
-        else {
-            QuestionDensity.LOW: 10,
-            QuestionDensity.MEDIUM: 20,
-            QuestionDensity.HIGH: 30,
-        }
-    )
-
-    mapped_n_questions = n_questions_map[
-        add_questions_to_flow_official.question_density
-    ]
-
-    if flow_input_type == FlowInputType.TOPIC:
-        questions = await question_service.get_topic_query_official_questions(
-            db_session,
-            flow,
-            mapped_n_questions,
-            add_questions_to_flow_official.question_area_name,
-            add_questions_to_flow_official.exam_id,
-            add_questions_to_flow_official.exam_country_code,
-            add_questions_to_flow_official.exam_education_level_id,
-            add_questions_to_flow_official.source_year,
-            QuestionAnswerType.MULTIPLE_CHOICE,  # Default question type
-        )
-    elif flow_input_type == FlowInputType.FILES:
-        questions = await question_service.get_files_query_official_questions(
-            db_session,
-            flow,
-            mapped_n_questions,
-            add_questions_to_flow_official.question_area_name,
-            add_questions_to_flow_official.exam_id,
-            add_questions_to_flow_official.exam_country_code,
-            add_questions_to_flow_official.exam_education_level_id,
-            add_questions_to_flow_official.source_year,
-            QuestionAnswerType.MULTIPLE_CHOICE,  # Default question type
-        )
-    else:
-        raise ValueError(f"Unsupported flow input type: {flow_input_type}")
-
-    # Add questions to flow elements
-    await question_service.add_questions_to_flow(db_session, flow_id, questions)
-
-    # Ensure all changes are committed to database
-    await db_session.flush()
-    # Expunge all objects to force fresh load from database
-    db_session.expunge_all()
-
-    loader_options = get_flow_loader(num_elements=None)
-    query = select(Flow).where(Flow.id == flow_id).options(*loader_options)
-    result = await db_session.execute(query)
-    flow = result.scalar_one()
-
-    return flow
-
-
-async def add_questions_to_flow_ai(
-    db_session: AsyncSession,
-    user_id: int,
-    flow_id: int,
-    add_questions_to_flow_ai: AddQuestionsToFlowAI,
-):
-    """Add AI-generated questions to a flow - matches Django add_questions_to_quiz_ai"""
-    # Check if flow exists and user has permission
-    flow = await db_session.execute(
-        select(Flow).where(Flow.id == flow_id, Flow.created_by_id == user_id)
-    )
-    flow = flow.scalar_one_or_none()
-    if not flow:
-        raise FlowNotFoundError()
-
-    flow.source_type = FlowSourceType.AI_GENERATED
-
-    # Map question density to number of questions - matching Django logic
-    flow_input_type = flow.flow_input_type
-    n_questions_map = (
-        {
-            QuestionDensity.LOW: 2,
-            QuestionDensity.MEDIUM: 4,
-            QuestionDensity.HIGH: 6,
-        }
-        if flow_input_type == FlowInputType.FILES
-        else {
-            QuestionDensity.LOW: 10,
-            QuestionDensity.MEDIUM: 20,
-            QuestionDensity.HIGH: 30,
-        }
-    )
-
-    mapped_n_questions = n_questions_map[add_questions_to_flow_ai.question_density]
-
-    # Use the flow's has_quantitative_questions field
-    requires_math = flow.has_quantitative_questions
-    prompt_type = add_questions_to_flow_ai.prompt_type
-    extra_instructions = add_questions_to_flow_ai.extra_instructions
-
-    if flow_input_type == FlowInputType.TOPIC:
-        questions = await question_service.get_topic_user_generated_questions(
-            db_session,
-            flow,
-            mapped_n_questions,
-            prompt_type,
-            extra_instructions,
-            requires_math,
-        )
-    elif flow_input_type == FlowInputType.FILES:
-        questions = await question_service.get_files_user_generated_questions(
-            db_session,
-            flow,
-            mapped_n_questions,
-            prompt_type,
-            extra_instructions,
-            requires_math,
-        )
-    else:
-        raise ValueError(f"Unsupported flow input type: {flow_input_type}")
-
-    # Add questions to flow elements
-    await question_service.add_questions_to_flow(db_session, flow_id, questions)
-
-    # Ensure all changes are committed to database
-    await db_session.flush()
-    # Expunge all objects to force fresh load from database
-    db_session.expunge_all()
-
-    loader_options = get_flow_loader(num_elements=None)
-    query = select(Flow).where(Flow.id == flow_id).options(*loader_options)
-    result = await db_session.execute(query)
-    flow = result.scalar_one()
-
-    return flow
-
-
-async def add_questions_to_flow_full(
-    db_session: AsyncSession,
-    user_id: int,
-    flow_id: int,
-    add_questions_to_flow_full: AddQuestionsToFlowFull,
-):
-    """Add AI and official questions to a flow - matches Django add_questions_full"""
-    # Check if flow exists and user has permission
-    flow = await db_session.execute(
-        select(Flow).where(Flow.id == flow_id, Flow.created_by_id == user_id)
-    )
-    flow = flow.scalar_one_or_none()
-    if not flow:
-        raise FlowNotFoundError()
-
-    flow.source_type = FlowSourceType.FULL
-
-    # Map question density to number of questions - matching Django logic
-    flow_input_type = flow.flow_input_type
-    n_questions_map = (
-        {
-            QuestionDensity.LOW: 2,
-            QuestionDensity.MEDIUM: 4,
-            QuestionDensity.HIGH: 6,
-        }
-        if flow_input_type == FlowInputType.FILES
-        else {
-            QuestionDensity.LOW: 10,
-            QuestionDensity.MEDIUM: 20,
-            QuestionDensity.HIGH: 30,
-        }
-    )
-
-    mapped_n_questions = n_questions_map[add_questions_to_flow_full.question_density]
-
-    # Split questions: first half AI-generated, second half official
-    ai_questions = mapped_n_questions // 2
-    official_questions = mapped_n_questions - ai_questions
-
-    # Use the flow's has_quantitative_questions field
-    requires_math = flow.has_quantitative_questions
-
-    # * Há um potencial de melhora, possivelmente buscando as questões ao mesmo tempo mas esperando as de IA ficarem prontas para adicionar primeiro.
-    if flow_input_type == FlowInputType.TOPIC:
-        # Generate both AI and official questions based on topic
-        # First generate AI questions
-        if ai_questions > 0:
-            ai_generated_questions = (
-                await question_service.get_topic_user_generated_questions(
-                    db_session,
-                    flow,
-                    ai_questions,
-                    add_questions_to_flow_full.prompt_type,
-                    add_questions_to_flow_full.extra_instructions,
-                    requires_math,
-                )
-            )
-            await question_service.add_questions_to_flow(
-                db_session, flow_id, ai_generated_questions, start_order=0
-            )
-            # Flush to ensure AI questions are persisted before adding official questions
-            await db_session.flush()
-
-        # Then get official questions
-        if official_questions > 0:
-            # Calculate the next available order by getting max order from existing elements
-            max_order_query = select(
-                func.coalesce(func.max(FlowElement.order), -1)
-            ).where(FlowElement.flow_id == flow_id)
-            max_order_result = await db_session.execute(max_order_query)
-            max_order = max_order_result.scalar_one()
-            next_order = max_order + 1
-
-            official_questions_list = (
-                await question_service.get_topic_query_official_questions(
-                    db_session,
-                    flow,
-                    official_questions,
-                    add_questions_to_flow_full.question_area_name,
-                    add_questions_to_flow_full.exam_id,
-                    add_questions_to_flow_full.exam_country_code,
-                    add_questions_to_flow_full.exam_education_level_id,
-                    add_questions_to_flow_full.source_year,
-                    QuestionAnswerType.MULTIPLE_CHOICE,
-                )
-            )
-            await question_service.add_questions_to_flow(
-                db_session, flow_id, official_questions_list, start_order=next_order
-            )
-
-    elif flow_input_type == FlowInputType.FILES:
-        # Generate both AI and official questions based on files
-        # First generate AI questions
-        if ai_questions > 0:
-            ai_generated_questions = (
-                await question_service.get_files_user_generated_questions(
-                    db_session,
-                    flow,
-                    ai_questions,
-                    add_questions_to_flow_full.prompt_type,
-                    add_questions_to_flow_full.extra_instructions,
-                    requires_math,
-                )
-            )
-            await question_service.add_questions_to_flow(
-                db_session, flow_id, ai_generated_questions, start_order=0
-            )
-            # Flush to ensure AI questions are persisted before adding official questions
-            await db_session.flush()
-
-        # Then get official questions
-        if official_questions > 0:
-            # Calculate the next available order by getting max order from existing elements
-            max_order_query = select(
-                func.coalesce(func.max(FlowElement.order), -1)
-            ).where(FlowElement.flow_id == flow_id)
-            max_order_result = await db_session.execute(max_order_query)
-            max_order = max_order_result.scalar_one()
-            next_order = max_order + 1
-
-            official_questions_list = (
-                await question_service.get_files_query_official_questions(
-                    db_session,
-                    flow,
-                    official_questions,
-                    add_questions_to_flow_full.question_area_name,
-                    add_questions_to_flow_full.exam_id,
-                    add_questions_to_flow_full.exam_country_code,
-                    add_questions_to_flow_full.exam_education_level_id,
-                    add_questions_to_flow_full.source_year,
-                    QuestionAnswerType.MULTIPLE_CHOICE,
-                )
-            )
-            # Add official questions to flow elements
-            await question_service.add_questions_to_flow(
-                db_session, flow_id, official_questions_list, start_order=next_order
-            )
-    else:
-        raise ValueError(f"Unsupported flow input type: {flow_input_type}")
-
-    # Ensure all changes are committed to database
-    await db_session.flush()
-    # Expunge all objects to force fresh load from database
-    db_session.expunge_all()
-
-    loader_options = get_flow_loader(num_elements=None)
-    query = select(Flow).where(Flow.id == flow_id).options(*loader_options)
-    result = await db_session.execute(query)
-    flow = result.scalar_one()
-    flow.max_num_questions = (
-        flow.max_num_questions * 2
-    )  # * As funções chamadas fazem isso mas nesse caso estamos //2 o n_questions -> solução simples, mas pode melhorar
-
-    return flow
-
-
-async def check_if_topic_involves_math_calculations(topic: str) -> bool:
-    """Check if a topic involves mathematical calculations using AI."""
-    if not topic.strip():
-        return False
-
-    try:
-        result = await get_completion(
-            model="gpt-4.1-nano",
-            temperature=0.3,
-            messages=[
-                {"role": "system", "content": SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT},
-                {"role": "user", "content": topic},
-            ],
-            json_mode=False,
-            timeout=15,
-        )
-
-        response = result.content.strip().upper()
-        return response == "SIM"
-
-    except Exception as e:
-        logger.error(f"Error checking math involvement for topic '{topic}': {e}")
-        return False  # Default to False if there's an error

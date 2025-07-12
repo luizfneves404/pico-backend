@@ -1,9 +1,9 @@
 from fastapi import APIRouter
 
 from app.deps import CurrentUserAnnotated, DBSessionAnnotated
-from app.in_app_notifications import service
-from app.in_app_notifications.models import ExternalInAppNotification
-from app.in_app_notifications.schemas import (
+from app.notifications import service
+from app.notifications.models import ExternalInAppNotification
+from app.notifications.schemas import (
     ExternalNotificationOut,
     FlowNotificationOut,
     NotificationOut,
@@ -32,7 +32,9 @@ async def count_unseen_notifications(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
 ) -> int:
-    return await service.count_unseen_notifications(db_session, user_id=current_user.id)
+    return await service.count_unseen_notifications_for_user(
+        db_session, user_id=current_user.id
+    )
 
 
 @router.post("/mark-all-as-seen")

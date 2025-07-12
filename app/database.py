@@ -1,6 +1,7 @@
 import contextlib
 import logging
-from typing import AsyncContextManager, AsyncIterator, Callable
+from contextlib import asynccontextmanager
+from typing import Any, AsyncContextManager, AsyncGenerator, AsyncIterator, Callable
 
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
@@ -17,7 +18,7 @@ import app.education.models  # noqa: F401
 import app.fcm.models  # noqa: F401
 import app.files.models  # noqa: F401
 import app.flows.models  # noqa: F401
-import app.in_app_notifications.models  # noqa: F401
+import app.notifications.models  # noqa: F401
 import app.users.models  # noqa: F401
 import app.ws.models  # noqa: F401
 
@@ -116,6 +117,10 @@ class DatabaseSessionManager:
         This is useful for testing scenarios where you need multiple independent sessions
         that should all see the same database state and be rolled back together.
 
+        If you don't use this and you use different sessions, each session won't see what the other one is doing.
+        For example, I was using this on the tests but not using it on the arq worker (which was using the session_with_transaction),
+        and so the arq worker couldn't see the changes made by the tests.
+
         Yields:
             A callable that returns an async context manager yielding new sessions
         """
@@ -136,3 +141,18 @@ class DatabaseSessionManager:
 
 
 db_manager = DatabaseSessionManager()
+
+
+@asynccontextmanager
+async def get_db_session_for_worker(
+    ctx: dict[str, Any],
+) -> AsyncGenerator[AsyncSession, None]:
+    session_cm: AsyncContextManager[AsyncSession]
+    if ctx["session_factory"]:
+        # Use the same connection / outer transaction as the test
+        session_cm = ctx["session_factory"]()
+    else:
+        # Normal production path
+        session_cm = db_manager.session()
+    async with session_cm as session, session.begin():
+        yield session

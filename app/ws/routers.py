@@ -53,7 +53,7 @@ async def get_current_user(
 CurrentUserAnnotated = Annotated[User, Depends(get_current_user)]
 
 
-# TODO: record on amplitude the disconnect and connect events
+# TODO: record on mixpanel the disconnect and connect events
 @router.websocket("")
 async def websocket_endpoint(
     websocket: WebSocket,

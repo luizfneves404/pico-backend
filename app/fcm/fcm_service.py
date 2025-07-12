@@ -1,35 +1,20 @@
-import json
 import logging
 from dataclasses import dataclass
 from typing import Any
 
-import firebase_admin.messaging as messaging
-from firebase_admin import credentials, initialize_app
+import firebase_admin.messaging as firebase_messaging
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import app.ws.service as ws_service
+import app.notifications.service as notifications_service
 from app.arq_client import enqueue_job
-from app.config import settings
-from app.database import db_manager
+from app.config import Environment, settings
+from app.database import get_db_session_for_worker
 from app.fcm.models import DeviceType, FCMDevice
 
 logger = logging.getLogger(__name__)
 
 FCM_NOTIFICATION_BATCH_SIZE = 450
-
-
-def init_firebase():
-    try:
-        initialize_app(
-            credential=credentials.Certificate(
-                json.loads(settings.firebase_service_key.model_dump_json())
-            )
-        )
-    except ValueError:
-        logger.debug("Firebase already initialized")
-    else:
-        logger.debug("Firebase initialized")
 
 
 async def create_or_update_device(
@@ -88,7 +73,7 @@ async def create_or_update_device(
     return device_to_return
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True, frozen=True)
 class NotificationData:
     """Type definition for notification data."""
 
@@ -124,6 +109,7 @@ async def send_reset_badge_notification(
 
 
 async def send_notifications(
+    db_session: AsyncSession,
     notification_data: list[NotificationData] | NotificationData,
 ) -> None:
     """
@@ -146,7 +132,11 @@ async def send_notifications(
     user_ids = [data.user_id for data in notifications_list]
 
     # Get badge counts for these users
-    notification_counts = await ws_service.count_queued_notifications(user_ids)
+    notification_counts = (
+        await notifications_service.count_unseen_notifications_for_users(
+            db_session, user_ids=user_ids
+        )
+    )
 
     # Create notifications with badge counts
     notifications_with_badge = [
@@ -167,7 +157,7 @@ async def send_notifications(
 
 
 async def task_send_notifications(
-    ctx: dict[Any, Any],
+    ctx: dict[str, Any],
     notifications_with_badge: list[NotificationData],
 ) -> None:
     """
@@ -182,32 +172,35 @@ async def task_send_notifications(
 
     # Get all active devices for the relevant users in a single query
     user_ids = [data.user_id for data in notifications_with_badge]
-    async with db_manager.session_with_transaction() as db_session:
+    async with get_db_session_for_worker(ctx) as db_session:
         result = await db_session.execute(
-            select(FCMDevice).filter(
+            select(FCMDevice, FCMDevice.user_id).where(
                 FCMDevice.user_id.in_(user_ids), FCMDevice.active.is_(True)
             )
         )
 
-    # Create a direct mapping from user_id to device
-    devices = {device.user_id: device for device in result.scalars().all()}
+    devices = {user_id: device for device, user_id in result.tuples()}
 
     if not devices:
         logger.debug(f"No active devices found for users {user_ids}")
         return
 
     # Build messages directly - one per notification with an active device
-    messages: list[messaging.Message] = []
+    messages: list[firebase_messaging.Message] = []
     for data in notifications_with_badge:
         user_id = data.user_id
         if user_id not in devices:
             continue
 
         messages.append(
-            messaging.Message(
-                notification=messaging.Notification(title=data.title, body=data.body),
-                apns=messaging.APNSConfig(
-                    payload=messaging.APNSPayload(aps=messaging.Aps(badge=data.badge))
+            firebase_messaging.Message(
+                notification=firebase_messaging.Notification(
+                    title=data.title, body=data.body
+                ),
+                apns=firebase_messaging.APNSConfig(
+                    payload=firebase_messaging.APNSPayload(
+                        aps=firebase_messaging.Aps(badge=data.badge)
+                    )
                 ),
                 token=devices[user_id].registration_id,
             )
@@ -232,11 +225,48 @@ async def task_send_notifications(
             f"Sending batch {i // FCM_NOTIFICATION_BATCH_SIZE + 1} with {len(batch)} messages"
         )
 
-        response: messaging.BatchResponse = messaging.send_each(
-            batch, dry_run=settings.fcm_dry_run
+        response: firebase_messaging.BatchResponse = await messaging.send_each_async(
+            batch
         )
 
         total_success += response.success_count
         total_failure += response.failure_count
 
     logger.debug(f"Successfully sent {total_success} messages, failed: {total_failure}")
+
+
+class FakeMessaging:
+    def __init__(self):
+        self._last_sent_messages: list[firebase_messaging.Message] = []
+
+    async def send_each_async(
+        self, messages: list[firebase_messaging.Message]
+    ) -> firebase_messaging.BatchResponse:
+        logger.debug(f"FakeMessaging.send_each: {messages}")
+        if len(messages) > 500:
+            raise ValueError("messages must not contain more than 500 elements.")
+
+        self._last_sent_messages = messages
+
+        responses: list[firebase_messaging.SendResponse] = [
+            firebase_messaging.SendResponse(
+                resp={"name": f"message_id_{i}"}, exception=None
+            )
+            for i in range(len(messages))
+        ]
+        return firebase_messaging.BatchResponse(responses=responses)
+
+    @property
+    def last_sent_messages(self) -> list[firebase_messaging.Message]:
+        return self._last_sent_messages.copy()
+
+
+messaging = (
+    firebase_messaging if settings.environment == Environment.PROD else FakeMessaging()
+)
+
+
+def get_last_sent_messages() -> list[firebase_messaging.Message]:
+    if isinstance(messaging, FakeMessaging):
+        return messaging.last_sent_messages
+    raise RuntimeError("messaging is not a FakeMessaging")

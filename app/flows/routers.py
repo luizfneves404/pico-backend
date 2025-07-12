@@ -1,8 +1,6 @@
 import logging
 import random
-from datetime import datetime, timezone
 from typing import Annotated
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from fastapi import File as FastAPIFile
@@ -21,12 +19,10 @@ from app.flows.schemas import (
     ExamOut,
     FeedItem,
     FlowDetail,
-    FlowDifficulty,
     FlowFeedItem,
     FlowInFeed,
     FlowInSearch,
     QuestionAreaOut,
-    SimpleUser,
     SubmitAnswerMultipleChoiceRequest,
     SubmitAnswerMultipleChoiceResponse,
 )

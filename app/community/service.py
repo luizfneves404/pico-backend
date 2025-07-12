@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import Literal
 
@@ -8,7 +9,10 @@ from sqlalchemy.orm import selectinload
 
 from app.community.models import Community, CommunityUser
 from app.education.models import Course, Institution, LevelStage
+from app.notifications.service import notify_community_user_joined
 from app.users.models import User
+
+logger = logging.getLogger(__name__)
 
 NUM_RANKED_USERS = 10
 
@@ -67,26 +71,38 @@ async def find_or_create_education_community(
 
 
 async def add_user_to_community_if_not_exists(
-    db_session: AsyncSession, *, user_id: int, community_id: int
+    db_session: AsyncSession, *, user: User, community: Community
 ) -> CommunityUser | None:
     """Add a user to a community.
 
     Args:
         db_session: Database session
-        user_id: ID of the user to add
-        community_id: ID of the community to add user to
+        user: User to add to community
+        community: Community to add user to
 
     Returns:
         Created CommunityUser relationship
     """
     try:
-        community_user = CommunityUser(user_id=user_id, community_id=community_id)
+        community_user = CommunityUser(user_id=user.id, community_id=community.id)
         db_session.add(community_user)
         await db_session.flush()
     except IntegrityError as e:
         if "duplicate key value violates unique constraint" in str(e):
+            logger.debug(
+                f"User {user.id} already in community {community.id}",
+            )
             return None
         raise
+    else:
+        logger.debug(
+            f"User {user.id} added to community {community.id}",
+        )
+        await notify_community_user_joined(
+            db_session,
+            user=user,
+            community=community,
+        )
 
     return community_user
 
@@ -125,8 +141,8 @@ async def change_user_education_community(
     await clear_user_from_all_communities(db_session, user_id=user.id)
     community_user = await add_user_to_community_if_not_exists(
         db_session,
-        user_id=user.id,
-        community_id=community.id,
+        user=user,
+        community=community,
     )
     if community_user:
         return community

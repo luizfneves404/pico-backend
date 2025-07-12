@@ -7,14 +7,26 @@ transcription processing, and official question retrieval.
 import asyncio
 import logging
 import random
-from typing import Any
+from typing import Any, Coroutine, TypedDict, cast
 
+from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from pylatexenc.latex2text import LatexNodes2Text
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import db_manager
 from app.files.models import File
+from app.flows.constants import (
+    SYSTEM_MESSAGE_BLOCK_TITLE,
+    SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT,
+    SYSTEM_MESSAGE_GENERATE_TITLE_FROM_TRANSCRIPTIONS,
+    SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION,
+    SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH,
+    SYSTEM_MESSAGE_QUESTION_GENERATION_THEME,
+    SYSTEM_MESSAGE_QUESTION_GENERATION_THEME_MATH,
+    QuestionInstance,
+    QuestionSet,
+)
 from app.flows.db_types import RichText, TextBlock
 from app.flows.models import (
     Choice,
@@ -34,6 +46,8 @@ from app.flows.schemas import PromptType
 from app.shared import ai_utils, gemini_utils, openai_utils
 
 logger = logging.getLogger(__name__)
+TOKENS_PER_BLOCK = 300
+
 
 # Constants
 DAYS_AGO_TO_EXCLUDE_RECENT_ANSWERS = 7
@@ -54,25 +68,16 @@ VALID_MIME_TYPES_FOR_TRANSCRIPTION = [
     "application/pdf",
 ]
 
-TOKENS_PER_BLOCK = 300
-
-# Import constants from flows constants
-from app.flows.constants import (
-    SYSTEM_MESSAGE_BLOCK_TITLE,
-    SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT,
-    SYSTEM_MESSAGE_GENERATE_TITLE_FROM_TRANSCRIPTIONS,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_THEME,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_THEME_MATH,
-    QuestionSet,
-)
-
 
 class FlowNotFoundError(Exception):
     """Raised when a flow is not found"""
 
     pass
+
+
+def latex_to_text(latex: str) -> str:
+    """Convert LaTeX to text. Passes through to pylatexenc, but with type hints."""
+    return cast(str, LatexNodes2Text().latex_to_text(latex))
 
 
 async def _get_existing_questions_for_prompt(
@@ -99,7 +104,7 @@ async def _get_existing_questions_for_prompt(
         if not content_blocks_list:
             return ""
 
-        question_texts = []
+        question_texts: list[str] = []
         for content_blocks in content_blocks_list:
             # Extract text from content blocks - handle both dict and object format
             for block in content_blocks:
@@ -121,6 +126,7 @@ async def _get_existing_questions_for_prompt(
 
 async def get_official_questions(
     db_session: AsyncSession,
+    *,
     n_questions: int,
     question_area_name: str | None = None,
     exam_id: int | None = None,
@@ -129,7 +135,7 @@ async def get_official_questions(
     source_year: int | None = None,
     question_type: QuestionAnswerType = QuestionAnswerType.MULTIPLE_CHOICE,
     difficulty: QuestionDifficulty | None = None,
-    embeddings: list[list[float]] | None = None,
+    embedding: list[float] | None = None,
     exclude_question_ids: set[int] | None = None,
     ensure_privileged_mix: bool = True,
 ) -> list[Question]:
@@ -153,107 +159,100 @@ async def get_official_questions(
     Returns:
         List of Question objects matching the criteria
     """
-    try:
-        logger.info(f"Getting {n_questions} official questions with filters")
+    logger.info(f"Getting {n_questions} official questions with filters")
 
-        # Build base query
-        query = select(Question).where(
-            Question.source_type == QuestionSourceType.OFFICIAL,
-            Question.is_active == True,
-            Question.answer_type == question_type,
+    # Build base query
+    query = select(Question).where(
+        Question.source_type == QuestionSourceType.OFFICIAL,
+        Question.is_active.is_(True),
+        Question.answer_type == question_type,
+    )
+
+    # Add relationship joins if needed
+    need_exam_join = any(
+        [exam_id, exam_country_code, exam_education_level_id, source_year]
+    )
+
+    if need_exam_join:
+        query = query.join(Question.official_source).join(OfficialQuestionSource.exam)
+
+    # Apply filters
+    if question_area_name:
+        area = await db_session.scalar(
+            select(QuestionArea).where(QuestionArea.name == question_area_name)
         )
+        if area is None:
+            raise ValueError(f"Área de questão '{question_area_name}' inexistente")
 
-        # Add relationship joins if needed
-        need_exam_join = any(
-            [exam_id, exam_country_code, exam_education_level_id, source_year]
-        )
+        query = query.where(Question.major_tags.overlap(area.tags))
 
-        if need_exam_join:
-            query = query.join(Question.official_source).join(
-                OfficialQuestionSource.exam
-            )
+    if exam_id:
+        query = query.where(OfficialQuestionSource.exam_id == exam_id)
 
-        # Apply filters
-        if question_area_name:
-            area = await db_session.scalar(
-                select(QuestionArea).where(QuestionArea.name == question_area_name)
-            )
-            if area is None:
-                raise ValueError(f"Área de questão '{question_area_name}' inexistente")
+    if exam_country_code:
+        query = query.where(Exam.country.has(code=exam_country_code))
 
-            query = query.where(Question.major_tags.overlap(area.tags))
+    if exam_education_level_id:
+        query = query.where(Exam.education_level_id == exam_education_level_id)
 
-        if exam_id:
-            query = query.where(OfficialQuestionSource.exam_id == exam_id)
+    if source_year:
+        query = query.where(OfficialQuestionSource.year == source_year)
 
-        if exam_country_code:
-            query = query.where(Exam.country.has(code=exam_country_code))
+    if difficulty:
+        query = query.where(Question.difficulty == difficulty)
 
-        if exam_education_level_id:
-            query = query.where(Exam.education_level_id == exam_education_level_id)
+    if exclude_question_ids:
+        query = query.where(~Question.id.in_(exclude_question_ids))
 
-        if source_year:
-            query = query.where(OfficialQuestionSource.year == source_year)
+    # Apply ordering
+    if embedding:
+        query = query.order_by(Question.embedding.cosine_distance(embedding))
+    else:
+        # Random order if no embeddings provided
+        query = query.order_by(func.random())
 
-        if difficulty:
-            query = query.where(Question.difficulty == difficulty)
+    # Handle privileged source mix if requested and no specific exam filter
+    if ensure_privileged_mix and not exam_id:
+        privileged_count = int(n_questions * 0.6)
+        regular_count = n_questions - privileged_count
 
+        # Get privileged questions
+        privileged_query = query.where(
+            or_(*[Exam.name.like(f"{source}%") for source in PRIVILEGED_SOURCES])
+        ).limit(privileged_count)
+
+        privileged_result = await db_session.execute(privileged_query)
+        privileged_questions = list(privileged_result.scalars().all())
+
+        # Get remaining questions excluding privileged ones
+        privileged_ids = [q.id for q in privileged_questions]
+        exclude_ids = set(privileged_ids)
         if exclude_question_ids:
-            query = query.where(~Question.id.in_(exclude_question_ids))
+            exclude_ids.update(exclude_question_ids)
 
-        # Apply ordering
-        if embeddings:
-            # Use the first embedding for ordering (can be extended to handle multiple)
-            embedding = embeddings[0]
-            query = query.order_by(Question.embedding.cosine_distance(embedding))
-        else:
-            # Random order if no embeddings provided
-            query = query.order_by(func.random())
+        remaining_query = query.where(~Question.id.in_(exclude_ids)).limit(
+            regular_count
+        )
 
-        # Handle privileged source mix if requested and no specific exam filter
-        if ensure_privileged_mix and not exam_id:
-            privileged_count = int(n_questions * 0.6)
-            regular_count = n_questions - privileged_count
+        remaining_result = await db_session.execute(remaining_query)
+        remaining_questions = list(remaining_result.scalars().all())
 
-            # Get privileged questions
-            privileged_query = query.where(
-                or_(*[Exam.name.like(f"{source}%") for source in PRIVILEGED_SOURCES])
-            ).limit(privileged_count)
+        questions = privileged_questions + remaining_questions
+    else:
+        # Just apply limit and execute
+        query = query.limit(n_questions)
+        result = await db_session.execute(query)
+        questions = list(result.scalars().all())
 
-            privileged_result = await db_session.execute(privileged_query)
-            privileged_questions = list(privileged_result.scalars().all())
-
-            # Get remaining questions excluding privileged ones
-            privileged_ids = [q.id for q in privileged_questions]
-            exclude_ids = set(privileged_ids)
-            if exclude_question_ids:
-                exclude_ids.update(exclude_question_ids)
-
-            remaining_query = query.where(~Question.id.in_(exclude_ids)).limit(
-                regular_count
-            )
-
-            remaining_result = await db_session.execute(remaining_query)
-            remaining_questions = list(remaining_result.scalars().all())
-
-            questions = privileged_questions + remaining_questions
-        else:
-            # Just apply limit and execute
-            query = query.limit(n_questions)
-            result = await db_session.execute(query)
-            questions = list(result.scalars().all())
-
-        logger.info(f"Found {len(questions)} official questions")
-        return questions
-
-    except Exception as e:
-        logger.error(f"Error getting official questions: {str(e)}")
-        raise
+    logger.info(f"Found {len(questions)} official questions")
+    return questions
 
 
 async def task_generate_transcriptions(
     ctx: dict[str, Any],
-    file_ids: list[int],  # List of File objects already persisted to storage
+    file_ids: list[
+        int
+    ],  # List of File ids for File objects already persisted to storage
     flow_id: int,
     user_id: int,
 ) -> None:
@@ -329,11 +328,7 @@ async def task_generate_transcriptions(
                 raise
 
         # --------- 3. Pós‑processamento -----------------------------------------
-        cleaned = [
-            LatexNodes2Text().latex_to_text(t).strip()
-            for t in transcripts
-            if t and t.strip()
-        ]
+        cleaned = [latex_to_text(t).strip() for t in transcripts if t and t.strip()]
         big_text = " ".join(cleaned)
 
         block_texts = ai_utils.split_text_into_chunks(big_text, TOKENS_PER_BLOCK)
@@ -381,17 +376,15 @@ async def task_generate_transcriptions(
         flow.is_ready = True
         db_session.add(flow)
 
-        await db_session.commit()
-
-        logger.info(f"Created {len(blocks)} transcription blocks for flow {flow_id}")
-        logger.info(f"Flow {flow_id} marked as ready")
+    logger.info(f"Created {len(blocks)} transcription blocks for flow {flow_id}")
+    logger.info(f"Flow {flow_id} marked as ready")
 
 
 async def check_if_titles_involve_math_calculations(block_titles: list[str]) -> bool:
     """
     Check if the block titles involve math calculations using openai.
     """
-    messages = [
+    messages: list[ChatCompletionMessageParam] = [
         {"role": "system", "content": SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT},
         {
             "role": "user",
@@ -411,371 +404,352 @@ async def check_if_titles_involve_math_calculations(block_titles: list[str]) -> 
 
 async def get_topic_user_generated_questions(
     db_session: AsyncSession,
+    *,
     flow: Flow,
     n_questions: int,
     prompt_type: PromptType,
     extra_instructions: str,
-    requires_math: bool = False,
+    requires_math: bool,
 ) -> list[Question]:
     """
     Generate AI questions based on a topic for a flow.
     """
-    try:
-        model = "o4-mini" if requires_math else "gpt-4.1"
+    model = "o4-mini" if requires_math else "gpt-4.1"
 
-        logger.info(
-            f"Generating {n_questions} AI questions for flow {flow.id} with topic: {flow.input_topic}"
+    logger.info(
+        f"Generating {n_questions} AI questions for flow {flow.id} with topic: {flow.input_topic}"
+    )
+
+    system_message = (
+        SYSTEM_MESSAGE_QUESTION_GENERATION_THEME_MATH
+        if requires_math
+        else SYSTEM_MESSAGE_QUESTION_GENERATION_THEME
+    )
+    user_message = f"Crie {n_questions} questões sobre: {flow.input_topic}"
+
+    if extra_instructions:
+        user_message += f"\n\nInstruções adicionais: {extra_instructions}"
+
+    messages: list[ChatCompletionMessageParam] = [
+        {"role": "system", "content": system_message},
+        {"role": "user", "content": user_message},
+    ]
+    response = await openai_utils.get_completion_parsed(
+        model=model,
+        temperature=0.5,
+        messages=messages,
+        response_format=QuestionSet,
+        reasoning_effort="high" if requires_math else None,
+        timeout=60,
+    )
+
+    questions_data = response.content
+
+    questions: list[Question] = []
+    for question_data in questions_data.questions:
+        # Apply delatexify for math subjects
+        question_text = question_data.text
+        if requires_math:
+            question_text = latex_to_text(question_text)
+
+        text_block = TextBlock(
+            block_type="text",
+            style="paragraph",
+            content=[
+                RichText(
+                    text=question_text,
+                    bold=False,
+                    italic=False,
+                    underline=False,
+                    strikethrough=False,
+                    link=None,
+                )
+            ],
         )
-
-        system_message = (
-            SYSTEM_MESSAGE_QUESTION_GENERATION_THEME_MATH
-            if requires_math
-            else SYSTEM_MESSAGE_QUESTION_GENERATION_THEME
+        question = Question(
+            is_active=False,
+            content_blocks=[text_block],
+            is_quantitative=requires_math,
+            answer_type=QuestionAnswerType.MULTIPLE_CHOICE,
+            source_type=QuestionSourceType.AI_GENERATED,
+            source_user_id=flow.created_by_id,
+            difficulty=QuestionDifficulty.MEDIUM,
+            major_tags=[],
+            minor_tags=[],
+            answer_content_blocks=[],
         )
-        user_message = f"Crie {n_questions} questões sobre: {flow.input_topic}"
+        db_session.add(question)
+        await db_session.flush()
 
-        if extra_instructions:
-            user_message += f"\n\nInstruções adicionais: {extra_instructions}"
+        choices: list[Choice] = []
+        correct_choice_letter = question_data.correct_choice  # "A", "B", "C", "D"
+        correct_choice_index = ord(correct_choice_letter.upper()) - ord(
+            "A"
+        )  # Converte para 0, 1, 2, 3
 
-        messages = [
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": user_message},
-        ]
+        # Create list of choice data with correctness flags
+        class ChoiceData(TypedDict):
+            text: str
+            is_correct: bool
+            original_order: int
 
-        response = (
-            await openai_utils.get_completion_parsed(
-                model=model,
-                temperature=0.5,
-                messages=messages,
-                response_format=QuestionSet,
-                reasoning_effort="high",
-                timeout=60,
-            )
-            if requires_math
-            else await openai_utils.get_completion_parsed(
-                model=model,
-                temperature=0.5,
-                messages=messages,
-                response_format=QuestionSet,
-                timeout=60,
-            )
-        )
-
-        questions_data = response.content
-
-        questions = []
-        for question_data in questions_data.questions:
+        choice_data_list: list[ChoiceData] = []
+        for choice_order, choice_text in enumerate(question_data.choices):
             # Apply delatexify for math subjects
-            question_text = question_data.text
+            delatexified_choice_text = choice_text
             if requires_math:
-                question_text = LatexNodes2Text().latex_to_text(question_text)
+                delatexified_choice_text = latex_to_text(choice_text)
 
-            text_block = TextBlock(
-                block_type="text",
-                style="paragraph",
-                content=[
-                    RichText(
-                        text=question_text,
-                        bold=False,
-                        italic=False,
-                        underline=False,
-                        strikethrough=False,
-                        link=None,
-                    )
-                ],
-            )
-            question = Question(
-                is_active=False,
-                content_blocks=[text_block],
-                is_quantitative=requires_math,
-                answer_type=QuestionAnswerType.MULTIPLE_CHOICE,
-                source_type=QuestionSourceType.AI_GENERATED,
-                source_user_id=flow.created_by_id,
-                difficulty=QuestionDifficulty.MEDIUM,
-                major_tags=[],
-                minor_tags=[],
-                answer_content_blocks=[],
-            )
-            db_session.add(question)
-            await db_session.flush()
-
-            choices = []
-            correct_choice_letter = question_data.correct_choice  # "A", "B", "C", "D"
-            correct_choice_index = ord(correct_choice_letter.upper()) - ord(
-                "A"
-            )  # Converte para 0, 1, 2, 3
-            # Create list of choice data with correctness flags
-            choice_data_list = []
-            for choice_order, choice_text in enumerate(question_data.choices):
-                # Apply delatexify for math subjects
-                delatexified_choice_text = choice_text
-                if requires_math:
-                    delatexified_choice_text = LatexNodes2Text().latex_to_text(
-                        choice_text
-                    )
-
-                is_correct = choice_order == correct_choice_index
-                choice_data_list.append(
-                    {
-                        "text": delatexified_choice_text,
-                        "is_correct": is_correct,
-                        "original_order": choice_order,
-                    }
-                )
-
-            # Shuffle the choices to randomize the order
-            random.shuffle(choice_data_list)
-
-            # Create Choice objects with the new shuffled order
-            for new_order, choice_data in enumerate(choice_data_list):
-                choice = Choice(
-                    question_id=question.id,
-                    text=choice_data["text"],
-                    is_correct=choice_data["is_correct"],
-                    order=new_order,
-                )
-                choices.append(choice)
-
-            db_session.add_all(choices)
-
-            logger.info(
-                f"Flow {flow.id}: Created {len(choices)} choices for question {question.id}"
+            is_correct = choice_order == correct_choice_index
+            choice_data_list.append(
+                {
+                    "text": delatexified_choice_text,
+                    "is_correct": is_correct,
+                    "original_order": choice_order,
+                }
             )
 
-            questions.append(question)
+        # Shuffle the choices to randomize the order
+        random.shuffle(choice_data_list)
 
-            max_num_questions = n_questions
-            flow.max_num_questions = max_num_questions
-            db_session.add(flow)
-            await db_session.flush()
+        # Create Choice objects with the new shuffled order
+        for new_order, choice_data in enumerate(choice_data_list):
+            choice = Choice(
+                question_id=question.id,
+                text=choice_data["text"],
+                is_correct=choice_data["is_correct"],
+                order=new_order,
+            )
+            choices.append(choice)
+
+        db_session.add_all(choices)
 
         logger.info(
-            f"Successfully generated {len(questions)} AI questions for flow {flow.id}"
+            f"Flow {flow.id}: Created {len(choices)} choices for question {question.id}"
         )
-        return questions
 
-    except Exception as e:
-        logger.error(f"Error generating AI questions for flow {flow.id}: {str(e)}")
-        await db_session.rollback()
-        raise
+        questions.append(question)
+
+        flow.max_num_questions = n_questions
+        db_session.add(flow)
+        await db_session.flush()
+
+    logger.info(
+        f"Successfully generated {len(questions)} AI questions for flow {flow.id}"
+    )
+    return questions
 
 
 async def get_files_user_generated_questions(
     db_session: AsyncSession,
+    *,
     flow: Flow,
     n_questions: int,
     prompt_type: PromptType,
     extra_instructions: str,
-    requires_math: bool = False,
+    requires_math: bool,
 ) -> list[Question]:
     """
     Generate AI questions based on uploaded files for a flow.
     """
-    try:
-        model = "o4-mini" if requires_math else "gpt-4.1"
+    model = "o4-mini" if requires_math else "gpt-4.1"
 
-        query = (
-            select(FlowTranscriptionBlock)
-            .where(FlowTranscriptionBlock.flow_id == flow.id)
-            .order_by(FlowTranscriptionBlock.block_number)
-        )
+    query = (
+        select(FlowTranscriptionBlock)
+        .where(FlowTranscriptionBlock.flow_id == flow.id)
+        .order_by(FlowTranscriptionBlock.block_number)
+    )
 
-        result = await db_session.execute(query)
-        transcription_blocks = result.scalars().all()
+    result = await db_session.execute(query)
+    transcription_blocks = result.scalars().all()
 
-        if not transcription_blocks:
-            logger.warning(f"No transcription blocks found for flow {flow.id}")
+    if not transcription_blocks:
+        logger.warning(f"No transcription blocks found for flow {flow.id}")
+        return []
+
+    max_num_questions = n_questions * len(transcription_blocks)
+    flow.max_num_questions = max_num_questions
+    db_session.add(flow)
+    await db_session.flush()
+
+    logger.info(f"generating max_num_questions: {max_num_questions} for flow {flow.id}")
+
+    class BlockQuestion(TypedDict):
+        question_data: QuestionInstance
+        question_text: str
+
+    # Create tasks for parallel processing of each block
+    async def process_block(
+        block: FlowTranscriptionBlock, block_index: int
+    ) -> list[BlockQuestion]:
+        """Process a single block and return its questions"""
+        block_text = block.block_text
+
+        if not block_text.strip():
+            logger.warning(f"Block {block_index + 1} is empty, skipping")
             return []
 
-        max_num_questions = n_questions * len(transcription_blocks)
-        flow.max_num_questions = max_num_questions
-        db_session.add(flow)
-        await db_session.flush()
-
-        logger.info(
-            f"generating max_num_questions: {max_num_questions} for flow {flow.id}"
+        system_message = (
+            SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH
+            if requires_math
+            else SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION
         )
+        # Create user message for this specific block
+        user_message = f"Com base no seguinte conteúdo, crie {n_questions} questões:\n\n{block_text}"
 
-        # Create tasks for parallel processing of each block
-        async def process_block(block, block_index):
-            """Process a single block and return its questions"""
-            block_text = block.block_text
+        if extra_instructions:
+            user_message += f"\n\nInstruções adicionais: {extra_instructions}"
 
-            if not block_text.strip():
-                logger.warning(f"Block {block_index + 1} is empty, skipping")
-                return []
-
-            system_message = (
-                SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH
-                if requires_math
-                else SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION
-            )
-            # Create user message for this specific block
-            user_message = f"Com base no seguinte conteúdo, crie {n_questions} questões:\n\n{block_text}"
-
-            if extra_instructions:
-                user_message += f"\n\nInstruções adicionais: {extra_instructions}"
-
-            messages = [
-                {
-                    "role": "system",
-                    "content": system_message,
-                },
-                {"role": "user", "content": user_message},
-            ]
-
-            try:
-                response = (
-                    await openai_utils.get_completion_parsed(
-                        model=model,
-                        temperature=0.5,
-                        messages=messages,
-                        response_format=QuestionSet,
-                        timeout=30,
-                        reasoning_effort="high",
-                    )
-                    if requires_math
-                    else await openai_utils.get_completion_parsed(
-                        model=model,
-                        temperature=0.5,
-                        messages=messages,
-                        response_format=QuestionSet,
-                        timeout=30,
-                    )
-                )
-
-                questions_data = response.content
-                block_questions = []
-
-                for question_data in questions_data.questions:
-                    # Apply delatexify for math subjects
-                    question_text = question_data.text
-                    if requires_math:
-                        question_text = LatexNodes2Text().latex_to_text(question_text)
-
-                    # Create question dict with all necessary data
-                    question_dict = {
-                        "question_data": question_data,
-                        "question_text": question_text,
-                    }
-                    block_questions.append(question_dict)
-
-                return block_questions
-
-            except Exception as e:
-                logger.error(
-                    f"Error generating questions for block {block_index + 1}: {str(e)}"
-                )
-                return []
-
-        # Execute all block processing tasks in parallel
-        tasks = [
-            process_block(block, i) for i, block in enumerate(transcription_blocks)
+        messages: list[ChatCompletionMessageParam] = [
+            {
+                "role": "system",
+                "content": system_message,
+            },
+            {"role": "user", "content": user_message},
         ]
-        block_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Process results in order and create database objects
-        all_questions = []
-        for block_index, block_questions in enumerate(block_results):
-            if isinstance(block_questions, BaseException):
-                logger.error(f"Exception in block {block_index + 1}: {block_questions}")
-                continue
-            else:
-                for question_dict in block_questions:
-                    question_data = question_dict["question_data"]
-                    question_text = question_dict["question_text"]
+        try:
+            response = await openai_utils.get_completion_parsed(
+                model=model,
+                temperature=0.5,
+                messages=messages,
+                response_format=QuestionSet,
+                reasoning_effort="high" if requires_math else None,
+                timeout=30,
+            )
 
-                    text_block = TextBlock(
-                        block_type="text",
-                        style="paragraph",
-                        content=[
-                            RichText(
-                                text=question_text,
-                                bold=False,
-                                italic=False,
-                                underline=False,
-                                strikethrough=False,
-                                link=None,
-                            )
-                        ],
-                    )
-                    question = Question(
-                        is_active=False,
-                        content_blocks=[text_block],
-                        is_quantitative=requires_math,
-                        answer_type=QuestionAnswerType.MULTIPLE_CHOICE,
-                        source_type=QuestionSourceType.AI_GENERATED,
-                        source_user_id=flow.created_by_id,
-                        difficulty=QuestionDifficulty.MEDIUM,
-                        major_tags=[],
-                        minor_tags=[],
-                        answer_content_blocks=[],
-                    )
-                    db_session.add(question)
-                    await db_session.flush()
+            questions_data = response.content
+            block_questions: list[BlockQuestion] = []
 
-                    choices = []
-                    correct_choice_letter = (
-                        question_data.correct_choice
-                    )  # "A", "B", "C", "D"
-                    correct_choice_index = ord(correct_choice_letter.upper()) - ord(
-                        "A"
-                    )  # Converte para 0, 1, 2, 3
+            for question_data in questions_data.questions:
+                # Apply delatexify for math subjects
+                question_text = question_data.text
+                if requires_math:
+                    question_text = latex_to_text(question_text)
 
-                    # Create list of choice data with correctness flags
-                    choice_data_list = []
-                    for choice_order, choice_text in enumerate(question_data.choices):
-                        # Apply delatexify for math subjects
-                        delatexified_choice_text = choice_text
-                        if requires_math:
-                            delatexified_choice_text = LatexNodes2Text().latex_to_text(
-                                choice_text
-                            )
+                # Create question dict with all necessary data
+                question_dict: BlockQuestion = {
+                    "question_data": question_data,
+                    "question_text": question_text,
+                }
+                block_questions.append(question_dict)
 
-                        is_correct = choice_order == correct_choice_index
-                        choice_data_list.append(
-                            {
-                                "text": delatexified_choice_text,
-                                "is_correct": is_correct,
-                                "original_order": choice_order,
-                            }
+            return block_questions
+
+        except Exception as e:
+            logger.error(
+                f"Error generating questions for block {block_index + 1}: {str(e)}"
+            )
+            return []
+
+    # Execute all block processing tasks in parallel
+    tasks: list[Coroutine[Any, Any, list[BlockQuestion]]] = [
+        process_block(block, i) for i, block in enumerate(transcription_blocks)
+    ]
+    block_results: list[list[BlockQuestion] | BaseException] = await asyncio.gather(
+        *tasks, return_exceptions=True
+    )
+
+    # Process results in order and create database objects
+    all_questions: list[Question] = []
+    for block_index, block_questions in enumerate(block_results):
+        if isinstance(block_questions, BaseException):
+            logger.error(f"Exception in block {block_index + 1}: {block_questions}")
+            continue
+        else:
+            for block_question in block_questions:
+                question_data = block_question["question_data"]
+                question_text = block_question["question_text"]
+
+                text_block = TextBlock(
+                    block_type="text",
+                    style="paragraph",
+                    content=[
+                        RichText(
+                            text=question_text,
+                            bold=False,
+                            italic=False,
+                            underline=False,
+                            strikethrough=False,
+                            link=None,
                         )
+                    ],
+                )
+                question = Question(
+                    is_active=False,
+                    content_blocks=[text_block],
+                    is_quantitative=requires_math,
+                    answer_type=QuestionAnswerType.MULTIPLE_CHOICE,
+                    source_type=QuestionSourceType.AI_GENERATED,
+                    source_user_id=flow.created_by_id,
+                    difficulty=QuestionDifficulty.MEDIUM,
+                    major_tags=[],
+                    minor_tags=[],
+                    answer_content_blocks=[],
+                )
+                db_session.add(question)
+                await db_session.flush()
 
-                    # Shuffle the choices to randomize the order
-                    random.shuffle(choice_data_list)
+                choices: list[Choice] = []
+                correct_choice_letter = (
+                    question_data.correct_choice
+                )  # "A", "B", "C", "D"
+                correct_choice_index = ord(correct_choice_letter.upper()) - ord(
+                    "A"
+                )  # Converte para 0, 1, 2, 3
 
-                    # Create Choice objects with the new shuffled order
-                    for new_order, choice_data in enumerate(choice_data_list):
-                        choice = Choice(
-                            question_id=question.id,
-                            text=choice_data["text"],
-                            is_correct=choice_data["is_correct"],
-                            order=new_order,
-                        )
-                        choices.append(choice)
+                # Create list of choice data with correctness flags
+                class ChoiceData(TypedDict):
+                    text: str
+                    is_correct: bool
+                    original_order: int
 
-                    db_session.add_all(choices)
+                choice_data_list: list[ChoiceData] = []
+                for choice_order, choice_text in enumerate(question_data.choices):
+                    # Apply delatexify for math subjects
+                    delatexified_choice_text = choice_text
+                    if requires_math:
+                        delatexified_choice_text = latex_to_text(choice_text)
 
-                    logger.info(
-                        f"Flow {flow.id}: Created {len(choices)} choices for question {question.id}"
+                    is_correct = choice_order == correct_choice_index
+                    choice_data_list.append(
+                        {
+                            "text": delatexified_choice_text,
+                            "is_correct": is_correct,
+                            "original_order": choice_order,
+                        }
                     )
 
-                    all_questions.append(question)
+                # Shuffle the choices to randomize the order
+                random.shuffle(choice_data_list)
 
-        logger.info(
-            f"Successfully generated {len(all_questions)} AI questions from files for flow {flow.id}"
-        )
-        return all_questions
+                # Create Choice objects with the new shuffled order
+                for new_order, choice_data in enumerate(choice_data_list):
+                    choice = Choice(
+                        question_id=question.id,
+                        text=choice_data["text"],
+                        is_correct=choice_data["is_correct"],
+                        order=new_order,
+                    )
+                    choices.append(choice)
 
-    except Exception as e:
-        logger.error(
-            f"Error generating AI questions from files for flow {flow.id}: {str(e)}"
-        )
-        raise
+                db_session.add_all(choices)
+
+                logger.info(
+                    f"Flow {flow.id}: Created {len(choices)} choices for question {question.id}"
+                )
+
+                all_questions.append(question)
+
+    logger.info(
+        f"Successfully generated {len(all_questions)} AI questions from files for flow {flow.id}"
+    )
+    return all_questions
 
 
 async def get_topic_query_official_questions(
     db_session: AsyncSession,
+    *,
     flow: Flow,
     n_questions: int,
     question_area_name: str | None = None,
@@ -788,48 +762,40 @@ async def get_topic_query_official_questions(
     """
     Get official questions based on topic query for a flow.
     """
-    try:
-        logger.info(
-            f"Getting {n_questions} official questions for flow {flow.id} based on topic"
-        )
+    logger.info(
+        f"Getting {n_questions} official questions for flow {flow.id} based on topic"
+    )
 
-        # Create embedding for the topic
-        embeddings = None
-        if flow.input_topic:
-            embedding = await openai_utils.compute_embedding(flow.input_topic)
-            embeddings = [embedding]
+    # Create embedding for the topic
+    embedding: list[float] | None = None
+    if flow.input_topic:
+        embedding = await openai_utils.compute_embedding(flow.input_topic)
 
-        # Use the generalized function
-        questions = await get_official_questions(
-            db_session=db_session,
-            n_questions=n_questions,
-            question_area_name=question_area_name,
-            exam_id=exam_id,
-            exam_country_code=exam_country_code,
-            exam_education_level_id=exam_education_level_id,
-            source_year=source_year,
-            question_type=question_type,
-            embeddings=embeddings,
-            ensure_privileged_mix=(
-                exam_id is None
-            ),  # Only ensure mix if no specific exam
-        )
+    # Use the generalized function
+    questions = await get_official_questions(
+        db_session=db_session,
+        n_questions=n_questions,
+        question_area_name=question_area_name,
+        exam_id=exam_id,
+        exam_country_code=exam_country_code,
+        exam_education_level_id=exam_education_level_id,
+        source_year=source_year,
+        question_type=question_type,
+        embedding=embedding,
+        ensure_privileged_mix=(exam_id is None),  # Only ensure mix if no specific exam
+    )
 
-        max_num_questions = n_questions
-        flow.max_num_questions = max_num_questions
-        db_session.add(flow)
-        await db_session.flush()
+    flow.max_num_questions = n_questions
+    db_session.add(flow)
+    await db_session.flush()
 
-        logger.info(f"Found {len(questions)} official questions for flow {flow.id}")
-        return questions
-
-    except Exception as e:
-        logger.error(f"Error getting official questions for flow {flow.id}: {str(e)}")
-        raise
+    logger.info(f"Found {len(questions)} official questions for flow {flow.id}")
+    return questions
 
 
 async def get_files_query_official_questions(
     db_session: AsyncSession,
+    *,
     flow: Flow,
     n_questions: int,
     question_area_name: str | None = None,
@@ -843,176 +809,120 @@ async def get_files_query_official_questions(
     Get official questions based on file content for a flow.
     Uses each transcription block title as a separate query for better relevance.
     """
-    try:
+    logger.info(
+        f"Getting {n_questions} official questions for flow {flow.id} based on files"
+    )
+
+    query_transcriptions = (
+        select(FlowTranscriptionBlock)
+        .where(FlowTranscriptionBlock.flow_id == flow.id)
+        .order_by(FlowTranscriptionBlock.block_number)
+    )
+
+    result = await db_session.execute(query_transcriptions)
+    transcription_blocks = result.scalars().all()
+
+    if not transcription_blocks:
+        logger.warning(f"No transcription blocks found for flow {flow.id}")
+        return []
+
+    # Extract titles from transcription blocks, filter out empty ones
+    block_titles = [
+        block.title.strip()
+        for block in transcription_blocks
+        if block.title and block.title.strip()
+    ]
+
+    if not block_titles:
+        logger.warning(f"No valid block titles found for flow {flow.id}")
+        return []
+
+    max_num_questions = n_questions * len(block_titles)
+    flow.max_num_questions = max_num_questions
+    db_session.add(flow)
+    await db_session.flush()
+
+    logger.info(f"getting max_num_questions: {max_num_questions} for flow {flow.id}")
+
+    # Generate all embeddings in parallel using the list overload
+    logger.info(f"Generating embeddings for {len(block_titles)} block titles")
+    embeddings = await openai_utils.compute_embedding(block_titles)
+
+    # Phase 2: Get questions sequentially (fast DB queries with proper deduplication)
+    logger.info("Getting questions sequentially for proper deduplication")
+
+    all_questions: list[Question] = []
+    unique_question_ids: set[int] = set()
+
+    for i, (block_title, embedding) in enumerate(zip(block_titles, embeddings)):
+        # Get questions using the generalized function with proper exclusion
+        block_questions = await get_official_questions(
+            db_session=db_session,
+            n_questions=n_questions,
+            question_area_name=question_area_name,
+            exam_id=exam_id,
+            exam_country_code=exam_country_code,
+            exam_education_level_id=exam_education_level_id,
+            source_year=source_year,
+            question_type=question_type,
+            embedding=embedding,
+            exclude_question_ids=unique_question_ids,  # Properly exclude previous questions
+            ensure_privileged_mix=True,
+        )
+
+        # Add unique questions to our list
+        added_count = 0
+        for question in block_questions:
+            if question.id not in unique_question_ids:
+                all_questions.append(question)
+                unique_question_ids.add(question.id)
+                added_count += 1
+
         logger.info(
-            f"Getting {n_questions} official questions for flow {flow.id} based on files"
+            f"Block {i + 1} ('{block_title[:50]}...'): {added_count} new questions added (total: {len(all_questions)})"
         )
 
-        query_transcriptions = (
-            select(FlowTranscriptionBlock)
-            .where(FlowTranscriptionBlock.flow_id == flow.id)
-            .order_by(FlowTranscriptionBlock.block_number)
-        )
-
-        result = await db_session.execute(query_transcriptions)
-        transcription_blocks = result.scalars().all()
-
-        if not transcription_blocks:
-            logger.warning(f"No transcription blocks found for flow {flow.id}")
-            return []
-
-        # Extract titles from transcription blocks, filter out empty ones
-        block_titles = [
-            block.title.strip()
-            for block in transcription_blocks
-            if block.title and block.title.strip()
-        ]
-
-        if not block_titles:
-            logger.warning(f"No valid block titles found for flow {flow.id}")
-            return []
-
-        max_num_questions = n_questions * len(block_titles)
-        flow.max_num_questions = max_num_questions
-        db_session.add(flow)
-        await db_session.flush()
-
-        logger.info(
-            f"getting max_num_questions: {max_num_questions} for flow {flow.id}"
-        )
-
-        # Phase 1: Generate all embeddings in parallel (slow I/O operations)
-        logger.info(
-            f"Generating embeddings for {len(block_titles)} block titles in parallel"
-        )
-
-        async def compute_embedding_for_title(block_title, block_index):
-            """Compute embedding for a single block title"""
-            try:
-                embedding = await openai_utils.compute_embedding(block_title)
-                return embedding
-            except Exception as e:
-                logger.error(
-                    f"Error computing embedding for block {block_index + 1} ('{block_title}'): {str(e)}"
-                )
-                return None
-
-        # Execute all embedding computations in parallel
-        embedding_tasks = [
-            compute_embedding_for_title(block_title, i)
-            for i, block_title in enumerate(block_titles)
-        ]
-        embeddings = await asyncio.gather(*embedding_tasks, return_exceptions=True)
-
-        # Phase 2: Get questions sequentially (fast DB queries with proper deduplication)
-        logger.info("Getting questions sequentially for proper deduplication")
-
-        all_questions = []
-        unique_question_ids = set()
-
-        for i, (block_title, embedding) in enumerate(zip(block_titles, embeddings)):
-            if isinstance(embedding, BaseException):
-                logger.error(
-                    f"Skipping block {i + 1} due to embedding error: {embedding}"
-                )
-                continue
-
-            if embedding is None:
-                logger.warning(
-                    f"Skipping block {i + 1} due to failed embedding generation"
-                )
-                continue
-
-            try:
-                # Get questions using the generalized function with proper exclusion
-                block_questions = await get_official_questions(
-                    db_session=db_session,
-                    n_questions=n_questions,
-                    question_area_name=question_area_name,
-                    exam_id=exam_id,
-                    exam_country_code=exam_country_code,
-                    exam_education_level_id=exam_education_level_id,
-                    source_year=source_year,
-                    question_type=question_type,
-                    embeddings=[embedding],
-                    exclude_question_ids=unique_question_ids,  # Properly exclude previous questions
-                    ensure_privileged_mix=True,
-                )
-
-                # Add unique questions to our list
-                added_count = 0
-                for question in block_questions:
-                    if question.id not in unique_question_ids:
-                        all_questions.append(question)
-                        unique_question_ids.add(question.id)
-                        added_count += 1
-
-                logger.info(
-                    f"Block {i + 1} ('{block_title[:50]}...'): {added_count} new questions added (total: {len(all_questions)})"
-                )
-
-            except Exception as e:
-                logger.error(
-                    f"Error getting questions for block {i + 1} ('{block_title}'): {str(e)}"
-                )
-                continue
-
-        logger.info(f"Found {len(all_questions)} official questions for flow {flow.id}")
-        return all_questions
-
-    except Exception as e:
-        logger.error(f"Error getting official questions for flow {flow.id}: {str(e)}")
-        raise
+    logger.info(f"Found {len(all_questions)} official questions for flow {flow.id}")
+    return all_questions
 
 
 async def add_questions_to_flow(
     db_session: AsyncSession,
     flow_id: int,
     questions: list[Question],
-    start_order: int = 0,
+    start_order: int,
 ) -> None:
     """
     Add a list of questions to a flow as FlowQuestion elements.
     """
-    try:
-        logger.info(f"Adding {len(questions)} questions to flow {flow_id}")
+    logger.info(f"Adding {len(questions)} questions to flow {flow_id}")
 
-        # Only start a new transaction if we're not already in one
-        if not db_session.in_transaction():
-            await db_session.begin()
+    flow_questions: list[FlowQuestion] = []
+    for order_offset, question in enumerate(questions):
+        # Create FlowQuestion
+        flow_question = FlowQuestion(
+            flow_id=flow_id,
+            order=start_order + order_offset,
+            question_id=question.id,
+        )
+        flow_questions.append(flow_question)
 
-        flow_questions = []
-        for order_offset, question in enumerate(questions):
-            # Create FlowQuestion
-            flow_question = FlowQuestion(
-                flow_id=flow_id,
-                order=start_order + order_offset,
-                question_id=question.id,
-            )
-            flow_questions.append(flow_question)
+    db_session.add_all(flow_questions)
+    await db_session.flush()
 
-        db_session.add_all(flow_questions)
-        await db_session.flush()
-
-        # Debug: Check if choices were created for the questions
-        question_ids = [q.id for q in questions]
-        if question_ids:
-            choices_count_query = select(func.count(Choice.id)).where(
-                Choice.question_id.in_(question_ids)
-            )
-            choices_count_result = await db_session.execute(choices_count_query)
-            choices_count = choices_count_result.scalar()
-            logger.info(
-                f"Flow {flow_id}: Total choices in DB for {len(questions)} questions: {choices_count}"
-            )
-
+    # Debug: Check if choices were created for the questions
+    question_ids = [q.id for q in questions]
+    if question_ids:
+        choices_count_query = select(func.count(Choice.id)).where(
+            Choice.question_id.in_(question_ids)
+        )
+        choices_count_result = await db_session.execute(choices_count_query)
+        choices_count = choices_count_result.scalar()
         logger.info(
-            f"Successfully added {len(flow_questions)} questions to flow {flow_id}"
+            f"Flow {flow_id}: Total choices in DB for {len(questions)} questions: {choices_count}"
         )
 
-    except Exception as e:
-        logger.error(f"Error adding questions to flow {flow_id}: {str(e)}")
-        raise
+    logger.info(f"Successfully added {len(flow_questions)} questions to flow {flow_id}")
 
 
 async def _generate_block_title(block_text: str) -> str:

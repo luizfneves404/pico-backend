@@ -8,7 +8,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.timezone as timezone
-from app.redis_client import get_redis
 from app.ws.models import UserOnlineInfo
 
 logger = logging.getLogger(__name__)
@@ -121,40 +120,3 @@ async def get_online_info(
     }
 
     return full_info
-
-
-async def count_queued_notifications(user_ids: list[int]) -> dict[int, int]:
-    notification_counts: dict[int, int] = {}
-
-    conn = get_redis()
-    # Split user_ids into batches
-    for i in range(0, len(user_ids), MAX_PIPELINE_BATCH_SIZE):
-        current_batch = user_ids[i : i + MAX_PIPELINE_BATCH_SIZE]
-        async with conn.pipeline() as pipe:
-            # Queue all the LLEN commands for the current batch
-            for user_id in current_batch:
-                pipe.llen(f"notification_queue_{user_id}")
-
-            # Execute all commands in the pipeline for the current batch
-            batch_results: list[int] = await pipe.execute()
-
-            # Map the results back to user IDs for the current batch
-            batch_counts = {
-                user_id: count for user_id, count in zip(current_batch, batch_results)
-            }
-            notification_counts.update(batch_counts)
-
-            # Log the results for the current batch
-            logger.debug(f"User notification counts: {batch_counts}")
-
-    return notification_counts
-
-
-async def get_queued_notifications(user_id: int) -> list[str]:
-    logger.debug(f"Getting queued notifications for user {user_id}...")
-
-    queued_events = await _get_user_notifications(user_id)
-
-    await _clear_user_notifications(user_id)
-
-    return queued_events

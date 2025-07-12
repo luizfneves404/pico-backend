@@ -5,20 +5,21 @@ Otherwise i would have to take a lot of care not to import certain files, etc.
 
 import logging.config
 import sys
-from typing import Any, Literal, Sequence
+from typing import Any, AsyncContextManager, Callable, Literal, Sequence
 
 from arq import run_worker
-from arq.cli import check_health
 from arq.connections import RedisSettings
 from arq.cron import CronJob
 from arq.typing import SecondsTimedelta, StartupShutdown, WorkerCoroutine
-from arq.worker import Function
+from arq.worker import Function, check_health
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.arq_client as arq_client
 import app.redis_client as redis_client
 from app.config import settings
 from app.database import db_manager
-from app.fcm.fcm_service import init_firebase, task_send_notifications
+from app.fcm.fcm_service import task_send_notifications
+from app.firebase_config import init_firebase
 from app.flows.question_service import task_generate_transcriptions
 from app.flows.tasks import task_mark_question_timed_out
 from app.logging_config import get_logging_config
@@ -35,6 +36,7 @@ def make_worker_settings(
     database_url: str,
     burst_mode: bool,
     log_configured: bool,
+    session_factory: Callable[[], AsyncContextManager[AsyncSession]] | None,
 ) -> type:
     async def startup(ctx: dict[str, Any]):
         if not log_configured:
@@ -64,6 +66,7 @@ def make_worker_settings(
         burst: bool = burst_mode
         cron_jobs: Sequence[CronJob] | None = None
         health_check_interval: SecondsTimedelta = 30
+        ctx: dict[str, Any] = {"session_factory": session_factory}
 
     return WorkerSettings
 
@@ -74,6 +77,7 @@ if __name__ == "__main__":
         database_url=settings.database_url,
         burst_mode=False,
         log_configured=False,
+        session_factory=None,
     )
     if "--check" in sys.argv:
         check_health(settings)

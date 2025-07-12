@@ -31,15 +31,15 @@ from app.flows.admin import (
     QuestionAdmin,
     QuestionAreaAdmin,
 )
-from app.in_app_notifications.admin import (
-    ExternalInAppNotificationAdmin,
-    FlowInAppNotificationAdmin,
-    InAppNotificationAdmin,
-)
 from app.logging_admin import (
     GetCurrentLevelsView,
     LoggingControlView,
     SetSqlLoggingLevelView,
+)
+from app.notifications.admin import (
+    ExternalInAppNotificationAdmin,
+    FlowInAppNotificationAdmin,
+    InAppNotificationAdmin,
 )
 from app.users import service as user_service
 from app.users.admin import UserAdmin

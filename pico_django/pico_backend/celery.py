@@ -8,7 +8,7 @@ from celery.contrib.django.task import DjangoTask
 from celery.signals import worker_process_init
 
 from app.config import settings
-from app.fcm.fcm_service import init_firebase
+from app.firebase_config import init_firebase
 
 if os.environ.get("DJANGO_SETTINGS_MODULE") != settings.django_settings_module:
     print(

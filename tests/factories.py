@@ -37,6 +37,7 @@ from app.education.models import (
     InstitutionType,
     LevelStage,
 )
+from app.fcm.models import DeviceType, FCMDevice
 from app.files.models import File
 from app.files.storage import storage
 from app.flows.db_types import ContentBlock, ImageBlock, RichText, TextBlock
@@ -55,7 +56,7 @@ from app.flows.models import (
     QuestionDifficulty,
     QuestionSourceType,
 )
-from app.in_app_notifications.models import (
+from app.notifications.models import (
     ExternalInAppNotification,
     FlowInAppNotification,
 )
@@ -560,3 +561,14 @@ class FlowInAppNotificationFactory(AsyncSQLAlchemyFactory[FlowInAppNotification]
     user = None
     text = FactoryFaker("sentence")
     flow = SubFactory(FlowFactory)
+
+
+class FCMDeviceFactory(AsyncSQLAlchemyFactory[FCMDevice]):
+    """Factory for creating FCMDevice instances."""
+
+    class Meta:
+        model = FCMDevice
+
+    user = SubFactory(UserFactory)
+    registration_id = FactoryFaker("uuid4")
+    device_type = DeviceType.ANDROID

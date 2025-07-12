@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from app.in_app_notifications.models import (
+from app.notifications.models import (
     ExternalInAppNotification,
     FlowInAppNotification,
     InAppNotification,

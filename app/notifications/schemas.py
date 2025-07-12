@@ -2,7 +2,7 @@ from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, BaseModel, Field
 
-from app.in_app_notifications.models import (
+from app.notifications.models import (
     ExternalInAppNotification,
     FlowInAppNotification,
 )
