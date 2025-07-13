@@ -11,6 +11,7 @@ from fastapi.openapi.docs import (
 )
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.routing import Route
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -185,6 +186,13 @@ authenticated_routers.include_router(fcm_router)
 # including base routers
 base_api_router.include_router(authenticated_routers)
 fastapi_app.include_router(base_api_router)
+
+# for deep links
+fastapi_app.mount(
+    "/.well-known",
+    StaticFiles(directory="app/well_known", html=False),
+    name="well_known",
+)
 
 
 if __name__ == "__main__":
