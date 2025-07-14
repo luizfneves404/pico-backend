@@ -167,6 +167,7 @@ async def _openai_request(
       - "chat_completion_parsed": Chat completion with parsing.
       - "embeddings": Compute embeddings (input_text required).
     """
+    logger.debug("Official OpenAI request happening...")
     if endpoint == "chat_completion":
         if not messages:
             raise ValueError("messages is required for the chat_completion endpoint.")
@@ -356,6 +357,7 @@ async def _mock_openai_request(
     | list[float]
     | list[list[float]]
 ):
+    logger.debug("Mocked OpenAI request...")
     if endpoint == "chat_completion":
         if not messages:
             raise ValueError("messages is required for the chat_completion endpoint.")
@@ -468,9 +470,9 @@ def sanitize_messages_for_log(
                     # Safely access and modify image URL
                     image_url = content_part.get("image_url")
                     if isinstance(image_url, dict) and "url" in image_url:
-                        sanitized_message["content"][idx]["image_url"][
-                            "url"
-                        ] = "[IMAGE]"
+                        sanitized_message["content"][idx]["image_url"]["url"] = (
+                            "[IMAGE]"
+                        )
         sanitized_messages.append(sanitized_message)
     return sanitized_messages
 
@@ -774,7 +776,7 @@ async def compute_embedding(text: str | list[str]) -> list[float] | list[list[fl
         total: list[list[float]] = []
         for group in group_text_chunks(text):
             for item in group:
-                validate_input(item)
+                validate_input(item, EMBEDDING_MODEL)
             response = await openai_request(
                 endpoint="embeddings",
                 model=EMBEDDING_MODEL,
@@ -789,7 +791,7 @@ async def compute_embedding(text: str | list[str]) -> list[float] | list[list[fl
         logger.info(
             "Async computing embedding for single text with model=%s", EMBEDDING_MODEL
         )
-        validate_input(text)
+        validate_input(text, EMBEDDING_MODEL)
         result = await openai_request(
             endpoint="embeddings",
             model=EMBEDDING_MODEL,
@@ -801,8 +803,8 @@ async def compute_embedding(text: str | list[str]) -> list[float] | list[list[fl
         return result
 
 
-def validate_input(input_item: str):
-    num_tokens = count_tokens(input_item)
+def validate_input(input_item: str, model: str):
+    num_tokens = count_tokens(input_item, model)
     if num_tokens > MAX_TOKENS_FOR_EMBEDDING_MODEL:
         raise ValueError(
             f"Input text exceeds the max token limit of {MAX_TOKENS_FOR_EMBEDDING_MODEL}"
@@ -814,7 +816,7 @@ def group_text_chunks(input_list: list[str]) -> Generator[list[str], None, None]
     group: list[str] = []
     current_tokens: int = 0
     for item in input_list:
-        item_tokens = count_tokens(item)
+        item_tokens = count_tokens(item, EMBEDDING_MODEL)
         if (
             current_tokens + item_tokens >= MAX_TOKENS_FOR_EMBEDDING_MODEL
             or len(group) >= MAX_ARRAY_LENGTH_FOR_EMBEDDING_API_CALL
@@ -831,7 +833,11 @@ def group_text_chunks(input_list: list[str]) -> Generator[list[str], None, None]
 # Token Counting
 #############################################
 
+encoding_cache: dict[str, tiktoken.Encoding] = {}
 
-def count_tokens(text: str) -> int:
-    encoding_cl100k_base = tiktoken.get_encoding("cl100k_base")
-    return len(encoding_cl100k_base.encode(text))
+
+def count_tokens(text: str, model: str) -> int:
+    if model not in encoding_cache:
+        encoding_cache[model] = tiktoken.encoding_for_model(model)
+    encoding = encoding_cache[model]
+    return len(encoding.encode(text))

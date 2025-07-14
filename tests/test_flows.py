@@ -265,7 +265,7 @@ async def test_get_flow_details(
     assert len(response_data["elements"]) == 2
     for idx, element in enumerate(response_data["elements"]):
         flow_question = flow_questions[idx]
-        assert element["id"] == flow_question.id
+        assert element["id"] == flow_question.question.id
         assert element["element_type"] == "flow_question"
         assert isinstance(element["content_blocks"], list)
         assert isinstance(element["answer_content_blocks"], list)
@@ -345,6 +345,29 @@ async def test_submit_flow_question_answer_correct_first_time(
     xp_increase_response = response_data["xp_increase"]
     assert 20 <= xp_increase_response <= 50
 
+    # Check that the flow details contain the submitted answer
+    flow_details_response = await user_client.get(f"/api/flows/{flow.id}/details")
+    assert flow_details_response.status_code == 200
+    flow_details = flow_details_response.json()
+
+    # Find the flow question element
+    flow_question_element = next(
+        (
+            element
+            for element in flow_details["elements"]
+            if element["id"] == flow_question.question.id
+        ),
+        None,
+    )
+    assert flow_question_element is not None
+
+    # Check that relevant_answers contains the submitted answer
+    relevant_answers = flow_question_element["relevant_answers"]
+    assert len(relevant_answers) == 1
+    assert relevant_answers[0]["user"]["id"] == user.id
+    assert relevant_answers[0]["choice_id"] == correct_choice.id
+    assert relevant_answers[0]["submitted_text"] == ""
+
     # Verify that the answer was recorded in the database
     async with session.begin():
         result = await session.execute(
@@ -412,6 +435,29 @@ async def test_submit_flow_question_answer_wrong_answer(
     response_data = response.json()
     xp_increase_response = response_data["xp_increase"]
     assert 2 <= xp_increase_response <= 5
+
+    # Check that the flow details contain the submitted answer
+    flow_details_response = await user_client.get(f"/api/flows/{flow.id}/details")
+    assert flow_details_response.status_code == 200
+    flow_details = flow_details_response.json()
+
+    # Find the flow question element
+    flow_question_element = next(
+        (
+            element
+            for element in flow_details["elements"]
+            if element["id"] == flow_question.question.id
+        ),
+        None,
+    )
+    assert flow_question_element is not None
+
+    # Check that relevant_answers contains the submitted answer
+    relevant_answers = flow_question_element["relevant_answers"]
+    assert len(relevant_answers) == 1
+    assert relevant_answers[0]["user"]["id"] == user.id
+    assert relevant_answers[0]["choice_id"] == wrong_choice.id
+    assert relevant_answers[0]["submitted_text"] == ""
 
     # Verify that the answer was recorded
     async with session.begin():
@@ -534,6 +580,29 @@ async def test_submit_flow_question_answer_repeated_question(
     response_data = response.json()
     xp_increase_response = response_data["xp_increase"]
     assert 2 <= xp_increase_response <= 5
+
+    # Check that the flow details contain the submitted answer
+    flow_details_response = await user_client.get(f"/api/flows/{flow.id}/details")
+    assert flow_details_response.status_code == 200
+    flow_details = flow_details_response.json()
+
+    # Find the flow question element
+    flow_question_element = next(
+        (
+            element
+            for element in flow_details["elements"]
+            if element["id"] == flow_question.question.id
+        ),
+        None,
+    )
+    assert flow_question_element is not None
+
+    # Check that relevant_answers contains the submitted answer
+    relevant_answers = flow_question_element["relevant_answers"]
+    assert len(relevant_answers) == 1
+    assert relevant_answers[0]["user"]["id"] == user.id
+    assert relevant_answers[0]["choice_id"] == correct_choice.id
+    assert relevant_answers[0]["submitted_text"] == ""
     # Verify the repeated correct answer gets reduced XP
     async with session.begin():
         user_result = await session.execute(select(User).where(User.id == user.id))
@@ -571,6 +640,29 @@ async def test_submit_flow_question_answer_same_user_as_creator(
     response_data = response.json()
     xp_increase_response = response_data["xp_increase"]
     assert 20 <= xp_increase_response <= 50
+
+    # Check that the flow details contain the submitted answer
+    flow_details_response = await user_client.get(f"/api/flows/{flow.id}/details")
+    assert flow_details_response.status_code == 200
+    flow_details = flow_details_response.json()
+
+    # Find the flow question element
+    flow_question_element = next(
+        (
+            element
+            for element in flow_details["elements"]
+            if element["id"] == flow_question.question.id
+        ),
+        None,
+    )
+    assert flow_question_element is not None
+
+    # Check that relevant_answers contains the submitted answer
+    relevant_answers = flow_question_element["relevant_answers"]
+    assert len(relevant_answers) == 1
+    assert relevant_answers[0]["user"]["id"] == user.id
+    assert relevant_answers[0]["choice_id"] == correct_choice.id
+    assert relevant_answers[0]["submitted_text"] == ""
     # Verify social score did NOT increase
     async with session.begin():
         user_result = await session.execute(select(User).where(User.id == user.id))
@@ -623,6 +715,32 @@ async def test_submit_flow_question_answer_multiple_answers_same_question(
     response_data = response.json()
     xp_increase_response = response_data["xp_increase"]
     assert 20 <= xp_increase_response <= 50
+
+    # Check that the flow details contain both submitted answers
+    flow_details_response = await user_clients[0].get(f"/api/flows/{flow.id}/details")
+    assert flow_details_response.status_code == 200
+    flow_details = flow_details_response.json()
+
+    # Find the flow question element
+    flow_question_element = next(
+        (
+            element
+            for element in flow_details["elements"]
+            if element["id"] == flow_question.question.id
+        ),
+        None,
+    )
+    assert flow_question_element is not None
+
+    # Check that relevant_answers contains both submitted answers
+    relevant_answers = flow_question_element["relevant_answers"]
+    assert len(relevant_answers) == 2
+
+    # Check that both users' answers are present
+    user_ids = {answer["user"]["id"] for answer in relevant_answers}
+    choice_ids = {answer["choice_id"] for answer in relevant_answers}
+    assert user_ids == {users[0].id, users[1].id}
+    assert choice_ids == {wrong_choice.id, correct_choice.id}
     # Verify both answers exist in database
     async with session.begin():
         result = await session.execute(

@@ -80,7 +80,7 @@ class FlowQuestionInFeed(BaseModel):
     @classmethod
     async def from_orm_model(cls, flow_question: FlowQuestion) -> "FlowQuestionInFeed":
         return cls(
-            id=flow_question.id,
+            id=flow_question.question.id,
             element_type="flow_question",
             content_blocks=flow_question.question.content_blocks,
             answer_content_blocks=flow_question.question.answer_content_blocks,

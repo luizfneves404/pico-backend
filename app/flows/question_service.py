@@ -139,110 +139,77 @@ async def get_official_questions(
     exclude_question_ids: set[int] | None = None,
     ensure_privileged_mix: bool = True,
 ) -> list[Question]:
-    """
-    Get official questions based on various filters and criteria.
-
-    Args:
-        db_session: Database session
-        n_questions: Number of questions to return
-        question_area_name: Filter by question area name
-        exam_id: Filter by specific exam ID
-        exam_country_code: Filter by exam country code
-        exam_education_level_id: Filter by exam education level
-        source_year: Filter by source year
-        question_type: Type of questions (multiple choice or open ended)
-        difficulty: Filter by difficulty level
-        embeddings: List of embeddings for similarity-based ordering
-        exclude_question_ids: Set of question IDs to exclude
-        ensure_privileged_mix: Whether to ensure 60% from privileged sources
-
-    Returns:
-        List of Question objects matching the criteria
-    """
+    """Get official questions with correct joins to avoid cartesian products."""
     logger.info(f"Getting {n_questions} official questions with filters")
 
-    # Build base query
+    # Base query
     query = select(Question).where(
         Question.source_type == QuestionSourceType.OFFICIAL,
         Question.is_active.is_(True),
         Question.answer_type == question_type,
     )
 
-    # Add relationship joins if needed
-    need_exam_join = any(
-        [exam_id, exam_country_code, exam_education_level_id, source_year]
-    )
+    # Determine if we need to join through OfficialQuestionSource and Exam
+    if any([exam_id, exam_country_code, exam_education_level_id, source_year]):
+        # explicit joins to avoid cartesian products
+        query = query.join(OfficialQuestionSource, Question.official_source).join(
+            Exam, OfficialQuestionSource.exam
+        )
 
-    if need_exam_join:
-        query = query.join(Question.official_source).join(OfficialQuestionSource.exam)
-
-    # Apply filters
+    # Apply area filter
     if question_area_name:
         area = await db_session.scalar(
             select(QuestionArea).where(QuestionArea.name == question_area_name)
         )
         if area is None:
             raise ValueError(f"Área de questão '{question_area_name}' inexistente")
-
         query = query.where(Question.major_tags.overlap(area.tags))
 
+    # Exam-specific filters
     if exam_id:
         query = query.where(OfficialQuestionSource.exam_id == exam_id)
-
     if exam_country_code:
         query = query.where(Exam.country.has(code=exam_country_code))
-
     if exam_education_level_id:
         query = query.where(Exam.education_level_id == exam_education_level_id)
-
     if source_year:
         query = query.where(OfficialQuestionSource.year == source_year)
 
+    # Difficulty and exclusion
     if difficulty:
         query = query.where(Question.difficulty == difficulty)
-
     if exclude_question_ids:
         query = query.where(~Question.id.in_(exclude_question_ids))
 
-    # Apply ordering
+    # Ordering
     if embedding:
         query = query.order_by(Question.embedding.cosine_distance(embedding))
     else:
-        # Random order if no embeddings provided
         query = query.order_by(func.random())
 
-    # Handle privileged source mix if requested and no specific exam filter
+    # Privileged mix
     if ensure_privileged_mix and not exam_id:
         privileged_count = int(n_questions * 0.6)
         regular_count = n_questions - privileged_count
 
-        # Get privileged questions
-        privileged_query = query.where(
-            or_(*[Exam.name.like(f"{source}%") for source in PRIVILEGED_SOURCES])
+        privileged_q = query.where(
+            or_(*[Exam.name.like(f"{src}%") for src in PRIVILEGED_SOURCES])
         ).limit(privileged_count)
+        priv_res = await db_session.scalars(privileged_q)
+        priv_questions = list(priv_res)
 
-        privileged_result = await db_session.execute(privileged_query)
-        privileged_questions = list(privileged_result.scalars().all())
-
-        # Get remaining questions excluding privileged ones
-        privileged_ids = [q.id for q in privileged_questions]
-        exclude_ids = set(privileged_ids)
+        excl_ids = set(q.id for q in priv_questions)
         if exclude_question_ids:
-            exclude_ids.update(exclude_question_ids)
+            excl_ids |= exclude_question_ids
 
-        remaining_query = query.where(~Question.id.in_(exclude_ids)).limit(
-            regular_count
-        )
+        remaining_q = query.where(~Question.id.in_(excl_ids)).limit(regular_count)
+        rem_res = await db_session.scalars(remaining_q)
+        rem_questions = list(rem_res)
 
-        remaining_result = await db_session.execute(remaining_query)
-        remaining_questions = list(remaining_result.scalars().all())
-
-        questions = privileged_questions + remaining_questions
+        questions = priv_questions + rem_questions
     else:
-        # Just apply limit and execute
-        query = query.limit(n_questions)
-        result = await db_session.execute(query)
-        questions = list(result.scalars().all())
+        result = await db_session.scalars(query.limit(n_questions))
+        questions = list(result)
 
     logger.info(f"Found {len(questions)} official questions")
     return questions
@@ -331,7 +298,9 @@ async def task_generate_transcriptions(
         cleaned = [latex_to_text(t).strip() for t in transcripts if t and t.strip()]
         big_text = " ".join(cleaned)
 
-        block_texts = ai_utils.split_text_into_chunks(big_text, TOKENS_PER_BLOCK)
+        block_texts = ai_utils.split_text_into_chunks(
+            big_text, TOKENS_PER_BLOCK, "gpt-4.1-nano"
+        )
         if not block_texts:
             raise ValueError("Falha ao gerar transcrições.")
 
