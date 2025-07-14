@@ -8,6 +8,7 @@ from app.ws.service import OnlineInfo
 class UserInCommunity(BaseModel):
     id: int
     username: str
+    name: str
     online_info: OnlineInfoOut
 
 
@@ -29,6 +30,7 @@ class CommunityOut(BaseModel):
                 UserInCommunity(
                     id=user.id,
                     username=user.username,
+                    name=user.name,
                     online_info=OnlineInfoOut(
                         id=user.id,
                         is_online=online_info[user.id]["is_online"],
@@ -43,5 +45,6 @@ class CommunityOut(BaseModel):
 class UserInCommunityRanking(BaseModel):
     id: int
     username: str
+    name: str
     rank: int
     score: int

@@ -191,6 +191,7 @@ class UserInCommunityRanking:
     score: int
     rank: int
     username: str
+    name: str
 
 
 async def get_community_ranking(
@@ -211,6 +212,7 @@ async def get_community_ranking(
         select(
             User.id,
             User.username,
+            User.name,
             score_column.label("score"),
             func.dense_rank().over(order_by=score_column.desc()).label("rank"),
         )
@@ -223,6 +225,7 @@ async def get_community_ranking(
         select(
             ranked_users_cte.c.id,
             ranked_users_cte.c.username,
+            ranked_users_cte.c.name,
             ranked_users_cte.c.score,
             ranked_users_cte.c.rank,
         )
@@ -233,6 +236,7 @@ async def get_community_ranking(
     asking_user_query = select(
         ranked_users_cte.c.id,
         ranked_users_cte.c.username,
+        ranked_users_cte.c.name,
         ranked_users_cte.c.score,
         ranked_users_cte.c.rank,
     ).where(ranked_users_cte.c.id == asking_user_id)
@@ -247,7 +251,11 @@ async def get_community_ranking(
 
     return [
         UserInCommunityRanking(
-            id=row["id"], score=row["score"], rank=row["rank"], username=row["username"]
+            id=row["id"],
+            score=row["score"],
+            rank=row["rank"],
+            username=row["username"],
+            name=row["name"],
         )
         for row in results.mappings()
     ]

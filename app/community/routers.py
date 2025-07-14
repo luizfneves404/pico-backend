@@ -43,6 +43,7 @@ async def get_community_ranking(
         UserInCommunityRanking(
             id=user.id,
             username=user.username,
+            name=user.name,
             rank=user.rank,
             score=user.score,
         )

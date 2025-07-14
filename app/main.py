@@ -10,8 +10,7 @@ from fastapi.openapi.docs import (
     get_swagger_ui_html,
 )
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.routing import Route
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -21,6 +20,7 @@ from app.admin_registry import admin_views, authentication_backend, require_admi
 from app.community.routers import router as community_router
 from app.config import Environment, settings
 from app.database import db_manager
+from app.deeplinks.apple_app_site_association import APPLE_APP_SITE_ASSOCIATION_JSON
 from app.deps import CurrentUserDep
 from app.education.routers import router as education_router
 from app.fcm.routers import router as fcm_router
@@ -187,12 +187,19 @@ authenticated_routers.include_router(fcm_router)
 base_api_router.include_router(authenticated_routers)
 fastapi_app.include_router(base_api_router)
 
-# for deep links
-fastapi_app.mount(
-    "/.well-known",
-    StaticFiles(directory="app/well_known", html=False),
-    name="well_known",
-)
+
+# for android deep links
+@fastapi_app.get("/.well-known/assetlinks.json", include_in_schema=False)
+async def assetlinks() -> FileResponse:
+    return FileResponse(
+        path="app/deeplinks/assetlinks.json", media_type="application/json"
+    )
+
+
+# for ios deep links
+@fastapi_app.get("/.well-known/apple-app-site-association", include_in_schema=False)
+async def aasa():
+    return JSONResponse(content=APPLE_APP_SITE_ASSOCIATION_JSON)
 
 
 if __name__ == "__main__":
