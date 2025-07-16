@@ -26,6 +26,8 @@ from app.users.schemas import (
     RefreshRequest,
     SentinelUserOut,
     TokenResponse,
+    UserFieldValidationRequest,
+    UserFieldValidationResponse,
     UserIdsIn,
     UserIn,
     UserInRanking,
@@ -179,6 +181,20 @@ async def apple_auth(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already exists"
         )
+
+
+@user_router.post("/validate")
+async def validate_user_field(
+    request: UserFieldValidationRequest,
+    db_session: DBSessionAnnotated,
+) -> UserFieldValidationResponse:
+    result = await service.validate_user_field(
+        db_session, request.field_name, request.field_value
+    )
+    return UserFieldValidationResponse(
+        is_valid=result[0],
+        validated_value=result[1],
+    )
 
 
 @user_router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)

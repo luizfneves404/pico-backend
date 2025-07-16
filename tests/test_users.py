@@ -146,6 +146,265 @@ class TestUserCreation:
         assert "jose" in response_data["username"].lower()
 
 
+class TestUserFieldValidation:
+    """Test user field validation endpoint."""
+
+    async def test_validate_username_success(self, client: AsyncClient):
+        """Test successful username validation."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "username",
+                "field_value": "validusername123",
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is True
+        assert response_data["validated_value"] == "validusername123"
+
+    async def test_validate_username_invalid_characters(self, client: AsyncClient):
+        """Test username validation with invalid characters."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "username",
+                "field_value": "invalid-username!",
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is False
+        assert response_data["validated_value"] is None
+
+    async def test_validate_username_with_spaces(self, client: AsyncClient):
+        """Test username validation with spaces."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "username",
+                "field_value": "invalid username",
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is False
+        assert response_data["validated_value"] is None
+
+    async def test_validate_username_with_uppercase(self, client: AsyncClient):
+        """Test username validation with uppercase letters."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "username",
+                "field_value": "ValidUsername",
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is False
+        assert response_data["validated_value"] is None
+
+    async def test_validate_username_already_exists(
+        self, client: AsyncClient, user: User
+    ):
+        """Test username validation when username already exists."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "username",
+                "field_value": user.username,
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is False
+        assert response_data["validated_value"] == user.username
+
+    async def test_validate_email_success(self, client: AsyncClient):
+        """Test successful email validation."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "email",
+                "field_value": "newemail@example.com",
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is True
+        assert response_data["validated_value"] == "newemail@example.com"
+
+    async def test_validate_email_with_uppercase(self, client: AsyncClient):
+        """Test email validation with uppercase letters (should be normalized)."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "email",
+                "field_value": "NewEmail@EXAMPLE.COM",
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is True
+        assert response_data["validated_value"] == "newemail@example.com"
+
+    async def test_validate_email_with_whitespace(self, client: AsyncClient):
+        """Test email validation with whitespace (should be normalized)."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "email",
+                "field_value": "  spaced@example.com  ",
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is True
+        assert response_data["validated_value"] == "spaced@example.com"
+
+    async def test_validate_email_invalid_format(self, client: AsyncClient):
+        """Test email validation with invalid format."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "email",
+                "field_value": "invalid-email",
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is False
+        assert response_data["validated_value"] is None
+
+    async def test_validate_email_already_exists(self, client: AsyncClient, user: User):
+        """Test email validation when email already exists."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "email",
+                "field_value": user.email,
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is False
+        assert response_data["validated_value"] == user.email
+
+    async def test_validate_phone_number_success(self, client: AsyncClient):
+        """Test successful phone number validation."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "phone_number",
+                "field_value": "+5511999887766",
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is True
+        assert response_data["validated_value"] == "tel:+55-11-99988-7766"
+
+    async def test_validate_phone_number_different_format(self, client: AsyncClient):
+        """Test phone number validation with different input format."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "phone_number",
+                "field_value": "5511999887766",
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is True
+        assert response_data["validated_value"] == "tel:+55-11-99988-7766"
+
+    async def test_validate_phone_number_with_spaces_and_dashes(
+        self, client: AsyncClient
+    ):
+        """Test phone number validation with spaces and dashes."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "phone_number",
+                "field_value": "+55 11 9998-8776-6",
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is True
+        assert response_data["validated_value"] == "tel:+55-11-99988-7766"
+
+    async def test_validate_phone_number_invalid_format(self, client: AsyncClient):
+        """Test phone number validation with invalid format."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "phone_number",
+                "field_value": "invalid-phone",
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is False
+        assert response_data["validated_value"] is None
+
+    async def test_validate_phone_number_too_short(self, client: AsyncClient):
+        """Test phone number validation with too short number."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "phone_number",
+                "field_value": "123",
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is False
+        assert response_data["validated_value"] is None
+
+    async def test_validate_phone_number_already_exists(
+        self, client: AsyncClient, user: User
+    ):
+        """Test phone number validation when phone number already exists."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "phone_number",
+                "field_value": str(user.phone_number),
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is False
+        assert response_data["validated_value"] == user.phone_number
+
+    async def test_validate_field_invalid_field_name(self, client: AsyncClient):
+        """Test field validation with invalid field name."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "invalid_field",
+                "field_value": "some_value",
+            },
+        )
+        assert response.status_code == 422  # Validation error for invalid field name
+
+    async def test_validate_field_empty_value(self, client: AsyncClient):
+        """Test field validation with empty value."""
+        response = await client.post(
+            "/api/users/validate",
+            json={
+                "field_name": "username",
+                "field_value": "",
+            },
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert response_data["is_valid"] is False
+        assert response_data["validated_value"] is None
+
+
 class TestSocialAuthentication:
     """Test Google and Apple social authentication."""
 

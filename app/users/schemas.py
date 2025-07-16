@@ -242,6 +242,16 @@ class UserPartialUpdateResponse(BaseModel):
     user: UserOut
 
 
+class UserFieldValidationRequest(BaseModel):
+    field_name: Literal["username", "email", "phone_number"]
+    field_value: str
+
+
+class UserFieldValidationResponse(BaseModel):
+    is_valid: bool
+    validated_value: str | None
+
+
 class OnlineInfo(BaseModel):
     id: int
     is_online: bool

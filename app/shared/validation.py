@@ -19,7 +19,7 @@ def validate_lowercase_email(value: EmailStr) -> EmailStr:
     Returns:
         EmailStr: The lowercase version of the email address.
     Raises:
-        email_validator.EmailNotValidError: If the email address is not valid.
+        PydanticCustomError: If the email address is not valid.
     """
     email = validate_email(value)[1]
     return email.lower()

@@ -7,6 +7,8 @@ from typing import Literal
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from geoalchemy2 import WKTElement
+from pydantic import ValidationError
+from pydantic_core import PydanticCustomError
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,7 +49,7 @@ from app.users.exceptions import (
     UserNotFoundError,
 )
 from app.users.models import SignupSource, User
-from app.users.schemas import EducationInfoIn, UserUpdate
+from app.users.schemas import EducationInfoIn, UserUpdate, validate_username_field
 from app.users.social import (
     check_contacts,
     get_ranking,
@@ -349,6 +351,52 @@ async def _create_education_from_data(
         institution_id=institution_id,
         course_id=course_id,
     )
+
+
+async def validate_username(
+    db_session: AsyncSession, username: str
+) -> tuple[bool, str | None]:
+    try:
+        validated_username = validate_username_field(username)
+        user = await get_user(db_session, username=validated_username)
+        return user is None, validated_username
+    except ValueError:
+        return False, None
+
+
+async def validate_email(
+    db_session: AsyncSession, email: str
+) -> tuple[bool, str | None]:
+    try:
+        validated_email = validate_lowercase_email(email)
+        user = await get_user(db_session, email=validated_email)
+        return user is None, validated_email
+    except PydanticCustomError:
+        return False, None
+
+
+async def validate_phone_number(
+    db_session: AsyncSession, phone_number: str
+) -> tuple[bool, str | None]:
+    try:
+        validated_phone_number = phone_number_adapter.validate_python(phone_number)
+        user = await get_user(db_session, phone_number=validated_phone_number)
+        return user is None, validated_phone_number
+    except ValidationError:
+        return False, None
+
+
+async def validate_user_field(
+    db_session: AsyncSession,
+    field_name: Literal["username", "email", "phone_number"],
+    field_value: str,
+) -> tuple[bool, str | None]:
+    if field_name == "username":
+        return await validate_username(db_session, field_value)
+    elif field_name == "email":
+        return await validate_email(db_session, field_value)
+    elif field_name == "phone_number":
+        return await validate_phone_number(db_session, field_value)
 
 
 async def update_user_fields(
