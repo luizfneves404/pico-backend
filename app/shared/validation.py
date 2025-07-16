@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, EmailStr, StringConstraints
+from pydantic import AfterValidator, BaseModel, EmailStr, StringConstraints, TypeAdapter
 from pydantic.networks import validate_email
 from pydantic_extra_types.phone_numbers import PhoneNumberValidator
 
@@ -11,6 +11,16 @@ StripWhitespaceStr = Annotated[str, StringConstraints(strip_whitespace=True)]
 
 
 def validate_lowercase_email(value: EmailStr) -> EmailStr:
+    """Validate an email address and return the lowercase version.
+
+    Args:
+        value (EmailStr): The email address to validate.
+
+    Returns:
+        EmailStr: The lowercase version of the email address.
+    Raises:
+        email_validator.EmailNotValidError: If the email address is not valid.
+    """
     email = validate_email(value)[1]
     return email.lower()
 
@@ -22,6 +32,8 @@ CustomPhoneNumber = Annotated[
     str,
     PhoneNumberValidator(default_region=settings.default_phone_number_country),
 ]
+
+phone_number_adapter: TypeAdapter[CustomPhoneNumber] = TypeAdapter(CustomPhoneNumber)
 
 
 class UnsetType(Enum):

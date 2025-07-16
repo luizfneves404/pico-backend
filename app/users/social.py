@@ -2,21 +2,19 @@ import logging
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 from sqlalchemy import func, join, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.education.models import EducationInfo
 from app.pagination import PaginationParams, paginate_query
-from app.shared.validation import CustomPhoneNumber
+from app.shared.validation import phone_number_adapter
 from app.users.constants import SENTINEL_USERNAMES
 from app.users.models import User
 
 logger = logging.getLogger(__name__)
 
 NUM_RANKED_USERS = 10
-
-phone_number_adapter: TypeAdapter[CustomPhoneNumber] = TypeAdapter(CustomPhoneNumber)
 
 
 async def check_contacts(

@@ -2,7 +2,6 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import db_manager
@@ -25,10 +24,6 @@ async def get_db_session():
 
 
 DBSessionAnnotated = Annotated[AsyncSession, Depends(get_db_session)]
-
-
-class TokenData(BaseModel):
-    username: str
 
 
 async def get_current_user(

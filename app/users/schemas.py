@@ -64,11 +64,6 @@ def validate_username_field(value: str) -> str:
 UsernameStr = Annotated[str, AfterValidator(validate_username_field)]
 
 
-class TokenRequest(BaseModel):
-    username: StripWhitespaceStr
-    password: PasswordStr
-
-
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str

@@ -18,7 +18,7 @@ import app.users.external_auth as external_auth
 from app.countries.service import get_country
 from app.education import service as education_service
 from app.education.models import EducationInfo
-from app.shared.validation import UNSET
+from app.shared.validation import UNSET, phone_number_adapter, validate_lowercase_email
 from app.users.constants import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     DELETED_EMAIL,

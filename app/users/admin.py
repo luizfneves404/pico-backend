@@ -6,10 +6,13 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import InstrumentedAttribute, selectinload
 from wtforms import PasswordField
 
+from app.config import LowercaseEmailStr
 from app.education.models import EducationInfo
 from app.shared.admin import CustomModelView
+from app.shared.validation import CustomPhoneNumber
 from app.users import service as user_service
 from app.users.models import SignupSource, User
+from app.users.schemas import PasswordStr, UsernameStr
 
 
 def format_string(value: Any) -> Any:
@@ -19,17 +22,17 @@ def format_string(value: Any) -> Any:
 
 class UserImportSchema(BaseModel):
     name: str
-    username: str
-    email: str
-    phone_number: str
-    password: str
+    username: UsernameStr
+    email: LowercaseEmailStr
+    phone_number: CustomPhoneNumber
+    password: PasswordStr
     is_superuser: bool
     is_bot: bool
     bot_difficulty: float
-    signup_source: str
-    current_education: int
-    intended_education: int
-    referred_by: int
+    signup_source: SignupSource
+    current_education_id: int | None
+    intended_education_id: int | None
+    referred_by: int | None
 
 
 class UserAdmin(CustomModelView, model=User):
@@ -194,13 +197,15 @@ class UserAdmin(CustomModelView, model=User):
             username=validated_data.username,
             email=validated_data.email,
             phone_number=validated_data.phone_number,
-            hashed_password=user_service.get_password_hash(validated_data.password),
+            hashed_password=user_service.get_password_hash(
+                validated_data.password.get_secret_value()
+            ),
             is_superuser=validated_data.is_superuser,
             is_bot=validated_data.is_bot,
             bot_difficulty=validated_data.bot_difficulty,
-            signup_source=SignupSource(validated_data.signup_source),
-            current_education_id=validated_data.current_education,
-            intended_education_id=validated_data.intended_education,
+            signup_source=validated_data.signup_source,
+            current_education_id=validated_data.current_education_id,
+            intended_education_id=validated_data.intended_education_id,
             referred_by_id=validated_data.referred_by,
             google_id="",
             apple_id="",
