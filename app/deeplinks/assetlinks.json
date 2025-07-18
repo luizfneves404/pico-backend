@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.unrot",
+      "sha256_cert_fingerprints": ["ED:43:74:A8:EC:AC:7D:C6:1B:ED:D8:92:85:7B:25:10:AC:00:07:B4:79:9C:C3:E8:A6:64:79:C4:C5:F1:0F:F9"]
+    }
+  }
+] 
