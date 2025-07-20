@@ -92,24 +92,27 @@ class InstitutionAdmin(CustomModelView, model=Institution):
     }
 
     async def to_orm_model(
-        self, validated_data: InstitutionImportSchema
-    ) -> Institution:
-        return Institution(
-            name=validated_data.name,
-            user_submitted=validated_data.user_submitted,
-            institution_type=validated_data.institution_type,
-            country_id=validated_data.country_id,
-            level_id=validated_data.level_id,
-            administrative_category=validated_data.administrative_category,
-            government_issued_code=validated_data.government_issued_code or "",
-            location=WKTElement(
-                f"POINT({validated_data.longitude} {validated_data.latitude})"
+        self, validated_data_list: list[InstitutionImportSchema]
+    ) -> list[Institution]:
+        return [
+            Institution(
+                name=validated_data.name,
+                user_submitted=validated_data.user_submitted,
+                institution_type=validated_data.institution_type,
+                country_id=validated_data.country_id,
+                level_id=validated_data.level_id,
+                administrative_category=validated_data.administrative_category,
+                government_issued_code=validated_data.government_issued_code or "",
+                location=WKTElement(
+                    f"POINT({validated_data.longitude} {validated_data.latitude})"
+                )
+                if validated_data.latitude and validated_data.longitude
+                else None,  # type: ignore # this should work according to geoalchemy2
+                address=validated_data.address or "",
+                city=validated_data.city or "",
             )
-            if validated_data.latitude and validated_data.longitude
-            else None,  # type: ignore # this should work according to geoalchemy2
-            address=validated_data.address or "",
-            city=validated_data.city or "",
-        )
+            for validated_data in validated_data_list
+        ]
 
 
 class EducationLevelImportSchema(BaseModel):

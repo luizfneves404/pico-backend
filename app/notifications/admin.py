@@ -101,14 +101,17 @@ class ExternalInAppNotificationAdmin(CustomModelView, model=ExternalInAppNotific
     }
 
     async def to_orm_model(
-        self, validated_data: ExternalInAppNotificationImportSchema
-    ) -> ExternalInAppNotification:
-        return ExternalInAppNotification(
-            user_id=validated_data.user_id,
-            text=validated_data.text,
-            external_url=validated_data.external_url,
-            seen=validated_data.seen,
-        )
+        self, validated_data_list: list[ExternalInAppNotificationImportSchema]
+    ) -> list[ExternalInAppNotification]:
+        return [
+            ExternalInAppNotification(
+                user_id=validated_data.user_id,
+                text=validated_data.text,
+                external_url=validated_data.external_url,
+                seen=validated_data.seen,
+            )
+            for validated_data in validated_data_list
+        ]
 
 
 class FlowInAppNotificationImportSchema(BaseModel):
@@ -162,11 +165,14 @@ class FlowInAppNotificationAdmin(CustomModelView, model=FlowInAppNotification):
     }
 
     async def to_orm_model(
-        self, validated_data: FlowInAppNotificationImportSchema
-    ) -> FlowInAppNotification:
-        return FlowInAppNotification(
-            user_id=validated_data.user_id,
-            flow_id=validated_data.flow_id,
-            text=validated_data.text,
-            seen=validated_data.seen,
-        )
+        self, validated_data_list: list[FlowInAppNotificationImportSchema]
+    ) -> list[FlowInAppNotification]:
+        return [
+            FlowInAppNotification(
+                user_id=validated_data.user_id,
+                flow_id=validated_data.flow_id,
+                text=validated_data.text,
+                seen=validated_data.seen,
+            )
+            for validated_data in validated_data_list
+        ]

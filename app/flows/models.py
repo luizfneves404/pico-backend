@@ -458,6 +458,10 @@ class Question(Base, kw_only=True):
     def correct_choice_id(self) -> int | None:
         return next(choice.id for choice in self.choices if choice.is_correct)
 
+    @property
+    def has_embedding(self) -> bool:
+        return self.embedding is not None
+
     def __str__(self) -> str:
         question_insp = inspect(self)
         if (
@@ -489,10 +493,6 @@ class QuestionArea(Base, kw_only=True):
 
 
 class Exam(Base, kw_only=True):
-    """
-    Represents an exam (bancada in portuguese)
-    """
-
     name: Mapped[str] = mapped_column(Text)
 
     country_id: Mapped[int] = mapped_column(ForeignKey("country.id"), default=None)

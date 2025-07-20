@@ -1,7 +1,8 @@
 import csv
 import io
+import json
+import logging
 import re
-from dataclasses import dataclass
 from typing import Any, Callable, ClassVar, TypeVar
 
 from fastapi import HTTPException, Request, Response
@@ -30,6 +31,8 @@ ModelType = TypeVar("ModelType", bound=DeclarativeBase)
 
 WKT_RE = re.compile(r"^POINT\(\s*([-0-9\.]+)\s+([-0-9\.]+)\s*\)$")
 
+logger = logging.getLogger(__name__)
+
 
 def bool_formatter(value: bool) -> Markup:
     """Return check icon if value is `True` or X otherwise."""
@@ -37,8 +40,7 @@ def bool_formatter(value: bool) -> Markup:
     return Markup(f"<i class='fa {icon_class}'></i>")
 
 
-@dataclass
-class ImportResult:
+class ImportResult(BaseModel):
     """Simple import result with clear error messages."""
 
     total_rows: int
@@ -189,17 +191,94 @@ class CustomFormConverter(ModelConverter):
         return LocationField(**kwargs)
 
 
+def serialize_for_csv(value: Any) -> str:
+    """Serialize any value to a CSV-safe string with explicit type handling."""
+    if value is None:
+        return ""  # Empty string for None/null values
+    elif isinstance(value, bool):
+        return "true" if value else "false"  # JSON boolean format
+    elif isinstance(value, (int, float)):
+        return str(value)
+    elif isinstance(value, str):
+        return value
+    elif isinstance(value, (list, dict)):
+        return json.dumps(value)
+    else:
+        # Fallback for other types (datetime, etc.)
+        return json.dumps(value, default=str)
+
+
+def parse_field_value(value: str | None) -> Any:
+    """Parse a CSV string value with explicit type conversion rules.
+
+    Special handling for empty strings vs None:
+    - Empty CSV cell (None from CSV reader) -> None
+    - Cell with just quotes '""' -> empty string ""
+    - Cell with 'null' -> None
+    """
+    # Handle truly empty cells (None from CSV reader)
+    if value is None:
+        return None
+
+    # Handle explicit empty string marker
+    if value == '""':
+        return ""
+
+    # Handle whitespace-only as None (configurable behavior)
+    if not value or value.strip() == "":
+        return None
+
+    value = value.strip()
+
+    # Handle explicit null marker
+    if value.lower() == "null":
+        return None
+
+    # Handle JSON booleans explicitly
+    if value.lower() in ("true", "false"):
+        return value.lower() == "true"
+
+    # Try to parse as number (int or float)
+    if value.replace(".", "", 1).replace("-", "", 1).replace("+", "", 1).isdigit():
+        try:
+            # Try int first, then float
+            if "." in value:
+                return float(value)
+            else:
+                return int(value)
+        except ValueError:
+            pass
+
+    # Try to parse as JSON for complex types (lists, dicts)
+    if value.startswith(("[", "{")):
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Default to string
+    return value
+
+
 class CustomModelView(ModelView):
-    """Enhanced ModelView with simple CSV import functionality.
+    """Enhanced ModelView with explicit CSV import functionality.
 
-    Basic usage:
+    CSV Import Contract:
+    - Empty cells = None/null values
+    - Empty strings: Use '""' (literal two quotes)
+    - Booleans: "true" or "false" (case-insensitive)
+    - Numbers: Plain numeric values (123, 45.67)
+    - Strings: Plain text (quotes not needed unless part of the content)
+    - Lists/Objects: Valid JSON format (["item1", "item2"], {"key": "value"})
+    - Null values: Empty cell or "null"
+
+    Example usage:
     ```python
-    from pydantic import BaseModel
-    from app.shared.admin import CustomModelView
-
     class UserImportSchema(BaseModel):
         email: str
         name: str
+        is_active: bool = True
+        tags: list[str] = []
 
     class UserAdmin(CustomModelView, model=User):
         can_import = True
@@ -207,12 +286,9 @@ class CustomModelView(ModelView):
         import_template_data = {
             "email": "user@example.com",
             "name": "John Doe",
+            "is_active": True,
+            "tags": ["tag1", "tag2"],
         }
-        def to_orm_model(self, validated_data: UserImportSchema) -> User:
-            return User(
-                email=validated_data.email,
-                name=validated_data.name,
-            )
     ```
     """
 
@@ -224,36 +300,21 @@ class CustomModelView(ModelView):
         str: lambda value: value if value else "[EMPTY STRING]",
     }
 
-    form_widget_args = {
-        "created_at": {
-            "readonly": True,
-        },
-        "updated_at": {
-            "readonly": True,
-        },
-    }
-
     # Import configuration
     can_import: ClassVar[bool] = False
-    """Permission for importing data from CSV."""
-
     import_max_rows: ClassVar[int] = 100000
-    """Maximum number of rows allowed for import."""
-
     import_schema: type[BaseModel] | None = None
-
     import_template_data: ClassVar[dict[str, Any]] = {}
-
     session_maker: async_sessionmaker[AsyncSession]
 
-    async def to_orm_model(self, validated_data: Any) -> Any:
-        """Convert Pydantic model to ORM model."""
-        return self.model(**validated_data.model_dump())
+    async def to_orm_model(self, validated_data_list: list[Any]) -> list[Any]:
+        """Convert list of Pydantic models to list of ORM models."""
+        return [self.model(**data.model_dump()) for data in validated_data_list]
 
     async def import_data(
         self, rows: list[dict[str, Any]], dry_run: bool = False
     ) -> ImportResult:
-        """Import CSV data using Pydantic schema."""
+        """Import CSV data using Pydantic schema with explicit type handling."""
         if not self.import_schema:
             raise CSVImportError("No import schema configured for this model")
 
@@ -264,91 +325,141 @@ class CustomModelView(ModelView):
             errors=[],
         )
 
-        async with self.session_maker() as session:
-            for row_idx, raw_row in enumerate(rows, 1):
-                try:
-                    # Clean empty strings to None for optional fields
-                    cleaned_row = {
-                        k: (v if v != "" else None) for k, v in raw_row.items()
-                    }
+        # Step 1: Validate all rows
+        validated_data_list: list[BaseModel] = []
+        for row_idx, raw_row in enumerate(rows, 1):
+            try:
+                # Parse each field value with explicit type handling
+                cleaned_row: dict[str, Any] = {}
+                for key, value in raw_row.items():
+                    if isinstance(value, str):
+                        cleaned_row[key] = parse_field_value(value)
+                    else:
+                        cleaned_row[key] = value
 
-                    # Validate with Pydantic schema
-                    validated_data = self.import_schema.model_validate(cleaned_row)
+                # Validate with Pydantic schema
+                validated_data = self.import_schema.model_validate(cleaned_row)
+                validated_data_list.append(validated_data)
+                result.successful_rows += 1
 
-                    orm_instance = await self.to_orm_model(validated_data)
-
-                    if not dry_run:
-                        session.add(orm_instance)
-
-                    result.successful_rows += 1
-
-                except ValidationError as e:
-                    result.failed_rows += 1
-                    for error in e.errors():
-                        field_name = error["loc"][0] if error["loc"] else "unknown"
-                        result.errors.append(
-                            {
-                                "row": row_idx,
-                                "field": field_name,
-                                "message": error["msg"],
-                                "data": raw_row,
-                            }
-                        )
-
-                except Exception as e:
-                    result.failed_rows += 1
+            except ValidationError as e:
+                result.failed_rows += 1
+                for error in e.errors():
+                    field_name = str(error["loc"][0]) if error["loc"] else "unknown"
                     result.errors.append(
                         {
                             "row": row_idx,
-                            "field": "general",
-                            "message": str(e),
+                            "field": field_name,
+                            "message": error["msg"],
+                            "input_value": raw_row.get(field_name, "N/A"),
+                            "expected_type": self._get_field_type_hint(field_name),
                             "data": raw_row,
                         }
                     )
+            except Exception as e:
+                result.failed_rows += 1
+                result.errors.append(
+                    {
+                        "row": row_idx,
+                        "field": "general",
+                        "message": str(e),
+                        "input_value": str(raw_row),
+                        "expected_type": "N/A",
+                        "data": raw_row,
+                    }
+                )
 
-            if not dry_run and result.successful_rows > 0:
-                await session.commit()
+        # Step 2: Transform and persist if not dry run
+        if validated_data_list and not dry_run:
+            try:
+                orm_instances = await self.to_orm_model(validated_data_list)
+                async with self.session_maker() as session:
+                    session.add_all(orm_instances)
+                    await session.commit()
+            except Exception as e:
+                result.failed_rows += result.successful_rows
+                result.successful_rows = 0
+                result.errors.append(
+                    {
+                        "row": "batch",
+                        "field": "transformation",
+                        "message": f"Batch transformation failed: {str(e)}",
+                        "input_value": "all_validated_rows",
+                        "expected_type": "ORM instances",
+                        "data": [data.model_dump() for data in validated_data_list],
+                    }
+                )
 
         return result
 
+    def _get_field_type_hint(self, field_name: str) -> str:
+        """Get human-readable type hint for a field."""
+        if not self.import_schema or field_name not in self.import_schema.model_fields:
+            return "unknown"
+
+        field_info = self.import_schema.model_fields[field_name]
+        return str(field_info.annotation)
+
     def generate_import_template(self) -> str:
-        """Generate CSV template with sample data."""
+        """Generate CSV template with properly serialized sample data."""
         if not self.import_schema:
             raise CSVImportError("No import schema configured for this model")
 
+        if not self.import_template_data:
+            raise CSVImportError("No import template data configured for this model")
+
         headers = list(self.import_schema.model_fields.keys())
 
-        # Generate sample row
-        if self.import_template_data:
-            sample_row = [
-                self.import_template_data.get(field_name, "") for field_name in headers
-            ]
-        else:
-            sample_row: list[str] = []
-            for field_name, field_info in self.import_schema.model_fields.items():
-                sample_value = self._get_sample_value(field_name, field_info)
-                sample_row.append(str(sample_value))
+        # Generate sample row with consistent serialization
+        sample_row: list[str] = []
+        try:
+            for field_name in headers:
+                if field_name in self.import_template_data:
+                    value = self.import_template_data[field_name]
+                    sample_row.append(serialize_for_csv(value))
+                else:
+                    # Provide empty string for missing optional fields
+                    sample_row.append("")
+        except Exception as e:
+            raise CSVImportError(f"Error generating template: {str(e)}") from e
 
-        # Create CSV
+        # Create CSV with header and sample row
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(headers)
         writer.writerow(sample_row)
+
         return output.getvalue()
 
-    def _get_sample_value(self, field_name: str, field_info: Any) -> str:
-        """Generate sample value for CSV template."""
-        # Override this method in subclasses for custom sample data
-        if hasattr(field_info, "annotation"):
-            annotation = getattr(
-                field_info.annotation, "__origin__", field_info.annotation
-            )
-            if annotation is str:
-                return f"sample_{field_name}"
-            elif annotation is int:
-                return "1"
-            elif annotation is float:
-                return "1.0"
-            elif annotation is bool:
-                return "true"
-        return "sample_value"
+    def get_import_format_guide(self) -> dict[str, str]:
+        """Generate format guide for CSV imports."""
+        if not self.import_schema:
+            return {}
+
+        guide = {
+            "Empty string vs None": "Use '\"\"' for empty string, leave cell empty for None/null"
+        }
+
+        for field_name, field_info in self.import_schema.model_fields.items():
+            annotation = field_info.annotation
+            if annotation is None:
+                continue
+
+            if annotation is bool:
+                guide[field_name] = "Boolean: 'true' or 'false'"
+            elif annotation in (int, float):
+                guide[field_name] = (
+                    f"{annotation.__name__.title()}: numeric value (e.g., 123, 45.67)"
+                )
+            elif annotation is str:
+                guide[field_name] = "String: plain text"
+            elif hasattr(annotation, "__origin__") and annotation.__origin__ is list:
+                guide[field_name] = 'List: JSON array format (e.g., ["item1", "item2"])'
+            elif hasattr(annotation, "__origin__") and annotation.__origin__ is dict:
+                guide[field_name] = (
+                    'Object: JSON object format (e.g., {"key": "value"})'
+                )
+            else:
+                guide[field_name] = f"Type: {str(annotation)}"
+
+        return guide

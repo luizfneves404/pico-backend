@@ -769,9 +769,10 @@ async def compute_embedding(text: str | list[str]) -> list[float] | list[list[fl
     """
     if isinstance(text, list):
         logger.info(
-            "Async computing embeddings for %d texts with model=%s",
+            "Async computing embeddings for %d texts with model=%s. The first 100 characters of the first text are: %s",
             len(text),
             EMBEDDING_MODEL,
+            text[0][:100],
         )
         total: list[list[float]] = []
         for group in group_text_chunks(text):
@@ -789,7 +790,9 @@ async def compute_embedding(text: str | list[str]) -> list[float] | list[list[fl
         return total
     else:
         logger.info(
-            "Async computing embedding for single text with model=%s", EMBEDDING_MODEL
+            "Async computing embedding for single text with model=%s. The first 100 characters of the text are: %s",
+            EMBEDDING_MODEL,
+            text[:100],
         )
         validate_input(text, EMBEDDING_MODEL)
         result = await openai_request(

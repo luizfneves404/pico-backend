@@ -191,22 +191,27 @@ class UserAdmin(CustomModelView, model=User):
             ):
                 data["bot_difficulty"] = 0.5  # Default difficulty
 
-    async def to_orm_model(self, validated_data: UserImportSchema) -> User:
-        return User(
-            name=validated_data.name,
-            username=validated_data.username,
-            email=validated_data.email,
-            phone_number=validated_data.phone_number,
-            hashed_password=user_service.get_password_hash(
-                validated_data.password.get_secret_value()
-            ),
-            is_superuser=validated_data.is_superuser,
-            is_bot=validated_data.is_bot,
-            bot_difficulty=validated_data.bot_difficulty,
-            signup_source=validated_data.signup_source,
-            current_education_id=validated_data.current_education_id,
-            intended_education_id=validated_data.intended_education_id,
-            referred_by_id=validated_data.referred_by,
-            google_id="",
-            apple_id="",
-        )
+    async def to_orm_model(
+        self, validated_data_list: list[UserImportSchema]
+    ) -> list[User]:
+        return [
+            User(
+                name=validated_data.name,
+                username=validated_data.username,
+                email=validated_data.email,
+                phone_number=validated_data.phone_number,
+                hashed_password=user_service.get_password_hash(
+                    validated_data.password.get_secret_value()
+                ),
+                is_superuser=validated_data.is_superuser,
+                is_bot=validated_data.is_bot,
+                bot_difficulty=validated_data.bot_difficulty,
+                signup_source=validated_data.signup_source,
+                current_education_id=validated_data.current_education_id,
+                intended_education_id=validated_data.intended_education_id,
+                referred_by_id=validated_data.referred_by,
+                google_id="",
+                apple_id="",
+            )
+            for validated_data in validated_data_list
+        ]

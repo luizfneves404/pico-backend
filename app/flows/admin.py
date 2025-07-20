@@ -2,13 +2,19 @@ import json
 from typing import Any, ClassVar, Sequence, Union
 
 from fastapi import Request
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
+from sqladmin import action
 from sqladmin.fields import JSONField
 from sqlalchemy import Select, select
 from sqlalchemy.orm import selectinload
 from wtforms import Field, widgets
 from wtforms.validators import Optional
 
-from app.flows.db_types import validate_content_block_list
+from app.flows.db_types import (
+    ContentBlock,
+    validate_content_block_list,
+)
 from app.flows.models import (
     Campaign,
     Choice,
@@ -21,9 +27,13 @@ from app.flows.models import (
     FlowUserFeed,
     OfficialQuestionSource,
     Question,
+    QuestionAnswerType,
     QuestionArea,
+    QuestionDifficulty,
+    QuestionSourceType,
 )
 from app.shared.admin import MODEL_ATTR, CustomModelView
+from app.shared.openai_utils import compute_embedding
 
 
 class ContentBlocksField(JSONField):
@@ -270,10 +280,27 @@ class FlowElementAdmin(CustomModelView, model=FlowElement):
     ]
 
 
+class QuestionImportSchema(BaseModel):
+    content_blocks: list[ContentBlock]
+    answer_content_blocks: list[ContentBlock] = []
+    major_tags: list[str] = []
+    minor_tags: list[str] = []
+    difficulty: QuestionDifficulty
+    source_type: QuestionSourceType = QuestionSourceType.OFFICIAL
+    answer_type: QuestionAnswerType
+    is_active: bool = True
+    is_quantitative: bool
+    official_source_id: int | None
+    source_user_id: int | None = None
+    parameter_a: float | None = None
+    parameter_b: float | None = None
+    parameter_c: float | None = None
+
+
 class QuestionAdmin(CustomModelView, model=Question):
     icon = "fa-solid fa-question-circle"
 
-    column_list = [
+    column_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
         Question.id,
         Question.difficulty,
         Question.answer_type,
@@ -282,21 +309,23 @@ class QuestionAdmin(CustomModelView, model=Question):
         Question.source_type,
         Question.major_tags,
         Question.minor_tags,
+        "has_embedding",
         Question.created_at,
     ]
     column_searchable_list = [
         Question.major_tags,
         Question.minor_tags,
     ]
-    column_sortable_list = [
+    column_sortable_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
         Question.id,
         Question.created_at,
         Question.is_quantitative,
         Question.difficulty,
         Question.source_type,
         Question.is_active,
+        "has_embedding",
     ]
-    column_details_list = [
+    column_details_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
         Question.id,
         Question.content_blocks,
         Question.is_active,
@@ -322,6 +351,7 @@ class QuestionAdmin(CustomModelView, model=Question):
         Question.answer_type: "Answer Type",
         Question.official_source: "Official Source",
         Question.source_user: "Source User",
+        "has_embedding": "Has Embedding?",
     }
 
     form_excluded_columns = [
@@ -346,6 +376,153 @@ class QuestionAdmin(CustomModelView, model=Question):
             "rows": 30,
         },
     }
+
+    can_import = True
+
+    import_schema = QuestionImportSchema
+
+    import_template_data = {
+        "content_blocks": [
+            {
+                "block_type": "text",
+                "content": [
+                    {
+                        "text": "Digite o texto da pergunta aqui",
+                        "bold": False,
+                        "italic": False,
+                        "underline": False,
+                        "strikethrough": False,
+                    }
+                ],
+                "style": "paragraph",
+            },
+            {
+                "block_type": "image",
+                "file_url": "https://via.placeholder.com/150",
+                "alt": "texto alternativo para a imagem",
+            },
+        ],
+        "answer_content_blocks": [
+            {
+                "block_type": "text",
+                "content": [
+                    {
+                        "text": "Digite o texto do gabarito aqui",
+                        "bold": False,
+                        "italic": False,
+                        "underline": False,
+                        "strikethrough": False,
+                    }
+                ],
+                "style": "paragraph",
+            },
+            {
+                "block_type": "image",
+                "file_url": "https://via.placeholder.com/150",
+                "alt": "texto alternativo para a imagem",
+            },
+        ],
+        "difficulty": QuestionDifficulty.MEDIUM,
+        "source_type": QuestionSourceType.OFFICIAL,
+        "answer_type": QuestionAnswerType.MULTIPLE_CHOICE,
+        "is_active": True,
+        "is_quantitative": False,
+        "major_tags": ["matemática", "álgebra", "geometria"],
+        "minor_tags": ["básico", "intermediário", "avançado"],
+        "official_source_id": 1,
+        "source_user_id": None,
+        "parameter_a": None,
+        "parameter_b": None,
+        "parameter_c": None,
+    }
+
+    @action(
+        name="compute_embeddings",
+        label="Computar embeddings",
+        confirmation_message="Tem certeza que quer computar embeddings para ?",
+        add_in_detail=False,
+        add_in_list=True,
+    )
+    async def compute_question_embeddings(self, request: Request) -> RedirectResponse:
+        """Compute embeddings for all questions in the list."""
+        pks = request.query_params.get("pks", "").split(",")
+        if not pks:
+            referer = request.headers.get("Referer")
+            return RedirectResponse(
+                referer or request.url_for("admin:list", identity=self.identity)
+            )
+
+        question_ids = [int(pk) for pk in pks if pk]
+
+        # Fetch questions with choices
+        stmt = (
+            select(Question)
+            .options(selectinload(Question.choices))
+            .where(Question.id.in_(question_ids))
+        )
+        questions: list[Question] = await self._run_query(stmt)
+
+        if not questions:
+            referer = request.headers.get("Referer")
+            return RedirectResponse(
+                referer or request.url_for("admin:list", identity=self.identity)
+            )
+
+        # Build texts for embedding
+        texts_for_embedding: list[str] = []
+        for question in questions:
+            text_content = "\n".join(
+                content.text
+                for block in question.content_blocks
+                if block.block_type == "text"
+                for content in block.content
+            )
+            choices_text = "\n".join(choice.text for choice in question.choices)
+            texts_for_embedding.append(f"{text_content}\n\n{choices_text}")
+
+        # Compute embeddings
+        embeddings = await compute_embedding(texts_for_embedding)
+
+        # Update questions with embeddings
+        async with (
+            self.session_maker(expire_on_commit=False) as session,
+            session.begin(),
+        ):
+            for question, embedding in zip(questions, embeddings):
+                # Merge the question into the session and update embedding
+                merged_question = await session.merge(question)
+                merged_question.embedding = embedding
+
+        # Redirect back
+        referer = request.headers.get("Referer")
+        return RedirectResponse(
+            referer or request.url_for("admin:list", identity=self.identity)
+        )
+
+    async def to_orm_model(
+        self, validated_data_list: list[QuestionImportSchema]
+    ) -> list[Question]:
+        """Convert Pydantic model to ORM model."""
+        return [
+            Question(
+                difficulty=validated_data.difficulty,
+                source_type=validated_data.source_type,
+                answer_type=validated_data.answer_type,
+                major_tags=validated_data.major_tags,
+                minor_tags=validated_data.minor_tags,
+                content_blocks=validated_data.content_blocks,
+                answer_content_blocks=validated_data.answer_content_blocks,
+                is_active=validated_data.is_active,
+                is_quantitative=validated_data.is_quantitative,
+                parameter_a=validated_data.parameter_a,
+                parameter_b=validated_data.parameter_b,
+                parameter_c=validated_data.parameter_c,
+                embedding=None,
+                official_source_id=validated_data.official_source_id,
+                source_user_id=validated_data.source_user_id,
+            )
+            for validated_data in validated_data_list
+        ]
 
     def list_query(self, request: Request) -> Select[tuple[Question]]:
         return select(Question).options(
@@ -432,6 +609,13 @@ class QuestionAreaAdmin(CustomModelView, model=QuestionArea):
     }
 
 
+class ExamImportSchema(BaseModel):
+    name: str
+    country_id: int
+    education_level_id: int
+    course_id: int | None
+
+
 class ExamAdmin(CustomModelView, model=Exam):
     icon = "fa-solid fa-clipboard-check"
 
@@ -467,6 +651,33 @@ class ExamAdmin(CustomModelView, model=Exam):
         Exam.course,
     ]
 
+    can_import = True
+    import_schema = ExamImportSchema
+    import_template_data = {
+        "name": "Exame Nacional do Ensino Médio",
+        "country_id": 1,
+        "education_level_id": 1,
+        "course_id": 1,
+    }
+
+    async def to_orm_model(
+        self, validated_data_list: list[ExamImportSchema]
+    ) -> list[Exam]:
+        return [
+            Exam(
+                name=validated_data.name,
+                country_id=validated_data.country_id,
+                education_level_id=validated_data.education_level_id,
+                course_id=validated_data.course_id,
+            )
+            for validated_data in validated_data_list
+        ]
+
+
+class OfficialQuestionSourceImportSchema(BaseModel):
+    exam_id: int
+    year: int
+
 
 class OfficialQuestionSourceAdmin(CustomModelView, model=OfficialQuestionSource):
     icon = "fa-solid fa-certificate"
@@ -496,6 +707,23 @@ class OfficialQuestionSourceAdmin(CustomModelView, model=OfficialQuestionSource)
         OfficialQuestionSource.exam,
         OfficialQuestionSource.year,
     ]
+
+    can_import = True
+    import_schema = OfficialQuestionSourceImportSchema
+    import_template_data = {
+        "exam_id": 1,
+        "year": 2024,
+    }
+
+    async def to_orm_model(
+        self, validated_data_list: list[OfficialQuestionSourceImportSchema]
+    ) -> list[OfficialQuestionSource]:
+        return [
+            OfficialQuestionSource(
+                exam_id=validated_data.exam_id, year=validated_data.year
+            )
+            for validated_data in validated_data_list
+        ]
 
 
 class FlowUserFeedAdmin(CustomModelView, model=FlowUserFeed):
@@ -585,6 +813,14 @@ class CampaignAdmin(CustomModelView, model=Campaign):
     ]
 
 
+class ChoiceImportSchema(BaseModel):
+    question_id: int
+    text: str
+    is_correct: bool
+    order: int
+    image_id: int | None
+
+
 class ChoiceAdmin(CustomModelView, model=Choice):
     icon = "fa-solid fa-check-circle"
 
@@ -629,6 +865,30 @@ class ChoiceAdmin(CustomModelView, model=Choice):
         Choice.is_correct,
         Choice.order,
     ]
+
+    can_import = True
+    import_schema = ChoiceImportSchema
+    import_template_data = {
+        "question_id": 1,
+        "text": "Digite o texto da opção aqui",
+        "is_correct": True,
+        "order": 1,
+        "image_id": None,
+    }
+
+    async def to_orm_model(
+        self, validated_data_list: list[ChoiceImportSchema]
+    ) -> list[Choice]:
+        return [
+            Choice(
+                question_id=validated_data.question_id,
+                text=validated_data.text,
+                is_correct=validated_data.is_correct,
+                order=validated_data.order,
+                image_id=validated_data.image_id,
+            )
+            for validated_data in validated_data_list
+        ]
 
 
 class FlowQuestionAdmin(CustomModelView, model=FlowQuestion):
