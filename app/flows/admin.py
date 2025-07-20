@@ -439,7 +439,7 @@ class QuestionAdmin(CustomModelView, model=Question):
     @action(
         name="compute_embeddings",
         label="Computar embeddings",
-        confirmation_message="Tem certeza que quer computar embeddings para ?",
+        confirmation_message="Tem certeza que quer computar embeddings para as perguntas selecionadas?",
         add_in_detail=False,
         add_in_list=True,
     )
