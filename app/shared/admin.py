@@ -1,9 +1,10 @@
+import copy
 import csv
 import io
 import json
 import logging
 import re
-from typing import Any, Callable, ClassVar, TypeVar
+from typing import Any, Callable, ClassVar, TypeVar, cast
 
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
@@ -80,6 +81,8 @@ class AdminWithImport(SQLAdminAdmin):
                 "model_name": model_view.model.__name__,
                 "sample_columns": headers,
                 "max_rows": model_view.import_max_rows,
+                "is_file_upload": model_view.is_file_upload_schema(),
+                "template_data": model_view.import_template_data,
             }
             return await self.templates.TemplateResponse(
                 request, "sqladmin/import.html", context
@@ -114,8 +117,47 @@ class AdminWithImport(SQLAdminAdmin):
     ) -> HTMLResponse:
         """Handle CSV file upload and processing."""
         form = await request.form()
-        file = form.get("csv_file")
         dry_run = form.get("dry_run") == "true"
+
+        if model_view.is_file_upload_schema():
+            # Handle file upload schema
+            result = await self._handle_file_upload_import(form, model_view, dry_run)
+        else:
+            # Handle traditional CSV import
+            result = await self._handle_csv_import(form, model_view, dry_run)
+
+        cleaned_data = copy.deepcopy(result.errors)
+        for error in cleaned_data:
+            for data in error["data"]:
+                for key, value in data.items():
+                    if isinstance(value, UploadFile):
+                        data[key] = f"UploadFile(filename='{value.filename}')"
+                    elif isinstance(value, list):
+                        data[key] = [
+                            f"UploadFile(filename='{item.filename}')"
+                            if isinstance(item, UploadFile)
+                            else item
+                            for item in cast(list[Any], value)
+                        ]
+
+        result.errors = cleaned_data
+
+        context = {
+            "model_view": model_view,
+            "model_name": model_view.model.__name__,
+            "result": result,
+            "dry_run": dry_run,
+        }
+
+        return await self.templates.TemplateResponse(
+            request, "sqladmin/import_result.html", context
+        )
+
+    async def _handle_csv_import(
+        self, form: Any, model_view: "CustomModelView", dry_run: bool
+    ) -> ImportResult:
+        """Handle traditional CSV import."""
+        file = form.get("csv_file")
 
         if not file or not isinstance(file, UploadFile):
             raise HTTPException(status_code=400, detail="No file uploaded")
@@ -139,18 +181,77 @@ class AdminWithImport(SQLAdminAdmin):
                 status_code=400, detail=f"Error parsing CSV file: {str(e)}"
             )
 
-        result = await model_view.import_data(rows, dry_run=dry_run)
+        return await model_view.import_data(rows, dry_run=dry_run)
 
-        context = {
-            "model_view": model_view,
-            "model_name": model_view.model.__name__,
-            "result": result,
-            "dry_run": dry_run,
-        }
+    async def _handle_file_upload_import(
+        self, form: Any, model_view: "CustomModelView", dry_run: bool
+    ) -> "ImportResult":
+        """Handle file upload import (zip files, direct uploads, etc.)."""
+        # Build form data matching the schema
+        form_data: dict[str, Any] = {}
 
-        return await self.templates.TemplateResponse(
-            request, "sqladmin/import_result.html", context
-        )
+        if not model_view.import_schema:
+            raise HTTPException(status_code=500, detail="No import schema configured")
+
+        import_schema = model_view.import_schema  # Type narrowing
+        for field_name, field_info in import_schema.model_fields.items():
+            annotation_str = str(field_info.annotation)
+
+            if "UploadFile" in annotation_str and "list" not in annotation_str:
+                # Handle single file upload
+                file_value = form.get(field_name)
+                if isinstance(file_value, UploadFile) and file_value.filename:
+                    form_data[field_name] = file_value
+                else:
+                    form_data[field_name] = None
+
+            elif "UploadFile" in annotation_str and "list" in annotation_str:
+                # Handle multiple file uploads
+                file_values = form.getlist(field_name)
+                upload_files = [
+                    f for f in file_values if isinstance(f, UploadFile) and f.filename
+                ]
+                # Assigning an empty list is often better for type-hinted list fields
+                form_data[field_name] = upload_files
+
+            else:
+                # Handle regular form fields (text, etc.)
+                form_data[field_name] = form.get(field_name)
+
+                # Validate and process using the schema
+        try:
+            validated_data = import_schema.model_validate(form_data)
+            result = await model_view.import_file_data(
+                [validated_data], dry_run=dry_run
+            )
+            return result
+        except ValidationError as e:
+            # Convert validation errors to ImportResult format
+            result = ImportResult(
+                total_rows=1,
+                successful_rows=0,
+                failed_rows=1,
+                errors=[],
+            )
+            for error in e.errors():
+                error_field_name = str(error["loc"][0]) if error["loc"] else "unknown"
+                # Get field info for error reporting
+                error_field_info = import_schema.model_fields.get(error_field_name)
+                expected_type = (
+                    str(error_field_info.annotation) if error_field_info else "unknown"
+                )
+
+                result.errors.append(
+                    {
+                        "row": 1,
+                        "field": error_field_name,
+                        "message": error["msg"],
+                        "input_value": form_data.get(error_field_name, "N/A"),
+                        "expected_type": expected_type,
+                        "data": form_data,
+                    }
+                )
+            return result
 
 
 class LocationField(StringField):
@@ -310,6 +411,89 @@ class CustomModelView(ModelView):
     async def to_orm_model(self, validated_data_list: list[Any]) -> list[Any]:
         """Convert list of Pydantic models to list of ORM models."""
         return [self.model(**data.model_dump()) for data in validated_data_list]
+
+    def is_file_upload_schema(self) -> bool:
+        """Check if the import schema contains UploadFile fields."""
+        if not self.import_schema:
+            return False
+
+        for field_info in self.import_schema.model_fields.values():
+            annotation = field_info.annotation
+            if annotation is None:
+                continue
+
+            # Check for UploadFile type (direct or in Union/Optional)
+            annotation_str = str(annotation)
+            if "UploadFile" in annotation_str or "fastapi.UploadFile" in annotation_str:
+                return True
+
+            # Check for list of UploadFile
+            if hasattr(annotation, "__origin__") and annotation.__origin__ is list:
+                args = getattr(annotation, "__args__", ())
+                if args and "UploadFile" in str(args[0]):
+                    return True
+
+        return False
+
+    async def import_file_data(
+        self, validated_data_list: list[Any], dry_run: bool = False
+    ) -> ImportResult:
+        """Import file data using validated schema objects."""
+        result = ImportResult(
+            total_rows=len(validated_data_list),
+            successful_rows=0,
+            failed_rows=0,
+            errors=[],
+        )
+
+        if not dry_run:
+            try:
+                orm_instances = await self.to_orm_model(validated_data_list)
+                async with self.session_maker() as session:
+                    session.add_all(orm_instances)
+                    await session.commit()
+                result.successful_rows = len(validated_data_list)
+            except Exception as e:
+                result.failed_rows = len(validated_data_list)
+                result.errors.append(
+                    {
+                        "row": "batch",
+                        "field": "transformation",
+                        "message": f"Batch transformation failed: {str(e)}",
+                        "input_value": "validated_data",
+                        "expected_type": "ORM instances",
+                        "data": [
+                            data.model_dump()
+                            if hasattr(data, "model_dump")
+                            else str(data)
+                            for data in validated_data_list
+                        ],
+                    }
+                )
+        else:
+            # For dry run, just validate that conversion works
+            try:
+                await self.to_orm_model(validated_data_list)
+                result.successful_rows = len(validated_data_list)
+            except Exception as e:
+                result.failed_rows = len(validated_data_list)
+                result.errors.append(
+                    {
+                        "row": "batch",
+                        "field": "validation",
+                        "message": f"Validation failed: {str(e)}",
+                        "input_value": "validated_data",
+                        "expected_type": "ORM instances",
+                        "data": [
+                            data.model_dump()
+                            if hasattr(data, "model_dump")
+                            else str(data)
+                            for data in validated_data_list
+                        ],
+                    }
+                )
+
+        return result
 
     async def import_data(
         self, rows: list[dict[str, Any]], dry_run: bool = False

@@ -16,6 +16,14 @@
       <div class="row mb-4">
         <div class="col-md-8">
           <h4>Import Instructions</h4>
+          {% if is_file_upload %}
+          <ul>
+            <li>Upload files directly or as a ZIP archive with manifest</li>
+            <li>For ZIP uploads, provide a CSV manifest with file mappings</li>
+            <li>Maximum file size: 50MB per file, 100MB for ZIP archives</li>
+            <li>Supported file types depend on your configuration</li>
+          </ul>
+          {% else %}
           <ul>
             <li>Download the CSV template below to ensure proper formatting</li>
             <li>Fill in your data using the template format</li>
@@ -23,8 +31,10 @@
             <li>Use UTF-8 encoding for your CSV file</li>
             <li>Empty cells will be treated as NULL values</li>
           </ul>
+          {% endif %}
         </div>
         <div class="col-md-4">
+          {% if not is_file_upload %}
           <div class="card bg-light">
             <div class="card-body text-center">
               <h5>CSV Template</h5>
@@ -35,9 +45,11 @@
               </a>
             </div>
           </div>
+          {% endif %}
         </div>
       </div>
 
+      {% if not is_file_upload %}
       <div class="row">
         <div class="col-md-8">
           <h4>Expected Columns</h4>
@@ -67,18 +79,66 @@
           </div>
         </div>
       </div>
+      {% endif %}
 
       <hr>
 
       <form method="POST" enctype="multipart/form-data" id="import-form">
-        <div class="row">
-          <div class="col-md-6">
-            <div class="mb-3">
-              <label for="csv_file" class="form-label">Select CSV File</label>
-              <input type="file" class="form-control" id="csv_file" name="csv_file" accept=".csv" required>
-              <div class="form-text">Only CSV files are accepted</div>
+        {% if is_file_upload %}
+          <!-- File Upload Form -->
+          <div class="row">
+            {% for field_name, description in template_data.items() %}
+            <div class="col-md-6">
+              <div class="mb-3">
+                {% set annotation = model_view.import_schema.model_fields[field_name].annotation|string %}
+                {% if "UploadFile" in annotation and "list" not in annotation %}
+                  <label for="{{ field_name }}" class="form-label">{{ field_name|title }}</label>
+                  <input type="file" class="form-control" id="{{ field_name }}" name="{{ field_name }}">
+                  <div class="form-text">{{ description }}</div>
+                {% elif "UploadFile" in annotation and "list" in annotation %}
+                  <label for="{{ field_name }}" class="form-label">{{ field_name|title }}</label>
+                  <input type="file" class="form-control" id="{{ field_name }}" name="{{ field_name }}" multiple>
+                  <div class="form-text">{{ description }}</div>
+                {% else %}
+                  <label for="{{ field_name }}" class="form-label">{{ field_name|title }}</label>
+                  {% if field_name == "csv_manifest" %}
+                    <textarea class="form-control" id="{{ field_name }}" name="{{ field_name }}" rows="5" placeholder="{{ description }}"></textarea>
+                  {% else %}
+                    <input type="text" class="form-control" id="{{ field_name }}" name="{{ field_name }}" placeholder="{{ description }}">
+                  {% endif %}
+                  <div class="form-text">{{ description }}</div>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <!-- CSV Upload Form -->
+          <div class="row">
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="csv_file" class="form-label">Select CSV File</label>
+                <input type="file" class="form-control" id="csv_file" name="csv_file" accept=".csv" required>
+                <div class="form-text">Only CSV files are accepted</div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="dry_run" name="dry_run" value="true" checked>
+                  <label class="form-check-label" for="dry_run">
+                    Preview Only (Dry Run)
+                  </label>
+                  <div class="form-text">Check this to validate your data without importing it</div>
+                </div>
+              </div>
             </div>
           </div>
+        {% endif %}
+
+        <!-- Dry Run checkbox for file uploads -->
+        {% if is_file_upload %}
+        <div class="row">
           <div class="col-md-6">
             <div class="mb-3">
               <div class="form-check">
@@ -91,6 +151,7 @@
             </div>
           </div>
         </div>
+        {% endif %}
 
         <div class="mb-3">
           <button type="submit" class="btn btn-primary">
@@ -104,20 +165,39 @@
 
 <script>
 document.getElementById('import-form').addEventListener('submit', function(e) {
-  const fileInput = document.getElementById('csv_file');
-  const file = fileInput.files[0];
-  
-  if (!file) {
-    e.preventDefault();
-    alert('Please select a CSV file');
-    return;
-  }
-  
-  if (!file.name.toLowerCase().endsWith('.csv')) {
-    e.preventDefault();
-    alert('Please select a valid CSV file');
-    return;
-  }
+  {% if is_file_upload %}
+    // File upload validation
+    let hasFiles = false;
+    const fileInputs = e.target.querySelectorAll('input[type="file"]');
+    
+    fileInputs.forEach(function(input) {
+      if (input.files && input.files.length > 0) {
+        hasFiles = true;
+      }
+    });
+    
+    if (!hasFiles) {
+      e.preventDefault();
+      alert('Please select at least one file to upload');
+      return;
+    }
+  {% else %}
+    // CSV validation
+    const fileInput = document.getElementById('csv_file');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+      e.preventDefault();
+      alert('Please select a CSV file');
+      return;
+    }
+    
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      e.preventDefault();
+      alert('Please select a valid CSV file');
+      return;
+    }
+  {% endif %}
   
   // Show loading state
   const submitBtn = e.target.querySelector('button[type="submit"]');
