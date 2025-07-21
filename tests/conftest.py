@@ -3,7 +3,6 @@ import logging
 import logging.config
 from typing import (
     Any,
-    AsyncContextManager,
     AsyncGenerator,
     AsyncIterator,
     Awaitable,
@@ -30,7 +29,7 @@ from alembic.command import upgrade
 from app.arq_worker import make_worker_settings
 from app.config import settings
 from app.countries.models import Country
-from app.database import DatabaseSessionManager, db_manager
+from app.database import DatabaseSessionManager, SessionFactory, db_manager
 from app.deps import get_db_session
 from app.education.models import EducationLevel, LevelStage
 from app.firebase_config import init_firebase
@@ -140,7 +139,7 @@ async def sessionmanager_for_tests(
 @pytest.fixture()
 async def session_factory(
     sessionmanager_for_tests: DatabaseSessionManager,
-) -> AsyncGenerator[Callable[[], AsyncContextManager[AsyncSession]], None]:
+) -> AsyncGenerator[SessionFactory, None]:
     async with sessionmanager_for_tests.session_factory() as factory:
         yield factory
 
@@ -148,7 +147,7 @@ async def session_factory(
 @pytest.fixture()
 async def websocket_session_factory(
     sessionmanager_for_tests: DatabaseSessionManager,
-) -> AsyncGenerator[Callable[[], AsyncContextManager[AsyncSession]], None]:
+) -> AsyncGenerator[SessionFactory, None]:
     """
     Creates a session factory for WebSocket tests with rollback-based isolation.
     Uses NullPool engine to avoid asyncpg event loop issues with WebSockets.
@@ -191,7 +190,7 @@ async def websocket_session_factory(
 
 @pytest.fixture
 async def session(
-    session_factory: Callable[[], AsyncContextManager[AsyncSession]],
+    session_factory: SessionFactory,
 ) -> AsyncIterator[AsyncSession]:
     """Get a new session for each test"""
     async with session_factory() as session:
@@ -200,7 +199,7 @@ async def session(
 
 @pytest.fixture
 async def websocket_session(
-    websocket_session_factory: Callable[[], AsyncContextManager[AsyncSession]],
+    websocket_session_factory: SessionFactory,
 ) -> AsyncIterator[AsyncSession]:
     """Get a new WebSocket-compatible session for each test"""
     async with websocket_session_factory() as session:
@@ -218,7 +217,7 @@ async def redis_for_tests():
 @pytest.fixture()
 async def arq_worker(
     migrated_postgres_template: str,
-    session_factory: Callable[[], AsyncContextManager[AsyncSession]],
+    session_factory: SessionFactory,
 ) -> AsyncGenerator[Worker, None]:
     async with arq_client.arq_redis():
         worker_settings = make_worker_settings(
@@ -235,8 +234,8 @@ async def arq_worker(
 
 @pytest.fixture
 def app(
-    session_factory: Callable[[], AsyncContextManager[AsyncSession]],
-    websocket_session_factory: Callable[[], AsyncContextManager[AsyncSession]],
+    session_factory: SessionFactory,
+    websocket_session_factory: SessionFactory,
     arq_worker: Worker,
     redis_for_tests: redis.Redis,
     firebase_for_tests: None,
@@ -283,7 +282,7 @@ async def user(session: AsyncSession) -> User:
 
 @pytest.fixture
 async def websocket_user(
-    websocket_session_factory: Callable[[], AsyncContextManager[AsyncSession]],
+    websocket_session_factory: SessionFactory,
 ) -> AsyncGenerator[User, None]:
     """
     Creates a user using the websocket session factory with rollback-based isolation.

@@ -51,33 +51,49 @@
       <div class="d-flex justify-content-between">
         <div class="dropdown col-4">
           <button {% if not model_view.can_delete and not model_view._custom_actions_in_list %} disabled {% endif %}
-            class="btn btn-light dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown"
-            aria-haspopup="true" aria-expanded="false">
+            class="btn btn-light dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown">
             Actions
           </button>
           {% if model_view.can_delete or model_view._custom_actions_in_list %}
           <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+            {# Default delete action #}
             {% if model_view.can_delete %}
             <a class="dropdown-item" id="action-delete" href="#" data-name="{{ model_view.name }}"
               data-url="{{ url_for('admin:delete', identity=model_view.identity) }}" data-bs-toggle="modal"
               data-bs-target="#modal-delete">Delete selected items</a>
             {% endif %}
+      
+            {# NEW: Loop through actions to create "Select All" buttons #}
+            {% if model_view._custom_actions_in_list %}
+            <li><hr class="dropdown-divider"></li>
+            <li><h6 class="dropdown-header">Apply to ALL items</h6></li>
             {% for custom_action, label in model_view._custom_actions_in_list.items() %}
-            {% if custom_action in model_view._custom_actions_confirmation %}
-            <a class="dropdown-item" id="action-customconfirm-{{ custom_action }}" href="#" data-bs-toggle="modal"
-              data-bs-target="#modal-confirmation-{{ custom_action }}">
-              {{ label }}
-            </a>
-            {% else %}
-            <a class="dropdown-item" id="action-custom-{{ custom_action }}" href="#"
-              data-url="{{ model_view._url_for_action(request, custom_action) }}">
-              {{ label }}
-            </a>
+              <a class="dropdown-item" id="action-select-all-post" href="#"
+                data-url="{{ model_view._url_for_action(request, custom_action) }}"
+                data-confirmation="{{ model_view._custom_actions_confirmation.get(custom_action) }}">
+                {{ label }} (All)
+              </a>
+            {% endfor %}
+            <li><hr class="dropdown-divider"></li>
+            <li><h6 class="dropdown-header">Apply to selected items</h6></li>
             {% endif %}
+      
+            {% for custom_action, label in model_view._custom_actions_in_list.items() %}
+              {% if custom_action in model_view._custom_actions_confirmation %}
+              <a class="dropdown-item" href="#" data-bs-toggle="modal"
+                data-bs-target="#modal-confirmation-{{ custom_action }}">
+                {{ label }}
+              </a>
+              {% else %}
+              <a class="dropdown-item" id="action-custom-{{ custom_action }}" href="#"
+                data-url="{{ model_view._url_for_action(request, custom_action) }}">
+                {{ label }}
+              </a>
+              {% endif %}
             {% endfor %}
           </div>
           {% endif %}
-        </div>
+      </div>
         {% if model_view.column_searchable_list %}
         <div class="col-md-4 text-muted">
           <div class="input-group">
@@ -228,4 +244,10 @@
   {% endif %}
   {% endfor %}
 </div>
+{% endblock %}
+
+{# IMPORTANT: Add your custom script AFTER the parent scripts #}
+{% block tail %}
+  {{ super() }} {# This will include any scripts from parent templates, if necessary #}
+  <script src="{{ url_for('static', path='js/custom_admin.js') }}"></script>
 {% endblock %}

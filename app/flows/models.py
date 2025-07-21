@@ -458,9 +458,14 @@ class Question(Base, kw_only=True):
     def correct_choice_id(self) -> int | None:
         return next(choice.id for choice in self.choices if choice.is_correct)
 
-    @property
+    @hybrid_property
     def has_embedding(self) -> bool:
         return self.embedding is not None
+
+    @has_embedding.inplace.expression
+    @classmethod
+    def _has_embedding_expression(cls):
+        return cls.embedding.isnot(None)
 
     def __str__(self) -> str:
         question_insp = inspect(self)

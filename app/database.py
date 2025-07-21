@@ -25,6 +25,12 @@ import app.ws.models  # noqa: F401
 logger = logging.getLogger(__name__)
 
 
+CONNECTION_POOL_SIZE = 5
+CONNECTION_POOL_MAX_OVERFLOW = 30
+
+type SessionFactory = Callable[[], AsyncContextManager[AsyncSession]]
+
+
 class DatabaseSessionManager:
     def __init__(self) -> None:
         self._engine: AsyncEngine | None = None
@@ -35,6 +41,8 @@ class DatabaseSessionManager:
             url=db_url,
             pool_pre_ping=True,
             isolation_level="READ COMMITTED",
+            pool_size=CONNECTION_POOL_SIZE,
+            max_overflow=CONNECTION_POOL_MAX_OVERFLOW,
         )
         self._sessionmaker = async_sessionmaker(
             bind=self._engine,
@@ -109,7 +117,7 @@ class DatabaseSessionManager:
     @contextlib.asynccontextmanager
     async def session_factory(
         self,
-    ) -> AsyncIterator[Callable[[], AsyncContextManager[AsyncSession]]]:
+    ) -> AsyncIterator[SessionFactory]:
         """
         Creates a factory function that yields new sessions all bound to the same connection/transaction.
         The transaction will be rolled back when the context is exited.

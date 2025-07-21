@@ -5,7 +5,7 @@ from tests.db_utils import alembic_config_from_url, tmp_database
 
 
 @pytest.fixture()
-async def postgres(pg_url):
+async def postgres(pg_url: str):
     """
     Creates empty temporary database.
     """
@@ -14,7 +14,7 @@ async def postgres(pg_url):
 
 
 @pytest.fixture()
-async def postgres_engine(postgres):
+async def postgres_engine(postgres: str):
     """
     SQLAlchemy engine, bound to temporary database.
     """
@@ -29,7 +29,7 @@ async def postgres_engine(postgres):
 
 
 @pytest.fixture()
-def alembic_config(postgres):
+def alembic_config(postgres: str):
     """
     Alembic configuration object, bound to temporary database.
     """

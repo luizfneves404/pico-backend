@@ -3,23 +3,25 @@ Shares dependencies with the main app in order to reduce complexity of dependenc
 Otherwise i would have to take a lot of care not to import certain files, etc.
 """
 
+import asyncio
 import logging.config
 import sys
-from typing import Any, AsyncContextManager, Callable, Literal, Sequence
+from typing import Any, Literal, Sequence
 
+import uvloop
 from arq import run_worker
 from arq.connections import RedisSettings
-from arq.cron import CronJob
+from arq.cron import CronJob, cron
 from arq.typing import SecondsTimedelta, StartupShutdown, WorkerCoroutine
 from arq.worker import Function, check_health
-from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.arq_client as arq_client
 import app.redis_client as redis_client
 from app.config import settings
-from app.database import db_manager
+from app.database import SessionFactory, db_manager
 from app.fcm.fcm_service import task_send_notifications
 from app.firebase_config import init_firebase
+from app.flows.admin import task_compute_question_embeddings
 from app.flows.question_service import task_generate_transcriptions
 from app.flows.tasks import task_mark_question_timed_out
 from app.logging_config import get_logging_config
@@ -36,9 +38,11 @@ def make_worker_settings(
     database_url: str,
     burst_mode: bool,
     log_configured: bool,
-    session_factory: Callable[[], AsyncContextManager[AsyncSession]] | None,
+    session_factory: SessionFactory | None,
 ) -> type:
     async def startup(ctx: dict[str, Any]):
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+
         if not log_configured:
             logging.config.dictConfig(get_logging_config())
 
@@ -59,6 +63,7 @@ def make_worker_settings(
             task_send_email,
             task_send_notifications,
             task_generate_transcriptions,
+            task_compute_question_embeddings,
         ]
         redis_settings: RedisSettings = RedisSettings.from_dsn(redis_url)
         on_startup: StartupShutdown | None = startup

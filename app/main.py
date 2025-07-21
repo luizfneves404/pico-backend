@@ -11,6 +11,7 @@ from fastapi.openapi.docs import (
 )
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.routing import Route
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -202,6 +203,9 @@ async def aasa():
     return JSONResponse(content=APPLE_APP_SITE_ASSOCIATION_JSON)
 
 
+fastapi_app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
 if __name__ == "__main__":
     uvicorn.run(
         "app.main:fastapi_app",
@@ -209,4 +213,5 @@ if __name__ == "__main__":
         port=settings.uvicorn_port,
         reload=settings.uvicorn_reload,
         loop="uvloop",
+        http="httptools",
     )

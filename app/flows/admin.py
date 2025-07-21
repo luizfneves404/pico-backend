@@ -1,7 +1,7 @@
 import json
 from typing import Any, ClassVar, Sequence, Union
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqladmin import action
@@ -11,6 +11,8 @@ from sqlalchemy.orm import selectinload
 from wtforms import Field, widgets
 from wtforms.validators import Optional
 
+from app.arq_client import enqueue_job
+from app.database import get_db_session_for_worker
 from app.flows.db_types import (
     ContentBlock,
     validate_content_block_list,
@@ -445,53 +447,29 @@ class QuestionAdmin(CustomModelView, model=Question):
     )
     async def compute_question_embeddings(self, request: Request) -> RedirectResponse:
         """Compute embeddings for all questions in the list."""
-        pks = request.query_params.get("pks", "").split(",")
-        if not pks:
-            referer = request.headers.get("Referer")
-            return RedirectResponse(
-                referer or request.url_for("admin:list", identity=self.identity)
-            )
+        pks_str = request.query_params.get("pks", "")
 
-        question_ids = [int(pk) for pk in pks if pk]
+        # Build the base statement
+        if pks_str == "__all__":
+            pks = None
+        else:
+            try:
+                pks = [int(pk) for pk in pks_str.split(",")]
+                if not pks:
+                    # Redirect if no pks are provided
+                    referer = request.headers.get("Referer")
+                    return RedirectResponse(
+                        referer or request.url_for("admin:list", identity=self.identity)
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid primary key format."
+                )
 
-        # Fetch questions with choices
-        stmt = (
-            select(Question)
-            .options(selectinload(Question.choices))
-            .where(Question.id.in_(question_ids))
+        await enqueue_job(
+            "task_compute_question_embeddings",
+            question_ids=pks,
         )
-        questions: list[Question] = await self._run_query(stmt)
-
-        if not questions:
-            referer = request.headers.get("Referer")
-            return RedirectResponse(
-                referer or request.url_for("admin:list", identity=self.identity)
-            )
-
-        # Build texts for embedding
-        texts_for_embedding: list[str] = []
-        for question in questions:
-            text_content = "\n".join(
-                content.text
-                for block in question.content_blocks
-                if block.block_type == "text"
-                for content in block.content
-            )
-            choices_text = "\n".join(choice.text for choice in question.choices)
-            texts_for_embedding.append(f"{text_content}\n\n{choices_text}")
-
-        # Compute embeddings
-        embeddings = await compute_embedding(texts_for_embedding)
-
-        # Update questions with embeddings
-        async with (
-            self.session_maker(expire_on_commit=False) as session,
-            session.begin(),
-        ):
-            for question, embedding in zip(questions, embeddings):
-                # Merge the question into the session and update embedding
-                merged_question = await session.merge(question)
-                merged_question.embedding = embedding
 
         # Redirect back
         referer = request.headers.get("Referer")
@@ -1008,3 +986,46 @@ class FlowQuestionUserAdmin(CustomModelView, model=FlowQuestionUser):
         FlowQuestionUser.feedback,
         FlowQuestionUser.grade,
     ]
+
+
+async def task_compute_question_embeddings(
+    ctx: dict[str, Any],
+    question_ids: list[int] | None,
+) -> None:
+    """
+    Asynchronously computes and returns embeddings for text input.
+    question_ids: list[int] | None
+    None means all questions
+    """
+    async with get_db_session_for_worker(ctx) as session:
+        if question_ids is None:
+            stmt = select(Question).options(selectinload(Question.choices))
+        else:
+            stmt = (
+                select(Question)
+                .options(selectinload(Question.choices))
+                .where(Question.id.in_(question_ids))
+            )
+        # 1. Execute the query
+        result = await session.execute(stmt)
+        questions: list[Question] = list(result.scalars())
+
+        # 2. Build texts for embedding (accessing .choices will NOT trigger new queries)
+        texts_for_embedding: list[str] = []
+        for question in questions:
+            text_content = "\n".join(
+                content.text
+                for block in question.content_blocks
+                if block.block_type == "text"
+                for content in block.content
+            )
+            # This now uses the pre-loaded choices
+            choices_text = "\n".join(choice.text for choice in question.choices)
+            texts_for_embedding.append(f"{text_content}\n\n{choices_text}")
+
+        # 3. Compute embeddings (this happens outside the DB)
+        embeddings = await compute_embedding(texts_for_embedding)
+
+        # 4. Update questions with embeddings (no merge needed)
+        for question, embedding in zip(questions, embeddings):
+            question.embedding = embedding
