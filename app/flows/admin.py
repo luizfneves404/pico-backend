@@ -96,6 +96,7 @@ class FlowAdmin(CustomModelView, model=Flow):
         Flow.source_type,
         Flow.max_num_questions,
         Flow.is_ready,
+        Flow.has_quantitative_questions,
         Flow.created_at,
     ]
     column_searchable_list = [
@@ -132,6 +133,7 @@ class FlowAdmin(CustomModelView, model=Flow):
         "num_total_questions",
         "num_total_elements",
         "num_total_answers",
+        Flow.has_quantitative_questions,
         Flow.created_at,
     ]
 
@@ -158,6 +160,7 @@ class FlowAdmin(CustomModelView, model=Flow):
         Flow.major_tags,
         Flow.minor_tags,
         Flow.is_ready,
+        Flow.has_quantitative_questions,
     ]
 
     form_args = {

@@ -918,7 +918,15 @@ encoding_cache: dict[str, tiktoken.Encoding] = {}
 
 def count_tokens(text: str, model: str) -> int:
     if model not in encoding_cache:
-        encoding_cache[model] = tiktoken.encoding_for_model(model)
+        try:
+            encoding_cache[model] = tiktoken.encoding_for_model(model)
+        except KeyError:
+            # Fallback for models not recognized by tiktoken
+            # Use cl100k_base encoding which is used by GPT-4 models
+            logger.warning(
+                f"Model '{model}' not recognized by tiktoken, using 'cl100k_base' encoding as fallback"
+            )
+            encoding_cache[model] = tiktoken.get_encoding("cl100k_base")
     encoding = encoding_cache[model]
     return len(encoding.encode(text))
 
@@ -930,18 +938,20 @@ def count_tokens(text: str, model: str) -> int:
 
 async def generate_image(
     prompt: str,
-    model: str = "dall-e-2",
-    size: str = "1024x1024",
-    quality: str = "standard",
-    format: str = "url",
+    model: str = "gpt-image-1",
+    size: Literal["1024x1024", "1536x1024", "1024x1536"] = "1024x1024",
+    quality: Literal["low", "medium", "high", "auto"] = "low",
+    format: Literal["png", "jpeg", "webp"] = "jpeg",
+    timeout: int = 90,
 ) -> str:
     result = await async_client.images.generate(
         model=model,  # type: ignore
         prompt=prompt,
-        size=size,  # type: ignore
-        quality=quality,  # type: ignore
-        response_format=format,  # type: ignore
+        size=size,
+        quality=quality,
+        output_format=format,
         n=1,
+        timeout=timeout,
     )
 
     # Return appropriate format based on request
@@ -949,13 +959,9 @@ async def generate_image(
         raise ValueError("No data returned from OpenAI image generation")
     if not result.data[0]:
         raise ValueError("No data returned from OpenAI image generation")
-    if format == "url":
-        url = result.data[0].url
-        if url is None:
-            raise ValueError("No URL returned from OpenAI image generation")
-        return url
-    else:  # b64_json
-        b64_data = result.data[0].b64_json
-        if b64_data is None:
-            raise ValueError("No base64 data returned from OpenAI image generation")
-        return b64_data
+
+    # gpt-image-1 returns base64 data
+    b64_data = result.data[0].b64_json
+    if b64_data is None:
+        raise ValueError("No base64 data returned from OpenAI image generation")
+    return b64_data

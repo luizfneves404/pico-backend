@@ -327,6 +327,12 @@ async def create_flow_with_optional_files(
             flow.id,
             user.id,
         )
+    else:
+        await enqueue_job(
+            "task_generate_flow_cover_image",
+            flow.id,
+            flow.title,
+        )
 
     return flow
 

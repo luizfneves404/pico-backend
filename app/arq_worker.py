@@ -31,6 +31,8 @@ from app.flows.question_utils import (
     task_categorize_major_tags,
     task_generate_question_answers,
     task_analyze_question_quantitativeness,
+    task_consolidate_flow_tags,
+    task_generate_and_consolidate_tags,
 )
 from app.flows.tasks import task_mark_question_timed_out
 from app.logging_config import get_logging_config
@@ -78,6 +80,8 @@ def make_worker_settings(
             task_generate_question_answers,
             task_analyze_question_quantitativeness,
             task_generate_flow_cover_image,
+            task_consolidate_flow_tags,
+            task_generate_and_consolidate_tags,
         ]
         redis_settings: RedisSettings = RedisSettings.from_dsn(redis_url)
         on_startup: StartupShutdown | None = startup

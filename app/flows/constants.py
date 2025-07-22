@@ -675,6 +675,11 @@ FORMATO DE RESPOSTA OBRIGATÓRIO:
 """
 
 
+PROMPT_COVER_GENERATION = """
+Crie uma imagem divertida para ser capa de um quiz sobre: {flow_title}
+"""
+
+
 class QuestionInstance(BaseModel):
     text: str
     choices: list[str]

@@ -14,8 +14,9 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 
 from app.database import get_db_session_for_worker
-from app.flows.models import Question, ENEM_AREAS
+from app.flows.models import Question, ENEM_AREAS, Flow, QuestionSourceType
 from app.files.models import File
+from collections import Counter
 from app.flows.db_types import (
     ContentBlock,
     RichText,
@@ -112,7 +113,7 @@ Com base nessas informações, você deve elaborar uma explicação concisa de p
 
 
 async def categorize_minor_tags(
-    db_session: AsyncSession, question_id: int, temperature: float = 0.2
+    db_session: AsyncSession, question_id: int, temperature: float = 0.1
 ) -> MinorTagsCategorization:
     """
     Generate minor tags for a question using TAGS approach with gpt-4.1-mini.
@@ -620,22 +621,25 @@ async def task_categorize_minor_tags(
 ) -> None:
     """
     Task to categorize questions and save minor tags in Question.minor_tags field.
+    When question_ids is None (admin case), only process active questions.
+    When question_ids is provided (AI questions case), process regardless of is_active status.
     """
     async with get_db_session_for_worker(ctx) as session:
         try:
             # Get questions to categorize
             if question_ids is None:
+                # Admin case: only process active questions
                 stmt = (
                     select(Question)
                     .options(selectinload(Question.choices))
                     .where(Question.is_active == True)
                 )
             else:
+                # Specific questions case (AI): process regardless of is_active status
                 stmt = (
                     select(Question)
                     .options(selectinload(Question.choices))
                     .where(Question.id.in_(question_ids))
-                    .where(Question.is_active == True)
                 )
 
             result = await session.execute(stmt)
@@ -677,22 +681,25 @@ async def task_categorize_major_tags(
 ) -> None:
     """
     Task to classify question subjects and save major tags in Question.major_tags field.
+    When question_ids is None (admin case), only process active questions.
+    When question_ids is provided (AI questions case), process regardless of is_active status.
     """
     async with get_db_session_for_worker(ctx) as session:
         try:
             # Get questions to categorize
             if question_ids is None:
+                # Admin case: only process active questions
                 stmt = (
                     select(Question)
                     .options(selectinload(Question.choices))
                     .where(Question.is_active == True)
                 )
             else:
+                # Specific questions case (AI): process regardless of is_active status
                 stmt = (
                     select(Question)
                     .options(selectinload(Question.choices))
                     .where(Question.id.in_(question_ids))
-                    .where(Question.is_active == True)
                 )
 
             result = await session.execute(stmt)
@@ -736,22 +743,25 @@ async def task_generate_question_answers(
 ) -> None:
     """
     Task to generate answers for questions and save in Question.answer_content_blocks field.
+    When question_ids is None (admin case), only process active questions.
+    When question_ids is provided (AI questions case), process regardless of is_active status.
     """
     async with get_db_session_for_worker(ctx) as session:
         try:
             # Get questions to generate answers for
             if question_ids is None:
+                # Admin case: only process active questions
                 stmt = (
                     select(Question)
                     .options(selectinload(Question.choices))
                     .where(Question.is_active == True)
                 )
             else:
+                # Specific questions case (AI): process regardless of is_active status
                 stmt = (
                     select(Question)
                     .options(selectinload(Question.choices))
                     .where(Question.id.in_(question_ids))
-                    .where(Question.is_active == True)
                 )
 
             result = await session.execute(stmt)
@@ -813,22 +823,25 @@ async def task_analyze_question_quantitativeness(
 ) -> None:
     """
     Task to analyze if questions require paper and save in Question.is_quantitative field.
+    When question_ids is None (admin case), only process active questions.
+    When question_ids is provided (AI questions case), process regardless of is_active status.
     """
     async with get_db_session_for_worker(ctx) as session:
         try:
             # Get questions to analyze
             if question_ids is None:
+                # Admin case: only process active questions
                 stmt = (
                     select(Question)
                     .options(selectinload(Question.choices))
                     .where(Question.is_active == True)
                 )
             else:
+                # Specific questions case (AI): process regardless of is_active status
                 stmt = (
                     select(Question)
                     .options(selectinload(Question.choices))
                     .where(Question.id.in_(question_ids))
-                    .where(Question.is_active == True)
                 )
 
             result = await session.execute(stmt)
@@ -889,6 +902,8 @@ async def task_compute_question_embeddings(
 ) -> None:
     """
     Asynchronously computes and stores embeddings for questions.
+    When question_ids is None (admin case), only process active questions.
+    When question_ids is provided (AI questions case), process regardless of is_active status.
 
     Args:
         ctx: ARQ worker context
@@ -896,17 +911,18 @@ async def task_compute_question_embeddings(
     """
     async with get_db_session_for_worker(ctx) as session:
         if question_ids is None:
+            # Admin case: only process active questions
             stmt = (
                 select(Question)
                 .options(selectinload(Question.choices))
                 .where(Question.is_active == True)
             )
         else:
+            # Specific questions case (AI): process regardless of is_active status
             stmt = (
                 select(Question)
                 .options(selectinload(Question.choices))
                 .where(Question.id.in_(question_ids))
-                .where(Question.is_active == True)
             )
 
         # Execute the query
@@ -947,6 +963,8 @@ async def task_categorize_questions(
 ) -> None:
     """
     Asynchronously categorizes questions using TAGS approach.
+    When question_ids is None (admin case), only process active questions.
+    When question_ids is provided (AI questions case), process regardless of is_active status.
 
     Args:
         ctx: ARQ worker context
@@ -955,17 +973,18 @@ async def task_categorize_questions(
     """
     async with get_db_session_for_worker(ctx) as session:
         if question_ids is None:
+            # Admin case: only process active questions
             stmt = (
                 select(Question)
                 .options(selectinload(Question.choices))
                 .where(Question.is_active == True)
             )
         else:
+            # Specific questions case (AI): process regardless of is_active status
             stmt = (
                 select(Question)
                 .options(selectinload(Question.choices))
                 .where(Question.id.in_(question_ids))
-                .where(Question.is_active == True)
             )
 
         result = await session.execute(stmt)
@@ -1023,3 +1042,136 @@ async def task_categorize_questions(
                 continue
 
         logger.info(f"Categorized {categorized_count} questions")
+
+
+async def task_consolidate_flow_tags(
+    ctx: dict[str, Any],
+    flow_id: int,
+) -> None:
+    """
+    Task to consolidate question tags into flow tags.
+    Collects the most frequent minor tags and the most frequent major tag from questions
+    in the flow and applies them to the flow.
+    """
+    async with get_db_session_for_worker(ctx) as session:
+        try:
+            # Get flow
+            flow = await session.scalar(select(Flow).where(Flow.id == flow_id))
+            if not flow:
+                logger.error(f"Flow {flow_id} not found")
+                return
+
+            # Get all questions in the flow
+            from app.flows.models import FlowQuestion
+
+            stmt = (
+                select(Question)
+                .join(FlowQuestion, Question.id == FlowQuestion.question_id)
+                .where(
+                    FlowQuestion.flow_id == flow_id,
+                    Question.source_type == QuestionSourceType.AI_GENERATED,
+                )
+            )
+
+            result = await session.execute(stmt)
+            questions = list(result.scalars())
+
+            if not questions:
+                logger.info(f"No AI-generated questions found for flow {flow_id}")
+                return
+
+            # Collect all minor tags from questions
+            all_minor_tags: list[str] = []
+            all_major_tags: list[str] = []
+
+            for question in questions:
+                if question.minor_tags:
+                    clean_minor_tags = [
+                        tag.strip().lower()
+                        for tag in question.minor_tags
+                        if tag.strip()
+                    ]
+                    all_minor_tags.extend(clean_minor_tags)
+
+                if question.major_tags:
+                    clean_major_tags = [
+                        tag.strip() for tag in question.major_tags if tag.strip()
+                    ]
+                    all_major_tags.extend(clean_major_tags)
+
+            # Find top minor tags (TOP_TAGS_COUNT from question_service.py)
+            TOP_TAGS_COUNT = 10
+            if all_minor_tags:
+                minor_tag_counter = Counter(all_minor_tags)
+                top_minor_tags = [
+                    tag for tag, count in minor_tag_counter.most_common(TOP_TAGS_COUNT)
+                ]
+                flow.minor_tags = top_minor_tags
+                logger.info(
+                    f"Applied top {TOP_TAGS_COUNT} minor tags to flow {flow_id}: {top_minor_tags}"
+                )
+
+            # Find most frequent major tag (only 1)
+            if all_major_tags:
+                major_tag_counter = Counter(all_major_tags)
+                top_major_tag = major_tag_counter.most_common(1)[0][0]
+                flow.major_tags = [top_major_tag]
+                logger.info(f"Applied major tag to flow {flow_id}: {top_major_tag}")
+
+            # Save changes
+            session.add(flow)
+            await session.commit()
+
+            logger.info(
+                f"Successfully consolidated tags for flow {flow_id} from {len(questions)} questions"
+            )
+
+        except Exception as e:
+            logger.error(f"Error consolidating tags for flow {flow_id}: {str(e)}")
+            raise
+
+
+async def task_generate_and_consolidate_tags(
+    ctx: dict[str, Any],
+    question_ids: list[int],
+    flow_id: int,
+) -> None:
+    """
+    Orchestrator task that ensures proper sequencing of tag generation and consolidation.
+
+    1. First generates minor tags for all questions
+    2. Then generates major tags for all questions
+    3. Finally consolidates the tags into the flow
+
+    This ensures the consolidation only happens after all individual tags are generated.
+    """
+    try:
+        logger.info(
+            f"Starting tag generation orchestrator for {len(question_ids)} questions in flow {flow_id}"
+        )
+
+        # Step 1: Generate minor tags (wait for completion)
+        logger.info(
+            f"Step 1/3: Generating minor tags for {len(question_ids)} questions"
+        )
+        await task_categorize_minor_tags(ctx, question_ids)
+
+        # Step 2: Generate major tags (wait for completion)
+        logger.info(
+            f"Step 2/3: Generating major tags for {len(question_ids)} questions"
+        )
+        await task_categorize_major_tags(ctx, question_ids)
+
+        # Step 3: Consolidate tags into flow (only after steps 1 & 2 complete)
+        logger.info(f"Step 3/3: Consolidating tags for flow {flow_id}")
+        await task_consolidate_flow_tags(ctx, flow_id)
+
+        logger.info(
+            f"Successfully completed tag generation orchestrator for flow {flow_id}"
+        )
+
+    except Exception as e:
+        logger.error(
+            f"Error in tag generation orchestrator for flow {flow_id}: {str(e)}"
+        )
+        raise
