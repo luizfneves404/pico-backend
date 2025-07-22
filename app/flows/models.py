@@ -368,7 +368,7 @@ class QuestionSourceType(StrEnum):
 
 class QuestionDifficulty(StrEnum):
     EASY = "Fácil"
-    MEDIUM = "Médio"
+    MEDIUM = "Média"
     HARD = "Difícil"
 
 
@@ -466,6 +466,37 @@ class Question(Base, kw_only=True):
     @classmethod
     def _has_embedding_expression(cls):
         return cls.embedding.isnot(None)
+
+    @property
+    def question_text(self) -> str:
+        """Extract text content from content_blocks."""
+        question_text_parts: list[str] = []
+        for block in self.content_blocks:
+            if hasattr(block, "block_type") and block.block_type == "text":
+                # Handle TextBlock object
+                if hasattr(block, "content") and block.content:
+                    for rich_text in block.content:
+                        if hasattr(rich_text, "text"):
+                            question_text_parts.append(rich_text.text)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                # Handle dict format
+                question_text_parts.append(block.get("text", ""))
+        return "\n".join(question_text_parts)
+
+    @property
+    def question_text_with_choices_text(self) -> str:
+        """Combine question text from content_blocks with formatted choices."""
+        question_text = self.question_text
+        choices_text = self.choices_text
+
+        if question_text and choices_text:
+            return f"{question_text}\n\n{choices_text}"
+        elif question_text:
+            return question_text
+        elif choices_text:
+            return choices_text
+        else:
+            return ""
 
     def __str__(self) -> str:
         question_insp = inspect(self)

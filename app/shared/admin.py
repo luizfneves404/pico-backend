@@ -128,17 +128,39 @@ class AdminWithImport(SQLAdminAdmin):
 
         cleaned_data = copy.deepcopy(result.errors)
         for error in cleaned_data:
-            for data in error["data"]:
-                for key, value in data.items():
+            # Handle different types of data structures in error["data"]
+            if isinstance(error["data"], list):
+                for i, data in enumerate(error["data"]):
+                    # Only process if data is a dictionary
+                    if isinstance(data, dict):
+                        for key, value in data.items():
+                            if isinstance(value, UploadFile):
+                                data[key] = f"UploadFile(filename='{value.filename}')"
+                            elif isinstance(value, list):
+                                data[key] = [
+                                    (
+                                        f"UploadFile(filename='{item.filename}')"
+                                        if isinstance(item, UploadFile)
+                                        else item
+                                    )
+                                    for item in cast(list[Any], value)
+                                ]
+                    # If data is not a dict (e.g., string), leave it as is
+            elif isinstance(error["data"], dict):
+                # Handle case where error["data"] is a single dictionary
+                for key, value in error["data"].items():
                     if isinstance(value, UploadFile):
-                        data[key] = f"UploadFile(filename='{value.filename}')"
+                        error["data"][key] = f"UploadFile(filename='{value.filename}')"
                     elif isinstance(value, list):
-                        data[key] = [
-                            f"UploadFile(filename='{item.filename}')"
-                            if isinstance(item, UploadFile)
-                            else item
+                        error["data"][key] = [
+                            (
+                                f"UploadFile(filename='{item.filename}')"
+                                if isinstance(item, UploadFile)
+                                else item
+                            )
                             for item in cast(list[Any], value)
                         ]
+            # If error["data"] is neither list nor dict (e.g., string), leave it as is
 
         result.errors = cleaned_data
 
@@ -463,9 +485,11 @@ class CustomModelView(ModelView):
                         "input_value": "validated_data",
                         "expected_type": "ORM instances",
                         "data": [
-                            data.model_dump()
-                            if hasattr(data, "model_dump")
-                            else str(data)
+                            (
+                                data.model_dump()
+                                if hasattr(data, "model_dump")
+                                else str(data)
+                            )
                             for data in validated_data_list
                         ],
                     }
@@ -485,9 +509,11 @@ class CustomModelView(ModelView):
                         "input_value": "validated_data",
                         "expected_type": "ORM instances",
                         "data": [
-                            data.model_dump()
-                            if hasattr(data, "model_dump")
-                            else str(data)
+                            (
+                                data.model_dump()
+                                if hasattr(data, "model_dump")
+                                else str(data)
+                            )
                             for data in validated_data_list
                         ],
                     }

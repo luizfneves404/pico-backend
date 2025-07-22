@@ -373,7 +373,7 @@ def get_content_blocks() -> list[ContentBlock]:
         ),
         ImageBlock(
             block_type="image",
-            file_url=Faker().url(),
+            image_id=1,
             alt=Faker().sentence(),
         ),
     ]

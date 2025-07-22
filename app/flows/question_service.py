@@ -12,6 +12,7 @@ from typing import Any, Coroutine, TypedDict, cast
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from pylatexenc.latex2text import LatexNodes2Text
 from sqlalchemy import func, or_, select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import db_manager
@@ -24,6 +25,8 @@ from app.flows.constants import (
     SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH,
     SYSTEM_MESSAGE_QUESTION_GENERATION_THEME,
     SYSTEM_MESSAGE_QUESTION_GENERATION_THEME_MATH,
+    SYSTEM_MESSAGE_QUESTION_PERTINENCE_TO_TOPIC,
+    SYSTEM_MESSAGE_GENERATE_TAGS_FOR_QUESTION,
     QuestionInstance,
     QuestionSet,
 )
@@ -44,6 +47,13 @@ from app.flows.models import (
 )
 from app.flows.schemas import PromptType
 from app.shared import ai_utils, gemini_utils, openai_utils
+from collections import Counter
+import base64
+import io
+import tempfile
+from fastapi import UploadFile
+from app.files.models import create_file
+import httpx
 
 logger = logging.getLogger(__name__)
 TOKENS_PER_BLOCK = 300
@@ -51,6 +61,7 @@ TOKENS_PER_BLOCK = 300
 
 # Constants
 DAYS_AGO_TO_EXCLUDE_RECENT_ANSWERS = 7
+TOP_TAGS_COUNT = 10  # Number of most frequent tags to save to flow.minor_tags
 PRIVILEGED_SOURCES = [
     "ENEM",
     "ENEM PPL",
@@ -232,15 +243,18 @@ async def task_generate_transcriptions(
     com arquivos já persistidos no storage.
     """
 
-    # --------- 1. Validações iniciais --------------------------------------
+    # --------- 1. Initial checks --------------------------------------
     if not file_ids:
         raise ValueError("Envie pelo menos um arquivo.")
 
+    flow_title: str | None = None
+
+    # --------- FIRST OPERATION: Transcriptions and mark as ready ---------
     async with db_manager.session_with_transaction() as db_session:
         files = (
             await db_session.scalars(select(File).where(File.id.in_(file_ids)))
         ).all()
-        # Separar arquivos por tipo usando o nome original
+        # Separate files by type using the original name
         images = [
             f
             for f in files
@@ -251,11 +265,11 @@ async def task_generate_transcriptions(
         if images and pdfs:
             raise ValueError("Envie apenas imagens OU apenas PDFs por chamada.")
 
-        # --------- 2. Transcrição ------------------------------------------------
+        # --------- 2. Transcription ------------------------------------------------
         transcripts: list[str]
 
         if images:
-            # Para imagens: usar URLs diretas para transcrição via OpenAI
+            # For images: use direct URLs for transcription via OpenAI
             try:
                 logger.info(
                     f"Flow {flow_id}: transcrevendo {len(images)} imagens via URLs"
@@ -265,7 +279,6 @@ async def task_generate_transcriptions(
                     *(file_obj.get_url() for file_obj in images)
                 )
 
-                # Transcrever imagens usando OpenAI
                 transcripts = await asyncio.gather(
                     *(openai_utils.transcribe_image(url) for url in urls)
                 )
@@ -275,7 +288,7 @@ async def task_generate_transcriptions(
                 raise
 
         else:  # PDFs
-            # Para PDFs: usar file streams para evitar carregar tudo na memória
+            # For PDFs: use file streams to avoid loading everything into memory
             try:
                 logger.info(
                     f"Flow {flow_id}: transcrevendo {len(pdfs)} PDFs via file streams"
@@ -285,7 +298,6 @@ async def task_generate_transcriptions(
                     async with pdf_file.get_file_like() as file_like:
                         return await gemini_utils.transcribe_uploaded_pdf(file_like)
 
-                # Transcrever PDFs usando file streams
                 transcripts = await asyncio.gather(
                     *(transcribe_pdf_from_file(pdf) for pdf in pdfs)
                 )
@@ -294,7 +306,7 @@ async def task_generate_transcriptions(
                 logger.exception("Falha na transcrição dos PDFs")
                 raise
 
-        # --------- 3. Pós‑processamento -----------------------------------------
+        # --------- 3. Post-processing -----------------------------------------
         cleaned = [latex_to_text(t).strip() for t in transcripts if t and t.strip()]
         big_text = " ".join(cleaned)
 
@@ -306,7 +318,7 @@ async def task_generate_transcriptions(
 
         logger.info(f"Flow {flow_id}: block_texts: {block_texts}")
 
-        # --------- 4. Geração de títulos ----------------------------------------
+        # --------- 4. Title generation ----------------------------------------
         block_titles = await asyncio.gather(
             *(_generate_block_title(txt) for txt in block_texts)
         )
@@ -329,7 +341,7 @@ async def task_generate_transcriptions(
         db_session.add(flow)
         await db_session.flush()
 
-        # --------- 5. Persistência ----------------------------------------------
+        # --------- 5. Persistence ----------------------------------------------
         blocks = [
             FlowTranscriptionBlock(
                 flow_id=flow_id,
@@ -345,8 +357,228 @@ async def task_generate_transcriptions(
         flow.is_ready = True
         db_session.add(flow)
 
+        # Store the title for cover image generation
+        flow_title = flow.title
+
     logger.info(f"Created {len(blocks)} transcription blocks for flow {flow_id}")
     logger.info(f"Flow {flow_id} marked as ready")
+
+    # --------- SECOND OPERATION: Generate cover image -------------------------
+    # This operation happens AFTER the transcriptions are committed
+    if flow_title:
+        try:
+            async with db_manager.session_with_transaction() as db_session:
+                cover_image_url = await generate_flow_cover_image(flow_title)
+
+                if cover_image_url:
+                    file_id = await save_cover_image_to_flow(
+                        db_session, flow_id, cover_image_url
+                    )
+
+                    if file_id:
+                        logger.info(
+                            f"Generated and saved cover image for flow {flow_id}, file_id: {file_id}"
+                        )
+                    else:
+                        logger.warning(f"Failed to save cover image for flow {flow_id}")
+                else:
+                    logger.warning(f"Failed to generate cover image for flow {flow_id}")
+
+        except Exception as e:
+            # Log error but don't fail the entire operation since transcriptions are already done
+            logger.error(f"Failed to generate cover image for flow {flow_id}: {str(e)}")
+
+
+async def generate_flow_cover_image(flow_title: str) -> str:
+    """
+    Generate a cover image for a flow using URL format for better performance.
+    """
+    logger.info(f"Generating cover image for flow {flow_title}")
+    image_url = await openai_utils.generate_image(flow_title, format="url")
+    if image_url:
+        logger.info(
+            f"Successfully generated cover image for flow {flow_title}: {image_url}"
+        )
+    else:
+        logger.warning(f"Failed to generate cover image for flow {flow_title}")
+    return image_url
+
+
+async def save_cover_image_to_flow(
+    db_session, flow_id: int, image_url: str
+) -> int | None:
+    """
+    Smart cover image saving: chooses strategy based on image size.
+    Uses in-memory approach for small images (<2MB) and streaming for larger ones.
+
+    Args:
+        db_session: Database session
+        flow_id: ID of the flow to update
+        image_url: URL of the generated image
+
+    Returns:
+        The ID of the created File object, or None if failed
+    """
+    try:
+        # Check image size first to choose optimal strategy
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            head_response = await client.head(image_url)
+            content_length = int(head_response.headers.get("content-length", 0))
+
+            logger.info(f"Preparing to save cover image for flow {flow_id}")
+            # Choose strategy based on size
+            if (
+                content_length > 0 and content_length < 2_000_000
+            ):  # <2MB - use in-memory
+                return await _save_cover_image_in_memory(
+                    db_session, flow_id, image_url, client
+                )
+            else:  # >=2MB or unknown size - use streaming
+                return await _save_cover_image_streaming(
+                    db_session, flow_id, image_url, client
+                )
+
+    except Exception as e:
+        logger.error(f"Failed to save cover image for flow {flow_id}: {str(e)}")
+        return None
+
+
+async def _save_cover_image_in_memory(
+    db_session, flow_id: int, image_url: str, client: httpx.AsyncClient
+) -> int | None:
+    """In-memory approach for small images"""
+    try:
+        response = await client.get(image_url)
+        response.raise_for_status()
+        image_data = response.content
+
+        # Create file-like object in memory
+        image_buffer = io.BytesIO(image_data)
+        filename = f"flow_cover_{flow_id}.png"
+
+        upload_file = UploadFile(
+            file=image_buffer,
+            filename=filename,
+            size=len(image_data),
+        )
+        upload_file.content_type = "image/png"
+
+        # Save to storage and database
+        file_obj = await create_file(db_session, upload_file)
+        await db_session.flush()
+
+        # Update flow with cover image
+        flow = await db_session.scalar(select(Flow).where(Flow.id == flow_id))
+        if flow:
+            flow.cover_image_id = file_obj.id
+            db_session.add(flow)
+            await db_session.flush()
+
+        logger.info(
+            f"Saved cover image (in-memory) for flow {flow_id}, file_id: {file_obj.id}"
+        )
+        return file_obj.id
+
+    except Exception as e:
+        logger.error(
+            f"Failed to save cover image (in-memory) for flow {flow_id}: {str(e)}"
+        )
+        return None
+
+
+async def _save_cover_image_streaming(
+    db_session, flow_id: int, image_url: str, client: httpx.AsyncClient
+) -> int | None:
+    """Streaming approach for large images"""
+    import tempfile
+    import os
+
+    try:
+        filename = f"flow_cover_{flow_id}.png"
+
+        # Stream download to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+            temp_path = temp_file.name
+
+            async with client.stream("GET", image_url) as response:
+                response.raise_for_status()
+                async for chunk in response.aiter_bytes():
+                    temp_file.write(chunk)
+
+        try:
+            file_size = os.path.getsize(temp_path)
+
+            with open(temp_path, "rb") as f:
+                upload_file = UploadFile(
+                    file=f,
+                    filename=filename,
+                    size=file_size,
+                )
+                upload_file.content_type = "image/png"
+
+                # Save to storage and database
+                file_obj = await create_file(db_session, upload_file)
+                await db_session.flush()
+
+        finally:
+            # Clean up temporary file
+            os.unlink(temp_path)
+
+        # Update flow with cover image
+        flow = await db_session.scalar(select(Flow).where(Flow.id == flow_id))
+        if flow:
+            flow.cover_image_id = file_obj.id
+            db_session.add(flow)
+            await db_session.flush()
+
+        logger.info(
+            f"Saved cover image (streaming) for flow {flow_id}, file_id: {file_obj.id}"
+        )
+        return file_obj.id
+
+    except Exception as e:
+        logger.error(
+            f"Failed to save cover image (streaming) for flow {flow_id}: {str(e)}"
+        )
+        return None
+
+
+#! Exclusively for create_flow_with_optional_files on flow_service.py
+# TODO: Move back to flow_service.py: currently here to avoid circular imports of generate_flow_cover_image -> Create new file for such funtions
+async def task_generate_flow_cover_image(
+    ctx: dict[str, Any],
+    flow_id: int,
+    flow_title: str,
+) -> None:
+    """
+    Task to generate cover image for flow in background.
+    This task is executed AFTER the transcriptions are committed.
+    """
+    try:
+        logger.info(
+            f"Generating cover image for flow {flow_id} with title: {flow_title}"
+        )
+
+        cover_image_url = await generate_flow_cover_image(flow_title)
+
+        if cover_image_url:
+            async with db_manager.session_with_transaction() as db_session:
+                file_id = await save_cover_image_to_flow(
+                    db_session, flow_id, cover_image_url
+                )
+
+                if file_id:
+                    logger.info(
+                        f"Successfully generated and saved cover image for flow {flow_id}, file_id: {file_id}"
+                    )
+                else:
+                    logger.warning(f"Failed to save cover image for flow {flow_id}")
+        else:
+            logger.warning(f"Failed to generate cover image for flow {flow_id}")
+
+    except Exception as e:
+        logger.error(f"Error generating cover image for flow {flow_id}: {str(e)}")
+        # Do not propagate error, as it is not a critical operation
 
 
 async def check_if_titles_involve_math_calculations(block_titles: list[str]) -> bool:
@@ -619,8 +851,12 @@ async def get_files_user_generated_questions(
         *tasks, return_exceptions=True
     )
 
-    # Process results in order and create database objects
+    # First pass: Create all questions and choices without tags
     all_questions: list[Question] = []
+    questions_for_tagging: list[tuple[Question, str]] = (
+        []
+    )  # (question, question_text_and_choices)
+
     for block_index, block_questions in enumerate(block_results):
         if isinstance(block_questions, BaseException):
             logger.error(f"Exception in block {block_index + 1}: {block_questions}")
@@ -663,9 +899,7 @@ async def get_files_user_generated_questions(
                 correct_choice_letter = (
                     question_data.correct_choice
                 )  # "A", "B", "C", "D"
-                correct_choice_index = ord(correct_choice_letter.upper()) - ord(
-                    "A"
-                )  # Converte para 0, 1, 2, 3
+                correct_choice_index = ord(correct_choice_letter.upper()) - ord("A")
 
                 # Create list of choice data with correctness flags
                 class ChoiceData(TypedDict):
@@ -692,7 +926,6 @@ async def get_files_user_generated_questions(
                 # Shuffle the choices to randomize the order
                 random.shuffle(choice_data_list)
 
-                # Create Choice objects with the new shuffled order
                 for new_order, choice_data in enumerate(choice_data_list):
                     choice = Choice(
                         question_id=question.id,
@@ -703,12 +936,66 @@ async def get_files_user_generated_questions(
                     choices.append(choice)
 
                 db_session.add_all(choices)
+                await db_session.flush()  # Flush to ensure choices are saved
 
                 logger.info(
                     f"Flow {flow.id}: Created {len(choices)} choices for question {question.id}"
                 )
 
+                question_text_and_choices = question.question_text_with_choices_text
+
+                questions_for_tagging.append((question, question_text_and_choices))
                 all_questions.append(question)
+
+    # Second pass: Generate tags for all questions in parallel
+    if questions_for_tagging:
+        logger.info(
+            f"Generating tags for {len(questions_for_tagging)} questions in parallel"
+        )
+
+        tag_tasks = [
+            generate_tags_for_question(question_text_and_choices)
+            for _, question_text_and_choices in questions_for_tagging
+        ]
+
+        # Execute all tasks in parallel
+        all_tags = await asyncio.gather(*tag_tasks, return_exceptions=True)
+
+        for (question, _), tags in zip(questions_for_tagging, all_tags):
+            if isinstance(tags, BaseException):
+                logger.error(
+                    f"Error generating tags for question {question.id}: {tags}"
+                )
+                continue
+            elif isinstance(tags, list):
+                question.minor_tags = tags
+                db_session.add(question)
+
+        await db_session.flush()
+        logger.info(f"Applied tags to {len(questions_for_tagging)} questions")
+
+        # Collect all tags from questions and find top most frequent
+        all_question_tags: list[str] = []
+        for question, _ in questions_for_tagging:
+            if question.minor_tags:
+                clean_tags = [
+                    tag.strip().lower() for tag in question.minor_tags if tag.strip()
+                ]
+                all_question_tags.extend(clean_tags)
+
+        if all_question_tags:
+            tag_counter = Counter(all_question_tags)
+            top_tags = [tag for tag, count in tag_counter.most_common(TOP_TAGS_COUNT)]
+
+            flow.minor_tags = top_tags
+            db_session.add(flow)
+            await db_session.flush()
+
+            logger.info(
+                f"Applied top {TOP_TAGS_COUNT} tags to flow {flow.id}: {top_tags}"
+            )
+        else:
+            logger.info(f"No tags generated for flow {flow.id}")
 
     logger.info(
         f"Successfully generated {len(all_questions)} AI questions from files for flow {flow.id}"
@@ -953,6 +1240,105 @@ async def generate_flow_title_from_block_titles(
     except Exception as e:
         logger.error(f"Error generating title from transcriptions: {e}")
         return "Material de Estudo"
+
+
+async def verify_question_pertinence_to_topic(
+    db_session: AsyncSession,
+    flow_id: int,
+    question_id: int,
+    topic: str,
+) -> int:
+    """Verify question pertinence to a topic using gpt-4.1-nano on a scale of 0-5"""
+    try:
+        # Get the question with choices loaded
+        question = await db_session.scalar(
+            select(Question)
+            .where(Question.id == question_id)
+            .options(selectinload(Question.choices))
+        )
+
+        if not question:
+            logger.warning(f"Question {question_id} not found")
+            return 0
+
+        question_text_with_choices = question.question_text_with_choices_text
+
+        if not question_text_with_choices:
+            logger.warning(f"Question {question_id} has no text or choices")
+            return 0
+
+        content_parts = [
+            f"Topic: {topic}",
+            f"Question and Choices: {question_text_with_choices}",
+        ]
+
+        user_content = "\n\n".join(content_parts)
+
+        response = await openai_utils.get_completion(
+            model="gpt-4.1-nano",
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_MESSAGE_QUESTION_PERTINENCE_TO_TOPIC,
+                },
+                {
+                    "role": "user",
+                    "content": user_content,
+                },
+            ],
+            json_mode=False,
+            timeout=15,
+            temperature=0.5,
+        )
+
+        # Extract the numeric score from the response
+        score_str = response.content.strip()
+        try:
+            score = int(score_str)
+            # Ensure score is within valid range
+            if 0 <= score <= 5:
+                return score
+            else:
+                logger.warning(
+                    f"Invalid pertinence score {score} for question {question_id}, flow {flow_id}. Using default score 0."
+                )
+                return 0
+        except ValueError:
+            logger.warning(
+                f"Could not parse pertinence score '{score_str}' for question {question_id}, flow {flow_id}. Using default score 0."
+            )
+            return 0
+
+    except Exception as e:
+        logger.error(
+            f"Error verifying question pertinence for question {question_id}, flow {flow_id}: {e}"
+        )
+        return 0  # Default to 0 if there's an error
+
+
+async def generate_tags_for_question(
+    question_text_and_choices: str,
+) -> list[str]:
+    """Generate tags for a question (based on question text and choices) using gpt-4.1-nano"""
+    try:
+        response = await openai_utils.get_completion(
+            model="gpt-4.1-nano",
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_MESSAGE_GENERATE_TAGS_FOR_QUESTION,
+                },
+                {"role": "user", "content": question_text_and_choices},
+            ],
+            json_mode=False,
+            timeout=15,
+            temperature=0.1,
+        )
+        tags = response.content.strip()
+        return tags.split(",")
+    except Exception as e:
+        logger.error(f"Error generating tags for question: {e}, tags: {tags}")
+        return []
 
 
 # async def generate_initial_questions_from_topic(
