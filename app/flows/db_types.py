@@ -9,7 +9,7 @@ class ImageBlock(BaseModel):
     block_type: Literal[
         "image"
     ]  # didn't add as default because OpenAPI will render it as optional
-    file_url: str
+    image_id: int
     alt: str | None = None
 
 
