@@ -12,7 +12,6 @@ from wtforms import Field, widgets
 from wtforms.validators import Optional
 
 from app.arq_client import enqueue_job
-from app.database import get_db_session_for_worker
 from app.flows.db_types import (
     ContentBlock,
     validate_content_block_list,
@@ -35,7 +34,6 @@ from app.flows.models import (
     QuestionSourceType,
 )
 from app.shared.admin import MODEL_ATTR, CustomModelView
-from app.shared.openai_utils import compute_embedding
 
 
 class ContentBlocksField(JSONField):
@@ -400,7 +398,7 @@ class QuestionAdmin(CustomModelView, model=Question):
             },
             {
                 "block_type": "image",
-                "file_url": "https://via.placeholder.com/150",
+                "image_id": 1,
                 "alt": "texto alternativo para a imagem",
             },
         ],
@@ -420,7 +418,7 @@ class QuestionAdmin(CustomModelView, model=Question):
             },
             {
                 "block_type": "image",
-                "file_url": "https://via.placeholder.com/150",
+                "image_id": 1,
                 "alt": "texto alternativo para a imagem",
             },
         ],
@@ -472,6 +470,152 @@ class QuestionAdmin(CustomModelView, model=Question):
         )
 
         # Redirect back
+        referer = request.headers.get("Referer")
+        return RedirectResponse(
+            referer or request.url_for("admin:list", identity=self.identity)
+        )
+
+    @action(
+        name="categorize_minor_tags",
+        label="Categorizar minor tags",
+        confirmation_message="Tem certeza que quer categorizar minor tags das perguntas selecionadas?",
+        add_in_detail=False,
+        add_in_list=True,
+    )
+    async def categorize_minor_tags(self, request: Request) -> RedirectResponse:
+        """Categorize questions using TAGS approach - minor tags only."""
+        pks_str = request.query_params.get("pks", "")
+
+        if pks_str == "__all__":
+            pks = None
+        else:
+            try:
+                pks = [int(pk) for pk in pks_str.split(",")]
+                if not pks:
+                    referer = request.headers.get("Referer")
+                    return RedirectResponse(
+                        referer or request.url_for("admin:list", identity=self.identity)
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid primary key format."
+                )
+
+        await enqueue_job(
+            "task_categorize_minor_tags",
+            question_ids=pks,
+        )
+
+        referer = request.headers.get("Referer")
+        return RedirectResponse(
+            referer or request.url_for("admin:list", identity=self.identity)
+        )
+
+    @action(
+        name="categorize_major_tags",
+        label="Categorizar major tags",
+        confirmation_message="Tem certeza que quer categorizar major tags (subjects) das perguntas selecionadas?",
+        add_in_detail=False,
+        add_in_list=True,
+    )
+    async def categorize_major_tags(self, request: Request) -> RedirectResponse:
+        """Classify question subjects to determine major tags."""
+        pks_str = request.query_params.get("pks", "")
+
+        if pks_str == "__all__":
+            pks = None
+        else:
+            try:
+                pks = [int(pk) for pk in pks_str.split(",")]
+                if not pks:
+                    referer = request.headers.get("Referer")
+                    return RedirectResponse(
+                        referer or request.url_for("admin:list", identity=self.identity)
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid primary key format."
+                )
+
+        await enqueue_job(
+            "task_categorize_major_tags",
+            question_ids=pks,
+        )
+
+        referer = request.headers.get("Referer")
+        return RedirectResponse(
+            referer or request.url_for("admin:list", identity=self.identity)
+        )
+
+    @action(
+        name="generate_answers",
+        label="Gerar respostas",
+        confirmation_message="Tem certeza que quer gerar respostas para as perguntas selecionadas?",
+        add_in_detail=False,
+        add_in_list=True,
+    )
+    async def generate_question_answers(self, request: Request) -> RedirectResponse:
+        """Generate answers for questions using o3 model."""
+        pks_str = request.query_params.get("pks", "")
+
+        if pks_str == "__all__":
+            pks = None
+        else:
+            try:
+                pks = [int(pk) for pk in pks_str.split(",")]
+                if not pks:
+                    referer = request.headers.get("Referer")
+                    return RedirectResponse(
+                        referer or request.url_for("admin:list", identity=self.identity)
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid primary key format."
+                )
+
+        await enqueue_job(
+            "task_generate_question_answers",
+            question_ids=pks,
+        )
+
+        referer = request.headers.get("Referer")
+        return RedirectResponse(
+            referer or request.url_for("admin:list", identity=self.identity)
+        )
+
+    @action(
+        name="analyze_quantitativeness",
+        label="Analisar quantitatividade",
+        confirmation_message="Tem certeza que quer analisar quantitatividade das perguntas selecionadas?",
+        add_in_detail=False,
+        add_in_list=True,
+    )
+    async def analyze_question_quantitativeness(
+        self, request: Request
+    ) -> RedirectResponse:
+        """Analyze if questions require paper to solve."""
+        pks_str = request.query_params.get("pks", "")
+
+        if pks_str == "__all__":
+            pks = None
+        else:
+            try:
+                pks = [int(pk) for pk in pks_str.split(",")]
+                if not pks:
+                    referer = request.headers.get("Referer")
+                    return RedirectResponse(
+                        referer or request.url_for("admin:list", identity=self.identity)
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid primary key format."
+                )
+
+        await enqueue_job(
+            "task_analyze_question_quantitativeness",
+            question_ids=pks,
+        )
+
         referer = request.headers.get("Referer")
         return RedirectResponse(
             referer or request.url_for("admin:list", identity=self.identity)
@@ -986,46 +1130,3 @@ class FlowQuestionUserAdmin(CustomModelView, model=FlowQuestionUser):
         FlowQuestionUser.feedback,
         FlowQuestionUser.grade,
     ]
-
-
-async def task_compute_question_embeddings(
-    ctx: dict[str, Any],
-    question_ids: list[int] | None,
-) -> None:
-    """
-    Asynchronously computes and returns embeddings for text input.
-    question_ids: list[int] | None
-    None means all questions
-    """
-    async with get_db_session_for_worker(ctx) as session:
-        if question_ids is None:
-            stmt = select(Question).options(selectinload(Question.choices))
-        else:
-            stmt = (
-                select(Question)
-                .options(selectinload(Question.choices))
-                .where(Question.id.in_(question_ids))
-            )
-        # 1. Execute the query
-        result = await session.execute(stmt)
-        questions: list[Question] = list(result.scalars())
-
-        # 2. Build texts for embedding (accessing .choices will NOT trigger new queries)
-        texts_for_embedding: list[str] = []
-        for question in questions:
-            text_content = "\n".join(
-                content.text
-                for block in question.content_blocks
-                if block.block_type == "text"
-                for content in block.content
-            )
-            # This now uses the pre-loaded choices
-            choices_text = "\n".join(choice.text for choice in question.choices)
-            texts_for_embedding.append(f"{text_content}\n\n{choices_text}")
-
-        # 3. Compute embeddings (this happens outside the DB)
-        embeddings = await compute_embedding(texts_for_embedding)
-
-        # 4. Update questions with embeddings (no merge needed)
-        for question, embedding in zip(questions, embeddings):
-            question.embedding = embedding

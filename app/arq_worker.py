@@ -21,8 +21,17 @@ from app.config import settings
 from app.database import SessionFactory, db_manager
 from app.fcm.fcm_service import task_send_notifications
 from app.firebase_config import init_firebase
-from app.flows.admin import task_compute_question_embeddings
-from app.flows.question_service import task_generate_transcriptions
+from app.flows.question_service import (
+    task_generate_transcriptions,
+    task_generate_flow_cover_image,
+)
+from app.flows.question_utils import (
+    task_compute_question_embeddings,
+    task_categorize_minor_tags,
+    task_categorize_major_tags,
+    task_generate_question_answers,
+    task_analyze_question_quantitativeness,
+)
 from app.flows.tasks import task_mark_question_timed_out
 from app.logging_config import get_logging_config
 from app.mail import task_send_email
@@ -64,6 +73,11 @@ def make_worker_settings(
             task_send_notifications,
             task_generate_transcriptions,
             task_compute_question_embeddings,
+            task_categorize_minor_tags,
+            task_categorize_major_tags,
+            task_generate_question_answers,
+            task_analyze_question_quantitativeness,
+            task_generate_flow_cover_image,
         ]
         redis_settings: RedisSettings = RedisSettings.from_dsn(redis_url)
         on_startup: StartupShutdown | None = startup

@@ -1,3 +1,5 @@
+from pydantic import BaseModel
+
 LINK_COLOR = "#469596"
 MAX_QUESTIONS_FOR_SCORE = 45
 MARGIN = 40
@@ -196,6 +198,300 @@ AVERAGE_SCORES_BY_CORRECT_QUESTIONS = {
     },
 }
 
+# List of all unique tags extracted from categories and subcategories (no duplicates or hierarchies)
+TAGS = [
+    "Acústica",
+    "América Pré-Colombiana",
+    "Anatomia Humana",
+    "Antiguidade Clássica",
+    "Análise Dimensional",
+    "Análise Sintática",
+    "Análise de Dados",
+    "Arcadismo",
+    "Aritmética",
+    "Arranjo",
+    "Arte Contemporânea",
+    "Arte e História",
+    "Artigos de Opinião",
+    "Bactérias",
+    "Barroco",
+    "Biologia",
+    "Bioquímica e Processos Celulares",
+    "Blogs",
+    "Botânica",
+    "Brasil Colônia (1500-1822)",
+    "Brasil Contemporâneo (1985 até hoje)",
+    "Cadeia Alimentar",
+    "Cadeias Carbônicas",
+    "Calorimetria",
+    "Cartografia",
+    "Charges",
+    "Ciclos Biogeoquímicos",
+    "Cinemática",
+    "Circuitos Elétricos",
+    "Citologia",
+    "Ciência e Conhecimento",
+    "Classificação de Funções",
+    "Clima",
+    "Colonização Espanhola",
+    "Colunas",
+    "Combinatória",
+    "Combinação",
+    "Compostos Iônicos e Oxidantes",
+    "Conceitos Políticos",
+    "Conjuntos e Sistemas",
+    "Conjunções e Conectivos",
+    "Construção de Texto",
+    "Contos",
+    "Conversão de Unidades",
+    "Cultura Brasileira",
+    "Culturais",
+    "Cálculo Químico",
+    "Cátions e Ânions",
+    "DNA e RNA",
+    "Demografia",
+    "Denotação e Conotação",
+    "Densidade",
+    "Dilatação",
+    "Dinâmica",
+    "Divisão Celular",
+    "Domínio da Língua",
+    "Ecologia",
+    "Economia e Indústria",
+    "Econômicas",
+    "Editorial",
+    "Elementos do Mapa",
+    "Eletromagnetismo",
+    "Eletroquímica",
+    "Eletrólise",
+    "Energia Elétrica",
+    "Energia e Momento",
+    "Ensaios",
+    "Entrevistas",
+    "Equilíbrio Químico",
+    "Era Vargas (1930-1945)",
+    "Era das Revoluções (1789-1848)",
+    "Era do Imperialismo (1848-1914)",
+    "Escala e Medidas de Grandeza",
+    "Escola de Frankfurt",
+    "Escolas Filosóficas",
+    "Espanhol",
+    "Espaço Agrário",
+    "Espaço Urbano",
+    "Especiação",
+    "Estequiometria",
+    "Estática",
+    "Estética",
+    "Evento Único",
+    "Eventos Condicionais",
+    "Evolução",
+    "Existencialismo",
+    "Expressões Idiomáticas",
+    "Fake News",
+    "Figuras de Linguagem",
+    "Filosofia",
+    "Filosofia Antiga",
+    "Filosofia Contemporânea",
+    "Filosofia Medieval",
+    "Filosofia Moderna",
+    "Filosofia Política",
+    "Filosofia e Religião",
+    "Fisiologia Animal",
+    "Fisiologia Humana",
+    "Fisiologia Vegetal",
+    "Fluídos",
+    "Fontes de Energia",
+    "Formação de Palavras",
+    "Fotossíntese",
+    "Frases Comuns",
+    "Função Afim",
+    "Função Exponencial",
+    "Função Quadrática",
+    "Função da Linguagem",
+    "Funções",
+    "Física",
+    "Física Moderna",
+    "Física Quântica",
+    "Fóruns de Discussão",
+    "Gases",
+    "Genocídio e Direitos Humanos",
+    "Genética",
+    "Geografia",
+    "Geografia Física",
+    "Geografia Humana",
+    "Geologia",
+    "Geometria",
+    "Geometria Analítica",
+    "Geometria Espacial",
+    "Geometria Plana",
+    "Globalização",
+    "Gramática",
+    "Gráficos e Tabelas",
+    "Guerra Fria",
+    "Gêneros Literários",
+    "Gírias",
+    "Heredogramas",
+    "Hidrografia",
+    "História",
+    "História Global",
+    "História da Arte",
+    "História das Américas",
+    "História das Ideias",
+    "História do Brasil",
+    "História dos Estados Unidos",
+    "Homem e Natureza",
+    "Hormônios",
+    "Idade Moderna",
+    "Idade Média",
+    "Iluminismo",
+    "Inglês",
+    "Interpretação de Texto",
+    "Isomeria",
+    "Lentes e Instrumentos",
+    "Ligações Químicas",
+    "Logaritmo",
+    "Lógica",
+    "MMC e MDC",
+    "Magnetismo",
+    "Manifestações Culturais",
+    "Mapas Temáticos",
+    "Marxismo",
+    "Matemática",
+    "Matemática Financeira",
+    "Max Weber",
+    "Mecânica",
+    "Meios de Comunicação",
+    "Metafísica",
+    "Modelos Atômicos",
+    "Modernismo",
+    "Movimento Harmônico (MHS)",
+    "Movimentos Sociais",
+    "Mudanças Climáticas",
+    "Mudanças de Estado",
+    "Museus e Memória",
+    "Média, Moda e Mediana",
+    "Naturalismo",
+    "Nomenclatura de Funções",
+    "Nomenclatura de Funções Orgânicas",
+    "Notícias",
+    "Nutrição",
+    "Números Complexos",
+    "Ondas",
+    "Ondulatória",
+    "Operações Básicas",
+    "Ordem de Grandeza",
+    "Organelas",
+    "Oriente Médio",
+    "Palavras Formais",
+    "Palavras Informais",
+    "Parasitologia",
+    "Parnasianismo",
+    "Participação Política",
+    "Pensadores Brasileiros",
+    "Permutação",
+    "Período Entreguerras (1919-1939)",
+    "Período Imperial (1822-1889)",
+    "Pilhas",
+    "Poemas",
+    "Poesia Contemporânea",
+    "Polaridade e Geometria Molecular",
+    "Polímeros",
+    "Política Internacional",
+    "Políticas",
+    "Pontuação",
+    "Português",
+    "Povos Originários",
+    "Prevenção de Doenças",
+    "Primeira Guerra Mundial",
+    "Probabilidade",
+    "Probabilidade Genética",
+    "Progressão Aritmética",
+    "Progressão Geométrica",
+    "Projeções Cartográficas",
+    "Propriedades Químicas",
+    "Propriedades da Matéria",
+    "Prosa Contemporânea",
+    "Protozoários",
+    "Quarta República (1945-1964)",
+    "Questões Raciais",
+    "Questões de Gênero",
+    "Quinhentismo",
+    "Química",
+    "Química Inorgânica",
+    "Química Orgânica",
+    "Radioatividade",
+    "Razão e Proporção",
+    "Realismo",
+    "Reações Orgânicas",
+    "Reações de Neutralização",
+    "Reações de Oxirredução",
+    "Recursos de Estilo",
+    "Redes Sociais",
+    "Reflexão",
+    "Refração e Difração",
+    "Regime Militar (1964-1985)",
+    "Relatividade",
+    "Relações Ecológicas",
+    "Relevo",
+    "Renascimento",
+    "Renda e Desigualdade",
+    "Reportagens",
+    "Reprodução Animal",
+    "Reprodução Vegetal",
+    "República Velha (1889-1930)",
+    "Respiração Celular",
+    "Revoluções Industriais",
+    "Romances",
+    "Romantismo",
+    "Satíricas",
+    "Saúde",
+    "Segunda Guerra Mundial",
+    "Semântica e Vocabulário",
+    "Separação de Misturas",
+    "Sequência Numérica",
+    "Simbolismo",
+    "Sistemas Vitais",
+    "Sites Educativos",
+    "Sociais",
+    "Sociologia",
+    "Sociologia Contemporânea",
+    "Sociologia do Brasil",
+    "Soluções",
+    "Sustentabilidade",
+    "Séries",
+    "Tabela Periódica",
+    "Teatro",
+    "Tecidos",
+    "Tecnologia e Sociedade",
+    "Tecnologia e Trabalho",
+    "Temperatura",
+    "Teoria da Literatura",
+    "Termodinâmica",
+    "Termologia",
+    "Termoquímica",
+    "Texto Jornalístico",
+    "Texto Literário",
+    "Texto Publicitário",
+    "Textos Jornalísticos",
+    "Textos Literários",
+    "Textos da Internet",
+    "Teóricos da Sociologia",
+    "Tipo Textual",
+    "Transformações e Operações Matemáticas",
+    "Transporte Celular",
+    "Trigonometria",
+    "Urbanização e Industrialização",
+    "Variedade Linguística",
+    "Vocabulário",
+    "Vírus",
+    "Zoologia",
+    "Álgebra Linear",
+    "Área e Volume",
+    "Émile Durkheim",
+    "Ética",
+    "Ótica",
+]
+
 OPEN_ENDED_FEEDBACK_SYSTEM_MESSAGE = """Você é um corretor de questões discursivas. Considere os seguintes conselhos para avaliar a resposta de um aluno a uma questão:
 
 1. **Compreensão Profunda da Pergunta**: Leia a questão atentamente, identificando o que é especificamente solicitado. Procure interpretar não apenas o tema geral, mas o foco particular da pergunta. Evite responder com tudo o que sabe sobre o assunto; em vez disso, direcione sua resposta para abordar o cerne da questão, alinhando-se ao que o enunciado demanda.
@@ -299,10 +595,15 @@ MAX_COMBINED_TRANSCRIPTION_LENGTH = (
 
 SYSTEM_MESSAGE_BLOCK_TITLE = """
     Você é um especialista em educação que sabe extrair conceitos-chave de textos.
-    Sua tarefa é criar uma query de busca com no máximo 5 palavras que represente o tema principal da transcrição fornecida.
-    A query deve capturar com especificidade o tópico mais relevante do texto.
-    Retorne apenas as palavras-chave, sem pontuação ou explicações adicionais.
-    Não crie títulos genéricos, mas capture a essência do texto.
+    Você receberá um bloco de texto educacional e deverá se basear nele para extrair as tags mais relevantes.
+    Sua tarefa é identificar exatamente 1 a 3 tags que representem os temas principais do bloco de texto fornecido.
+    As tags devem capturar com especificidade os tópicos mais relevantes do conteúdo.
+    
+    FORMATO DE RESPOSTA:
+    - Retorne apenas as tags separadas por vírgula (ex: "Matemática, Geometria, Trigonometria")
+    - Máximo de 3 tags por bloco
+    - Sem pontuação adicional, aspas ou explicações
+    - Não crie tags genéricas, mas capture a essência específica do conteúdo
 """
 
 # System messages for new utility functions
@@ -339,8 +640,39 @@ NÃO considere como envolvendo matemática:
 Responda apenas "SIM" se envolve cálculos matemáticos ou "NÃO" se não envolve.
 """
 
-# Pydantic models for OpenAI structured output
-from pydantic import BaseModel
+SYSTEM_MESSAGE_QUESTION_PERTINENCE_TO_TOPIC = """
+Você é um especialista em verificar se uma questão é pertinente a um determinado tema.
+Você receberá os campos:
+- text: texto completo da questão (incluindo texto-base e enunciado)
+- choices: array com as 4 alternativas (apenas o texto, sem prefixos como "A)", "B)", etc.)
+- correct_choice: letra da alternativa correta (A, B, C, D)
+
+Você deve avaliar o grau de pertinência da questão ao tema fornecido usando uma escala numérica:
+0 - Nada pertinente (totalmente fora do tema)
+1 - Pouco pertinente (conexão muito fraca com o tema)
+2 - Minimamente pertinente (alguma conexão distante com o tema)
+3 - Moderadamente pertinente (conexão razoável com o tema)
+4 - Muito pertinente (forte conexão com o tema)
+5 - Extremamente pertinente (diretamente relacionado ao tema central)
+
+Retorne APENAS o número correspondente (0, 1, 2, 3, 4 ou 5).
+"""
+
+SYSTEM_MESSAGE_GENERATE_TAGS_FOR_QUESTION = """
+Você é um especialista em gerar tags que indiquem o conteúdo abordado para questões de vestibular.
+Você receberá o enunciado e as alternativas de uma questão específica e deverá gerar tags que identifiquem o(s) tema(s) abordado(s) nessa questão.
+
+INSTRUÇÕES:
+- Analise cuidadosamente o enunciado da questão e suas alternativas
+- Identifique de 1 a 5 tags que melhor representem os temas específicos abordados na questão
+- As tags devem ser específicas e refletir os conceitos/tópicos da questão apresentada
+- Caso opte por mais de uma tag, não seja redundante, ou seja, não repita tags ou use tags que sejam muito parecidas
+
+FORMATO DE RESPOSTA OBRIGATÓRIO:
+- Retorne APENAS as tags separadas por vírgula (ex: "Tag1, Tag2, Tag3")
+- Máximo (mas não obrigatório) de 5 tags por questão
+- Sem pontuação adicional, aspas, explicações ou texto extra
+"""
 
 
 class QuestionInstance(BaseModel):
