@@ -15,6 +15,7 @@ from sqlalchemy import select
 
 from app.database import get_db_session_for_worker
 from app.flows.models import Question, ENEM_AREAS
+from app.files.models import File
 from app.flows.db_types import (
     ContentBlock,
     RichText,
@@ -111,7 +112,7 @@ Com base nessas informações, você deve elaborar uma explicação concisa de p
 
 
 async def categorize_minor_tags(
-    db_session: AsyncSession, question_id: int, temperature: float = 0.3
+    db_session: AsyncSession, question_id: int, temperature: float = 0.2
 ) -> MinorTagsCategorization:
     """
     Generate minor tags for a question using TAGS approach with gpt-4.1-mini.
@@ -143,8 +144,13 @@ async def categorize_minor_tags(
             logger.info(f"Skipping question without text or choices: {question_id}")
             return MinorTagsCategorization(minor_tags=[])
 
+        # Get question image URLs
+        image_urls = await get_question_image_urls(db_session, question)
+
         # Generate minor tags using the full categorization system
-        minor_tags = await _generate_minor_tags(question_text_with_choices, temperature)
+        minor_tags = await _generate_minor_tags(
+            question_text_with_choices, temperature, image_urls
+        )
 
         result = MinorTagsCategorization(minor_tags=minor_tags)
 
@@ -199,7 +205,6 @@ async def generate_answer(
 
             return AnswerGeneration(
                 answer_text=existing_answer,
-                explanation="Resposta já existente no banco de dados",
             )
 
         # Get question text and choices
@@ -218,6 +223,9 @@ async def generate_answer(
         if not correct_choice_letter:
             raise ValueError(f"Question {question_id} has no correct choice marked")
 
+        # Get question image URLs
+        image_urls = await get_question_image_urls(db_session, question)
+
         # Simple message - let the model use its full reasoning
         user_message = f"""
 {question_text}
@@ -225,10 +233,26 @@ async def generate_answer(
 Alternativa correta: {correct_choice_letter}
 """
 
-        messages: list[ChatCompletionMessageParam] = [
-            {"role": "system", "content": SYSTEM_MESSAGE_GENERATE_ANSWER},
-            {"role": "user", "content": user_message},
-        ]
+        # Build messages with images if available
+        if image_urls:
+            user_content = [{"type": "text", "text": user_message}]
+            for image_url in image_urls:
+                user_content.append(
+                    {  # type: ignore
+                        "type": "image_url",
+                        "image_url": {"url": image_url, "detail": "high"},
+                    }
+                )
+
+            messages: list[ChatCompletionMessageParam] = [
+                {"role": "system", "content": SYSTEM_MESSAGE_GENERATE_ANSWER},
+                {"role": "user", "content": user_content},  # type: ignore
+            ]
+        else:
+            messages: list[ChatCompletionMessageParam] = [
+                {"role": "system", "content": SYSTEM_MESSAGE_GENERATE_ANSWER},
+                {"role": "user", "content": user_message},
+            ]
 
         # Use o3 model with reasoning effort for better quality
         response = await openai_utils.get_completion(
@@ -258,22 +282,42 @@ Alternativa correta: {correct_choice_letter}
 
 async def is_quantitative(
     question_text_with_choices: str,
+    image_urls: list[str] | None = None,
 ) -> QuantitativeAnalysis:
     """
     Analyze if a question requires paper to be solved using o4-mini.
 
     Args:
         question_text_with_choices: Complete question text with choices
+        image_urls: List of image URLs for the question
 
     Returns:
         QuantitativeAnalysis: Analysis of whether question requires paper
     """
-    try:
+    if image_urls is None:
+        image_urls = []
 
-        messages: list[ChatCompletionMessageParam] = [
-            {"role": "system", "content": SYSTEM_MESSAGE_IS_QUANTITATIVE},
-            {"role": "user", "content": question_text_with_choices},
-        ]
+    try:
+        # Build messages with images if available
+        if image_urls:
+            user_content = [{"type": "text", "text": question_text_with_choices}]
+            for image_url in image_urls:
+                user_content.append(
+                    {  # type: ignore
+                        "type": "image_url",
+                        "image_url": {"url": image_url, "detail": "high"},
+                    }
+                )
+
+            messages: list[ChatCompletionMessageParam] = [
+                {"role": "system", "content": SYSTEM_MESSAGE_IS_QUANTITATIVE},
+                {"role": "user", "content": user_content},  # type: ignore
+            ]
+        else:
+            messages: list[ChatCompletionMessageParam] = [
+                {"role": "system", "content": SYSTEM_MESSAGE_IS_QUANTITATIVE},
+                {"role": "user", "content": question_text_with_choices},
+            ]
 
         # Use o4-mini with medium reasoning effort
         response = await openai_utils.get_completion(
@@ -300,6 +344,48 @@ async def is_quantitative(
 
 
 # Helper functions
+
+
+async def get_question_image_urls(
+    db_session: AsyncSession, question: Question
+) -> list[str]:
+    """
+    Extract image URLs from question content blocks.
+
+    Args:
+        db_session: Database session
+        question: Question instance
+
+    Returns:
+        list[str]: List of image URLs
+    """
+    image_urls: list[str] = []
+
+    # Extract image IDs from content blocks
+    image_ids: list[int] = []
+    for block in question.content_blocks:
+        if hasattr(block, "block_type") and block.block_type == "image":
+            # Handle ImageBlock object
+            if hasattr(block, "image_id"):
+                image_ids.append(block.image_id)
+        elif isinstance(block, dict) and block.get("block_type") == "image":
+            # Handle dict format
+            image_id = block.get("image_id")
+            if image_id:
+                image_ids.append(image_id)
+
+    # Get File objects and URLs
+    if image_ids:
+        files = await db_session.scalars(select(File).where(File.id.in_(image_ids)))
+        for file in files:
+            try:
+                url = await file.get_url()
+                image_urls.append(url)
+            except Exception as e:
+                logger.warning(f"Error getting URL for file {file.id}: {e}")
+                continue
+
+    return image_urls
 
 
 async def categorize_major_tag(
@@ -334,8 +420,13 @@ async def categorize_major_tag(
             logger.info(f"Skipping question without text or choices: {question_id}")
             return MajorTagCategorization(major_tag="Questão Discursiva")
 
+        # Get question image URLs
+        image_urls = await get_question_image_urls(db_session, question)
+
         # Classify the subject using ENEM areas approach
-        major_tag = await _classify_question_subject(question_text_with_choices)
+        major_tag = await _classify_question_subject(
+            question_text_with_choices, image_urls
+        )
 
         result = MajorTagCategorization(major_tag=major_tag)
 
@@ -349,11 +440,16 @@ async def categorize_major_tag(
         raise
 
 
-async def _classify_question_subject(question_text_with_choices: str) -> str:
+async def _classify_question_subject(
+    question_text_with_choices: str, image_urls: list[str] | None = None
+) -> str:
     """
     Classify question subject to determine major tag.
     Uses the original subject classification approach from utils.py.
     """
+    if image_urls is None:
+        image_urls = []
+
     try:
         # First, determine which area this question belongs to
         best_area = None
@@ -371,13 +467,31 @@ Texto extraído:
 {question_text_with_choices}
 """
 
+            # Build messages with images if available
+            if image_urls:
+                user_content = [{"type": "text", "text": user_message}]
+                for image_url in image_urls:
+                    user_content.append(
+                        {  # type: ignore
+                            "type": "image_url",
+                            "image_url": {"url": image_url, "detail": "low"},
+                        }
+                    )
+
+                messages = [
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_content},  # type: ignore
+                ]
+            else:
+                messages = [
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_message},
+                ]
+
             response = await openai_utils.get_completion(
                 model="gpt-4.1-mini",
                 temperature=0.1,
-                messages=[
-                    {"role": "system", "content": system_message},
-                    {"role": "user", "content": user_message},
-                ],
+                messages=messages,  # type: ignore
                 timeout=20,
             )
 
@@ -394,13 +508,31 @@ Texto extraído:
             subjects="\n".join(all_subjects)
         )
 
+        # Build fallback messages with images if available
+        if image_urls:
+            user_content = [{"type": "text", "text": user_message}]
+            for image_url in image_urls:
+                user_content.append(
+                    {  # type: ignore
+                        "type": "image_url",
+                        "image_url": {"url": image_url, "detail": "low"},
+                    }
+                )
+
+            fallback_messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_content},  # type: ignore
+            ]
+        else:
+            fallback_messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message},
+            ]
+
         response = await openai_utils.get_completion(
             model="gpt-4.1-mini",
             temperature=0.1,
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message},
-            ],
+            messages=fallback_messages,  # type: ignore
             timeout=20,
         )
 
@@ -417,9 +549,14 @@ Texto extraído:
 
 
 async def _generate_minor_tags(
-    question_text_with_choices: str, temperature: float
+    question_text_with_choices: str,
+    temperature: float,
+    image_urls: list[str] | None = None,
 ) -> list[str]:
     """Generate minor tags for detailed categorization."""
+    if image_urls is None:
+        image_urls = []
+
     try:
         system_message = SYSTEM_MESSAGE_MINOR_TAGS
 
@@ -430,10 +567,24 @@ Questão completa:
 Analise a questão e identifique as tags mais apropriadas.
 """
 
+        # Build message content with images if available
         messages: list[ChatCompletionMessageParam] = [
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": user_message},
+            {"role": "system", "content": system_message}
         ]
+
+        if image_urls:
+            user_content = [{"type": "text", "text": user_message}]
+            for image_url in image_urls:
+                user_content.append(
+                    {  # type: ignore
+                        "type": "image_url",
+                        "image_url": {"url": image_url, "detail": "low"},
+                    }
+                )
+
+            messages.append({"role": "user", "content": user_content})  # type: ignore
+        else:
+            messages.append({"role": "user", "content": user_message})
 
         response = await openai_utils.get_completion(
             model="gpt-4.1-mini",
@@ -474,12 +625,17 @@ async def task_categorize_minor_tags(
         try:
             # Get questions to categorize
             if question_ids is None:
-                stmt = select(Question).options(selectinload(Question.choices))
+                stmt = (
+                    select(Question)
+                    .options(selectinload(Question.choices))
+                    .where(Question.is_active == True)
+                )
             else:
                 stmt = (
                     select(Question)
                     .options(selectinload(Question.choices))
                     .where(Question.id.in_(question_ids))
+                    .where(Question.is_active == True)
                 )
 
             result = await session.execute(stmt)
@@ -526,12 +682,17 @@ async def task_categorize_major_tags(
         try:
             # Get questions to categorize
             if question_ids is None:
-                stmt = select(Question).options(selectinload(Question.choices))
+                stmt = (
+                    select(Question)
+                    .options(selectinload(Question.choices))
+                    .where(Question.is_active == True)
+                )
             else:
                 stmt = (
                     select(Question)
                     .options(selectinload(Question.choices))
                     .where(Question.id.in_(question_ids))
+                    .where(Question.is_active == True)
                 )
 
             result = await session.execute(stmt)
@@ -580,12 +741,17 @@ async def task_generate_question_answers(
         try:
             # Get questions to generate answers for
             if question_ids is None:
-                stmt = select(Question).options(selectinload(Question.choices))
+                stmt = (
+                    select(Question)
+                    .options(selectinload(Question.choices))
+                    .where(Question.is_active == True)
+                )
             else:
                 stmt = (
                     select(Question)
                     .options(selectinload(Question.choices))
                     .where(Question.id.in_(question_ids))
+                    .where(Question.is_active == True)
                 )
 
             result = await session.execute(stmt)
@@ -652,12 +818,17 @@ async def task_analyze_question_quantitativeness(
         try:
             # Get questions to analyze
             if question_ids is None:
-                stmt = select(Question).options(selectinload(Question.choices))
+                stmt = (
+                    select(Question)
+                    .options(selectinload(Question.choices))
+                    .where(Question.is_active == True)
+                )
             else:
                 stmt = (
                     select(Question)
                     .options(selectinload(Question.choices))
                     .where(Question.id.in_(question_ids))
+                    .where(Question.is_active == True)
                 )
 
             result = await session.execute(stmt)
@@ -682,8 +853,13 @@ async def task_analyze_question_quantitativeness(
                         question.is_quantitative = False
                         continue
 
+                    # Get question image URLs
+                    image_urls = await get_question_image_urls(session, question)
+
                     # Analyze quantitativeness
-                    analysis = await is_quantitative(question_text_with_choices)
+                    analysis = await is_quantitative(
+                        question_text_with_choices, image_urls
+                    )
 
                     # Save to question
                     question.is_quantitative = analysis.requires_paper
@@ -720,12 +896,17 @@ async def task_compute_question_embeddings(
     """
     async with get_db_session_for_worker(ctx) as session:
         if question_ids is None:
-            stmt = select(Question).options(selectinload(Question.choices))
+            stmt = (
+                select(Question)
+                .options(selectinload(Question.choices))
+                .where(Question.is_active == True)
+            )
         else:
             stmt = (
                 select(Question)
                 .options(selectinload(Question.choices))
                 .where(Question.id.in_(question_ids))
+                .where(Question.is_active == True)
             )
 
         # Execute the query
@@ -774,12 +955,17 @@ async def task_categorize_questions(
     """
     async with get_db_session_for_worker(ctx) as session:
         if question_ids is None:
-            stmt = select(Question).options(selectinload(Question.choices))
+            stmt = (
+                select(Question)
+                .options(selectinload(Question.choices))
+                .where(Question.is_active == True)
+            )
         else:
             stmt = (
                 select(Question)
                 .options(selectinload(Question.choices))
                 .where(Question.id.in_(question_ids))
+                .where(Question.is_active == True)
             )
 
         result = await session.execute(stmt)
@@ -808,12 +994,17 @@ async def task_categorize_questions(
                     logger.warning(f"Question {question.id} has no text or choices")
                     continue
 
+                # Get question image URLs
+                image_urls = await get_question_image_urls(session, question)
+
                 # Classify subject/area for major tag
-                major_tag = await _classify_question_subject(question_text_with_choices)
+                major_tag = await _classify_question_subject(
+                    question_text_with_choices, image_urls
+                )
 
                 # Generate minor tags
                 minor_tags = await _generate_minor_tags(
-                    question_text_with_choices, temperature
+                    question_text_with_choices, temperature, image_urls
                 )
 
                 # Update question with tags
