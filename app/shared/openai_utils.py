@@ -470,9 +470,9 @@ def sanitize_messages_for_log(
                     # Safely access and modify image URL
                     image_url = content_part.get("image_url")
                     if isinstance(image_url, dict) and "url" in image_url:
-                        sanitized_message["content"][idx]["image_url"]["url"] = (
-                            "[IMAGE]"
-                        )
+                        sanitized_message["content"][idx]["image_url"][
+                            "url"
+                        ] = "[IMAGE]"
         sanitized_messages.append(sanitized_message)
     return sanitized_messages
 
@@ -482,31 +482,108 @@ def sanitize_messages_for_log(
 #############################################
 
 
+@overload
 async def get_completion(
     model: str,
     temperature: float,
     messages: list[ChatCompletionMessageParam],
     json_mode: bool = False,
     timeout: int = DEFAULT_TIMEOUT,
+    reasoning_effort: None = None,
+) -> CompletionResult[str]: ...
+
+
+@overload
+async def get_completion(
+    model: str,
+    temperature: None,
+    messages: list[ChatCompletionMessageParam],
+    json_mode: bool = False,
+    timeout: int = DEFAULT_TIMEOUT,
+    *,
+    reasoning_effort: Literal["low", "medium", "high"],
+) -> CompletionResult[str]: ...
+
+
+async def get_completion(
+    model: str,
+    temperature: float | None,
+    messages: list[ChatCompletionMessageParam],
+    json_mode: bool = False,
+    timeout: int = DEFAULT_TIMEOUT,
+    reasoning_effort: Literal["low", "medium", "high"] | None = None,
 ) -> CompletionResult[str]:
     """
-    Asynchronous chat completion.
+    Asynchronous chat completion with optional reasoning effort support.
+
+    Args:
+        model: Model name to use
+        temperature: Temperature for randomness (ignored for reasoning models when reasoning_effort is used)
+        messages: Chat messages
+        json_mode: Whether to use JSON mode
+        timeout: Request timeout
+        reasoning_effort: Optional reasoning effort for supported models (o3, o3-mini, o4-mini)
+
+    Returns:
+        CompletionResult with string content
     """
-    logger.info(
-        "Calling async chat completion with model=%s, temperature=%.2f, messages=%s",
-        model,
-        temperature,
-        sanitize_messages_for_log(messages),
-    )
-    return await openai_request(
-        endpoint="chat_completion",
-        model=model,
-        temperature=temperature,
-        messages=messages,
-        json_mode=json_mode,
-        timeout=timeout,
-        stream=False,
-    )
+    # Handle reasoning effort models
+    if model in REASONING_EFFORT_MODELS and reasoning_effort is not None:
+        if temperature is not None:
+            logger.warning(
+                f"temperature is ignored for reasoning models with reasoning_effort: {REASONING_EFFORT_MODELS}"
+            )
+
+        logger.info(
+            "Calling async chat completion with reasoning effort: model=%s, reasoning_effort=%s, messages=%s",
+            model,
+            reasoning_effort,
+            sanitize_messages_for_log(messages),
+        )
+
+        # For reasoning models, we need to use the regular chat completion endpoint
+        # with reasoning effort header
+        response = await async_client.with_options(
+            timeout=timeout
+        ).chat.completions.create(
+            model=model,
+            messages=messages,
+            response_format=(
+                {"type": "json_object"} if json_mode else {"type": "text"}
+            ),
+            extra_headers={"X-Reasoning-Effort": reasoning_effort},
+        )
+
+        if response.usage is None:
+            raise Exception("No usage data returned from OpenAI.")
+        if response.choices[0].message.content is None:
+            raise Exception("No content returned from OpenAI.")
+
+        return CompletionResult(
+            content=response.choices[0].message.content,
+            tokens_used=response.usage.total_tokens,
+        )
+
+    # Regular completion (original behavior)
+    else:
+        if temperature is None:
+            raise ValueError("temperature is required for regular completions")
+
+        logger.info(
+            "Calling async chat completion with model=%s, temperature=%.2f, messages=%s",
+            model,
+            temperature,
+            sanitize_messages_for_log(messages),
+        )
+        return await openai_request(
+            endpoint="chat_completion",
+            model=model,
+            temperature=temperature,
+            messages=messages,
+            json_mode=json_mode,
+            timeout=timeout,
+            stream=False,
+        )
 
 
 async def get_completion_parsed(
@@ -844,3 +921,41 @@ def count_tokens(text: str, model: str) -> int:
         encoding_cache[model] = tiktoken.encoding_for_model(model)
     encoding = encoding_cache[model]
     return len(encoding.encode(text))
+
+
+#############################################
+# Image Generation
+#############################################
+
+
+async def generate_image(
+    prompt: str,
+    model: str = "dall-e-2",
+    size: str = "1024x1024",
+    quality: str = "standard",
+    format: str = "url",
+) -> str:
+    result = await async_client.images.generate(
+        model=model,  # type: ignore
+        prompt=prompt,
+        size=size,  # type: ignore
+        quality=quality,  # type: ignore
+        response_format=format,  # type: ignore
+        n=1,
+    )
+
+    # Return appropriate format based on request
+    if not result.data:
+        raise ValueError("No data returned from OpenAI image generation")
+    if not result.data[0]:
+        raise ValueError("No data returned from OpenAI image generation")
+    if format == "url":
+        url = result.data[0].url
+        if url is None:
+            raise ValueError("No URL returned from OpenAI image generation")
+        return url
+    else:  # b64_json
+        b64_data = result.data[0].b64_json
+        if b64_data is None:
+            raise ValueError("No base64 data returned from OpenAI image generation")
+        return b64_data
