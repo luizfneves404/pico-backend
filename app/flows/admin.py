@@ -302,6 +302,7 @@ class QuestionAdmin(CustomModelView, model=Question):
 
     column_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
         Question.id,
+        Question.content_blocks,
         Question.difficulty,
         Question.answer_type,
         Question.is_quantitative,
