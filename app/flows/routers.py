@@ -296,18 +296,22 @@ async def delete_flow(
     return None
 
 
-@flows_router.get("/user/{user_id}", response_model=list[FlowInSearch])
+@flows_router.get("/user/{user_id}", response_model=PaginatedResponse[FlowInSearch])
 async def user_flows(
     db_session: DBSessionAnnotated,
     user_id: int,
-) -> list[FlowInSearch]:
+    pagination: Annotated[PaginationParams, Depends(get_pagination_params)],
+) -> PaginatedResponse[FlowInSearch]:
     """Get all flows for a specific user"""
 
-    flows = await flow_service.list_user_flows(db_session, user_id=user_id)
-    return [
+    flows = await flow_service.list_user_flows(
+        db_session, user_id=user_id, pagination=pagination
+    )
+    flows_in_search = [
         await FlowInSearch.from_orm_model_for_user(flow, user_id=user_id)
         for flow in flows
     ]
+    return paginate(flows_in_search, pagination)
 
 
 @exam_router.get("", response_model=list[ExamOut])

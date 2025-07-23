@@ -132,7 +132,12 @@ async def discover_flows(
     return await feed(db_session, user_id=user_id, num_flows=num_flows)
 
 
-async def list_user_flows(db_session: AsyncSession, *, user_id: int) -> list[Flow]:
+async def list_user_flows(
+    db_session: AsyncSession,
+    *,
+    user_id: int,
+    pagination: PaginationParams,
+) -> list[Flow]:
     """List all flows that a user has created"""
     query = (
         select(Flow)
@@ -140,8 +145,8 @@ async def list_user_flows(db_session: AsyncSession, *, user_id: int) -> list[Flo
         .order_by(Flow.created_at.desc())
         .options(*get_flow_loader(num_elements=None))
     )
-    result = await db_session.execute(query)
-    return list(result.scalars())
+    result = await db_session.scalars(paginate_query(query, pagination))
+    return list(result)
 
 
 async def get_flow(db_session: AsyncSession, *, flow_id: int) -> Flow:
