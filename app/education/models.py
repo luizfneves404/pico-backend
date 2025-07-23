@@ -7,7 +7,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from app.base import Base
-from app.users.models import User
 
 if TYPE_CHECKING:
     from app.countries.models import Country
@@ -165,18 +164,6 @@ class EducationInfo(Base, kw_only=True):
     course: Mapped["Course | None"] = relationship(
         lazy="raise_on_sql",
         default=None,
-    )
-    current_education_user: Mapped["User | None"] = relationship(
-        lazy="raise_on_sql",
-        default=None,
-        back_populates="current_education",
-        foreign_keys=[User.current_education_id],
-    )
-    intended_education_user: Mapped["User | None"] = relationship(
-        lazy="raise_on_sql",
-        default=None,
-        back_populates="intended_education",
-        foreign_keys=[User.intended_education_id],
     )
 
     def __str__(self) -> str:

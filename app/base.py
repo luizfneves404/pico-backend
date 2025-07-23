@@ -5,7 +5,7 @@ import re
 from typing import Annotated, Any, Callable, cast
 
 import sqlalchemy
-from sqlalchemy import TIMESTAMP, MetaData, event, func, inspect
+from sqlalchemy import TIMESTAMP, MetaData, event, func, inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import (
     MANYTOONE,
@@ -46,7 +46,7 @@ def camel_to_snake(name: str) -> str:
     return name.lower()
 
 
-class Base(MappedAsDataclass, DeclarativeBase):
+class Base(MappedAsDataclass, DeclarativeBase, kw_only=True):
     metadata = MetaData(
         naming_convention={
             "all_column_names": lambda constraint, table: "_".join(
@@ -73,7 +73,7 @@ class Base(MappedAsDataclass, DeclarativeBase):
             return None
         return camel_to_snake(cls.__name__)
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, init=False)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, default=None)
     created_at: Mapped[auto_now_insert_timestamp] = mapped_column(init=False)
 
     def __post_init__(self):
@@ -104,3 +104,23 @@ def handle_after_soft_rollback(
 
 
 event.listen(Session, "after_soft_rollback", handle_after_soft_rollback)
+
+
+async def resync_autoincrement(session: AsyncSession, model_class: type[Base]) -> None:
+    """Sets the autoincrement sequence to the maximum value of the id.
+    When inserting rows with manual ids (not set by the database), you have to call this so that,
+    next time you insert a row using automatic id, it will start from the correct id.
+    """
+    table_name = model_class.__tablename__
+    pk_column = model_class.id.key
+    if not table_name or not pk_column:
+        raise ValueError("Table name or primary key column not found")
+    await session.execute(
+        text(f"""
+        SELECT setval(
+            pg_get_serial_sequence(:table_name, :pk_column),
+            COALESCE((SELECT MAX({model_class.id.key}) FROM {table_name}), 1)
+        )
+    """),
+        {"table_name": table_name, "pk_column": pk_column},
+    )

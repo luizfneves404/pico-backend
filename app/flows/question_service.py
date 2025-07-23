@@ -5,35 +5,40 @@ transcription processing, and official question retrieval.
 """
 
 import asyncio
+import io
 import logging
 import random
+from collections import Counter
 from typing import Any, Coroutine, TypedDict, cast
 
+from fastapi import UploadFile
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from pylatexenc.latex2text import LatexNodes2Text
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.arq_client import enqueue_job
 from app.database import db_manager
 from app.files.models import File
+from app.files.service import create_file
 from app.flows.constants import (
+    PROMPT_COVER_GENERATION,
     SYSTEM_MESSAGE_BLOCK_TITLE,
     SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT,
+    SYSTEM_MESSAGE_GENERATE_TAGS_FOR_QUESTION,
     SYSTEM_MESSAGE_GENERATE_TITLE_FROM_TRANSCRIPTIONS,
     SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION,
     SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH,
     SYSTEM_MESSAGE_QUESTION_GENERATION_THEME,
     SYSTEM_MESSAGE_QUESTION_GENERATION_THEME_MATH,
     SYSTEM_MESSAGE_QUESTION_PERTINENCE_TO_TOPIC,
-    SYSTEM_MESSAGE_GENERATE_TAGS_FOR_QUESTION,
-    PROMPT_COVER_GENERATION,
     QuestionInstance,
     QuestionSet,
 )
 from app.flows.db_types import RichText, TextBlock
 from app.flows.models import (
+    ENEM_AREAS,
     Choice,
     Exam,
     Flow,
@@ -46,16 +51,9 @@ from app.flows.models import (
     QuestionArea,
     QuestionDifficulty,
     QuestionSourceType,
-    ENEM_AREAS,
 )
 from app.flows.schemas import PromptType
 from app.shared import ai_utils, gemini_utils, openai_utils
-from collections import Counter
-import base64
-import io
-import tempfile
-from fastapi import UploadFile
-from app.files.models import create_file
 
 logger = logging.getLogger(__name__)
 TOKENS_PER_BLOCK = 300

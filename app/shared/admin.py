@@ -20,6 +20,7 @@ from sqlalchemy.orm import (
 from starlette.datastructures import UploadFile
 from wtforms import StringField
 
+from app.base import resync_autoincrement
 from app.shared.bootstrap_sqladmin import monkey_patch_sqladmin
 
 monkey_patch_sqladmin()  # needs to run this before importing sqladmin. add sqladmin imports below!!!
@@ -471,9 +472,12 @@ class CustomModelView(ModelView):
         if not dry_run:
             try:
                 orm_instances = await self.to_orm_model(validated_data_list)
-                async with self.session_maker() as session:
+                async with self.session_maker() as session, session.begin():
                     session.add_all(orm_instances)
-                    await session.commit()
+                    await session.flush()
+                    await resync_autoincrement(
+                        session, self.model
+                    )  # needed to make sure everything works even if custom ids are imported
                 result.successful_rows = len(validated_data_list)
             except Exception as e:
                 result.failed_rows = len(validated_data_list)
@@ -583,9 +587,12 @@ class CustomModelView(ModelView):
         if validated_data_list and not dry_run:
             try:
                 orm_instances = await self.to_orm_model(validated_data_list)
-                async with self.session_maker() as session:
+                async with self.session_maker() as session, session.begin():
                     session.add_all(orm_instances)
-                    await session.commit()
+                    await session.flush()
+                    await resync_autoincrement(
+                        session, self.model
+                    )  # needed to make sure everything works even if custom ids are imported
             except Exception as e:
                 result.failed_rows += result.successful_rows
                 result.successful_rows = 0

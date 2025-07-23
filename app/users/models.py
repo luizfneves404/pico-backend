@@ -58,7 +58,6 @@ class User(Base, kw_only=True):
         foreign_keys=[current_education_id],
         lazy="raise_on_sql",
         default=None,
-        back_populates="current_education_user",
     )
 
     intended_education_id: Mapped[int | None] = mapped_column(
@@ -68,7 +67,6 @@ class User(Base, kw_only=True):
         foreign_keys=[intended_education_id],
         lazy="raise_on_sql",
         default=None,
-        back_populates="intended_education_user",
     )
 
     country_id: Mapped[int | None] = mapped_column(

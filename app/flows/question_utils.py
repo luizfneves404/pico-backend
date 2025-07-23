@@ -5,24 +5,23 @@ All functions are implemented as ARQ tasks for use in admin actions.
 """
 
 import logging
+from collections import Counter
 from typing import Any
 
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select
 
 from app.database import get_db_session_for_worker
-from app.flows.models import Question, ENEM_AREAS, Flow, QuestionSourceType
 from app.files.models import File
-from collections import Counter
 from app.flows.db_types import (
-    ContentBlock,
     RichText,
     TextBlock,
     validate_content_block_list,
 )
+from app.flows.models import ENEM_AREAS, Flow, Question, QuestionSourceType
 from app.shared import openai_utils
 
 logger = logging.getLogger(__name__)
