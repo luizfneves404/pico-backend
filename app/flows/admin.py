@@ -306,18 +306,20 @@ class QuestionAdmin(CustomModelView, model=Question):
 
     column_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
         Question.id,
-        Question.content_blocks,
+        Question.created_at,
+        "question_truncated_text",
+        Question.major_tags,
+        Question.minor_tags,
+        Question.source_type,
         Question.difficulty,
         Question.answer_type,
         Question.is_quantitative,
         Question.is_active,
-        Question.source_type,
-        Question.major_tags,
-        Question.minor_tags,
         "has_embedding",
-        Question.created_at,
+        Question.content_blocks,
     ]
-    column_searchable_list = [
+    column_searchable_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
+        Question.content_blocks,
         Question.major_tags,
         Question.minor_tags,
     ]
@@ -659,6 +661,7 @@ class QuestionAdmin(CustomModelView, model=Question):
         return select(Question).options(
             selectinload(Question.official_source),
             selectinload(Question.source_user),
+            selectinload(Question.choices),
         )
 
     def form_edit_query(self, request: Request) -> Select[tuple[Question]]:
