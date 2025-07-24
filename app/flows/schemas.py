@@ -233,8 +233,8 @@ class FlowInFeed(FlowBase):
 
 
 class FlowDetail(FlowInFeed):
-    num_user_total_answers: int
-    num_user_correct_answers: int
+    num_me_total_answers: int
+    num_me_correct_answers: int
 
     @classmethod
     async def from_orm_model_with_context(
@@ -257,14 +257,14 @@ class FlowDetail(FlowInFeed):
             elements=flow_in_feed.elements,
             num_total_elements=flow_in_feed.num_total_elements,
             num_users_answered=flow_in_feed.num_users_answered,
-            num_user_total_answers=flow.num_user_total_answers(user_id),
-            num_user_correct_answers=flow.num_user_correct_answers(user_id),
+            num_me_total_answers=flow.num_user_total_answers(user_id),
+            num_me_correct_answers=flow.num_user_correct_answers(user_id),
         )
 
 
 class FlowInSearch(FlowBase):
-    num_user_total_answers: int
-    num_user_correct_answers: int
+    num_me_total_answers: int
+    num_me_correct_answers: int
 
     @classmethod
     async def from_orm_model_for_user(
@@ -284,8 +284,8 @@ class FlowInSearch(FlowBase):
             difficulty=flow_base.difficulty,
             num_total_elements=flow_base.num_total_elements,
             num_users_answered=flow_base.num_users_answered,
-            num_user_total_answers=flow.num_user_total_answers(user_id),
-            num_user_correct_answers=flow.num_user_correct_answers(user_id),
+            num_me_total_answers=flow.num_user_total_answers(user_id),
+            num_me_correct_answers=flow.num_user_correct_answers(user_id),
         )
 
 
