@@ -316,7 +316,6 @@ class QuestionAdmin(CustomModelView, model=Question):
         Question.is_quantitative,
         Question.is_active,
         "has_embedding",
-        Question.content_blocks,
     ]
     column_searchable_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
         Question.content_blocks,
