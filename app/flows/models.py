@@ -26,7 +26,7 @@ from app.base import (
 )
 from app.countries.models import Country
 from app.files.models import File
-from app.flows.db_types import ContentBlock, ContentBlockListType
+from app.flows.db_types import ContentBlockDB, ContentBlockListType, ImageBlockDB
 
 if TYPE_CHECKING:
     from app.education.models import Course, EducationLevel
@@ -162,8 +162,27 @@ class Flow(Base, kw_only=True):
         default_factory=list,
     )
 
+    feed_scores: Mapped[list["FlowFeedScore"]] = relationship(
+        back_populates="flow",
+        lazy="raise_on_sql",
+        cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
+        passive_deletes=True,
+        default_factory=list,
+    )
+
     def __str__(self) -> str:
         return f"Flow {self.id} - {self.title}"
+
+    @property
+    def question_image_ids(self) -> set[int]:
+        return {
+            block.image_id
+            for element in self.elements
+            if isinstance(element, FlowQuestion)
+            for block in element.question.content_blocks
+            + element.question.answer_content_blocks
+            if isinstance(block, ImageBlockDB)
+        }
 
     @hybrid_property
     def num_total_questions(self) -> int:
@@ -376,7 +395,7 @@ class Question(Base, kw_only=True):
     difficulty: Mapped[QuestionDifficulty] = mapped_column()
     source_type: Mapped[QuestionSourceType] = mapped_column()
     answer_type: Mapped[QuestionAnswerType] = mapped_column()
-    content_blocks: Mapped[list[ContentBlock]] = mapped_column(
+    content_blocks: Mapped[list[ContentBlockDB]] = mapped_column(
         ContentBlockListType,
     )
     is_active: Mapped[bool] = mapped_column(default=True)
@@ -388,7 +407,7 @@ class Question(Base, kw_only=True):
     minor_tags: Mapped[list[str]] = mapped_column(
         postgresql.ARRAY(Text), insert_default=list
     )
-    answer_content_blocks: Mapped[list[ContentBlock]] = mapped_column(
+    answer_content_blocks: Mapped[list[ContentBlockDB]] = mapped_column(
         ContentBlockListType, insert_default=list
     )
 
@@ -444,6 +463,18 @@ class Question(Base, kw_only=True):
         ),
     )
 
+    def __str__(self) -> str:
+        question_insp = inspect(self)
+        if (
+            "official_source" not in question_insp.unloaded
+            and self.official_source_id
+            and self.official_source
+        ):
+            official_source_insp = inspect(self.official_source)
+            if "exam" not in official_source_insp.unloaded:
+                return f"Question {self.id} - {self.official_source.exam.name} - {self.official_source.year}"
+        return f"Question {self.id}"
+
     @property
     def choices_text(self) -> str:
         choices_text: list[str] = []
@@ -498,17 +529,35 @@ class Question(Base, kw_only=True):
         else:
             return ""
 
-    def __str__(self) -> str:
-        question_insp = inspect(self)
-        if (
-            "official_source" not in question_insp.unloaded
-            and self.official_source_id
-            and self.official_source
-        ):
-            official_source_insp = inspect(self.official_source)
-            if "exam" not in official_source_insp.unloaded:
-                return f"Question {self.id} - {self.official_source.exam.name} - {self.official_source.year}"
-        return f"Question {self.id}"
+    @hybrid_property
+    def answers(self) -> list["FlowQuestionUser"]:
+        return [
+            fqu
+            for flow_question in self.flow_questions
+            for fqu in flow_question.answers
+        ]
+
+    @answers.inplace.expression
+    @classmethod
+    def _answers_expression(cls):
+        return (
+            select(FlowQuestionUser)
+            .select_from(FlowQuestionUser)
+            .where(
+                FlowQuestionUser.flow_question.has(FlowElement.question_id == cls.id),
+                (FlowQuestionUser.choice_id.is_not(None))
+                | (FlowQuestionUser.submitted_text != ""),
+            )
+        ).scalar_subquery()
+
+    @hybrid_method
+    def has_user_answered(self, user_id: int) -> bool:
+        return any(fqu.user_id == user_id for fqu in self.answers)
+
+    @has_user_answered.inplace.expression
+    @classmethod
+    def _has_user_answered_expression(cls, user_id: int):
+        return cls.answers.any(FlowQuestionUser.user_id == user_id)
 
 
 class QuestionArea(Base, kw_only=True):
@@ -788,3 +837,54 @@ class Campaign(Base, kw_only=True):
     image2: Mapped["File | None"] = relationship(
         lazy="raise_on_sql", foreign_keys=[image2_id], default=None
     )
+
+
+class FlowFeedScoreGroupTypeEnum(StrEnum):
+    COMMUNITY = "community"
+    INTENDED_EDUCATION = "intended_education"
+    INTENDED_COURSE = "intended_course"
+    INSTITUTION = "institution"
+    INSTITUTION_TYPE = "institution_type"
+    # for schoolers, which will have a grade:
+    STAGE = "stage"
+    # for university students, which will have a course:
+    COURSE = "course"
+
+
+class FlowFeedScoreGroupType(Base, kw_only=True):
+    """
+    Represents a group of users for calculating flow feed score.
+    """
+
+    group_type: Mapped[FlowFeedScoreGroupTypeEnum] = mapped_column(unique=True)
+
+    enabled: Mapped[bool] = mapped_column()
+
+    weight: Mapped[float] = mapped_column()
+
+
+class FlowFeedScore(Base, kw_only=True):
+    """
+    Score for a flow in the feed, saved here so that we don't have to calculate it on the fly.
+    Each row represents a score for a flow for a group of users. A group of users is defined by a group_key. The group_type tells you how to interpret the group_key.
+    """
+
+    flow_id: Mapped[int] = mapped_column(
+        ForeignKey("flow.id", ondelete="CASCADE"), default=None
+    )
+    flow: Mapped["Flow | None"] = relationship(
+        back_populates="feed_scores", lazy="raise_on_sql", default=None
+    )
+
+    group_type_id: Mapped[int] = mapped_column(
+        ForeignKey("flow_feed_score_group_type.id", ondelete="CASCADE"), default=None
+    )
+    group_type: Mapped["FlowFeedScoreGroupType | None"] = relationship(
+        lazy="raise_on_sql", default=None
+    )
+
+    group_key: Mapped[dict[str, int | None]] = mapped_column(postgresql.JSONB)
+
+    score: Mapped[float] = mapped_column()
+
+    __table_args__ = (Index(None, group_type_id, flow_id, group_key, unique=True),)

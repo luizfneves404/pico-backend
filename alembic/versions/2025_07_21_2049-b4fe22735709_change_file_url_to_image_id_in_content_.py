@@ -1,23 +1,20 @@
 """change_file_url_to_image_id_in_content_blocks
 
 Revision ID: b4fe22735709
-Revises: 4db3ea22798e
+Revises: 0c9931af6475
 Create Date: 2025-07-21 20:49:06.406169
 
 """
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
-import app.base
-import pgvector.sqlalchemy
-import geoalchemy2.types
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "b4fe22735709"
-down_revision: Union[str, None] = "4db3ea22798e"
+down_revision: Union[str, None] = "0c9931af6475"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

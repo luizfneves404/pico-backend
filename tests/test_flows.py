@@ -885,12 +885,13 @@ async def test_get_user_flows(
     response = await user_client.get(f"/api/flows/user/{user2.id}")
     assert response.status_code == 200
     response_data = response.json()
+    logger.info(f"response_data: {response_data}")
 
     # Should only see user2's flows
-    assert len(response_data) == 3
+    assert len(response_data["items"]) == 3
 
     # Check response data structure
-    for flow in response_data:
+    for flow in response_data["items"]:
         assert "id" in flow
         assert "title" in flow
         assert "difficulty" in flow

@@ -5,12 +5,15 @@ from sqlalchemy.sql.operators import OperatorType
 from sqlalchemy.types import JSON, TypeDecorator
 
 
-class ImageBlock(BaseModel):
+class ImageBlockBase(BaseModel):
     block_type: Literal[
         "image"
     ]  # didn't add as default because OpenAPI will render it as optional
-    image_id: int
     alt: str | None = None
+
+
+class ImageBlockDB(ImageBlockBase):
+    image_id: int
 
 
 class RichText(BaseModel):
@@ -38,14 +41,14 @@ class TextBlock(BaseModel):
     content: list[RichText]
 
 
-ContentBlock = Annotated[TextBlock | ImageBlock, Field(discriminator="block_type")]
+ContentBlockDB = Annotated[TextBlock | ImageBlockDB, Field(discriminator="block_type")]
 
 
-def validate_content_block_list(value: Any) -> list[ContentBlock]:
-    return TypeAdapter(list[ContentBlock]).validate_python(value)
+def validate_content_block_list(value: Any) -> list[ContentBlockDB]:
+    return TypeAdapter(list[ContentBlockDB]).validate_python(value)
 
 
-class ContentBlockListType(TypeDecorator[list[ContentBlock]]):
+class ContentBlockListType(TypeDecorator[list[ContentBlockDB]]):
     """Stores a list of ContentBlock models as JSON in the DB"""
 
     impl = JSON
@@ -59,7 +62,7 @@ class ContentBlockListType(TypeDecorator[list[ContentBlock]]):
 
     def process_result_value(
         self, value: Any, dialect: Any
-    ) -> list[ContentBlock] | None:
+    ) -> list[ContentBlockDB] | None:
         if value is None:
             return None
         return validate_content_block_list(value)

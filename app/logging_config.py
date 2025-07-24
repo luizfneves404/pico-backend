@@ -40,7 +40,10 @@ def get_logging_config() -> dict[str, Any]:
                 "formatter": "default",
             },
         },
-        "root": {"level": "WARNING", "handlers": ["console", "admin_email"]},
+        "root": {
+            "level": "DEBUG" if settings.environment == Environment.TEST else "WARNING",
+            "handlers": ["console", "admin_email"],
+        },
         "loggers": {
             "app": {"level": "DEBUG", "propagate": True},
             "tests": {"level": "DEBUG", "propagate": True},

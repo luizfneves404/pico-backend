@@ -13,7 +13,7 @@ from wtforms.validators import Optional
 
 from app.arq_client import enqueue_job
 from app.flows.db_types import (
-    ContentBlock,
+    ContentBlockDB,
     validate_content_block_list,
 )
 from app.flows.models import (
@@ -284,8 +284,9 @@ class FlowElementAdmin(CustomModelView, model=FlowElement):
 
 
 class QuestionImportSchema(BaseModel):
-    content_blocks: list[ContentBlock]
-    answer_content_blocks: list[ContentBlock] = []
+    id: int | None = None
+    content_blocks: list[ContentBlockDB]
+    answer_content_blocks: list[ContentBlockDB] = []
     major_tags: list[str] = []
     minor_tags: list[str] = []
     difficulty: QuestionDifficulty
@@ -629,7 +630,7 @@ class QuestionAdmin(CustomModelView, model=Question):
         self, validated_data_list: list[QuestionImportSchema]
     ) -> list[Question]:
         """Convert Pydantic model to ORM model."""
-        return [
+        questions = [
             Question(
                 difficulty=validated_data.difficulty,
                 source_type=validated_data.source_type,
@@ -649,6 +650,10 @@ class QuestionAdmin(CustomModelView, model=Question):
             )
             for validated_data in validated_data_list
         ]
+        for question, validated_data in zip(questions, validated_data_list):
+            if validated_data.id is not None:
+                question.id = validated_data.id
+        return questions
 
     def list_query(self, request: Request) -> Select[tuple[Question]]:
         return select(Question).options(

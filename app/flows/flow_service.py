@@ -1,6 +1,8 @@
+import itertools
 import logging
 import os
 import random
+from operator import attrgetter
 
 from fastapi import UploadFile
 from sqlalchemy import (
@@ -16,7 +18,7 @@ from sqlalchemy.orm import selectinload
 
 from app.arq_client import enqueue_job
 from app.community.models import CommunityUser
-from app.files.models import create_files
+from app.files.service import create_files
 from app.flows import question_service
 from app.flows.constants import (
     SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT,
@@ -26,6 +28,8 @@ from app.flows.models import (
     Flow,
     FlowDifficulty,
     FlowElement,
+    FlowFeedScore,
+    FlowFeedScoreGroupTypeEnum,
     FlowInputType,
     FlowQuestion,
     FlowQuestionUser,
@@ -90,9 +94,9 @@ class InvalidFileTypeError(Exception):
 
 
 async def feed(db_session: AsyncSession, *, user_id: int, num_flows: int) -> list[Flow]:
-    """List all flows for a user that they haven't seen in their feed yet.
-    Will use a complex algorithm in the future.
-    For now, it's just a simple query to the database that excludes already seen flows.
+    """Feed algorithm for a user.
+    It calculates the user's group keys and uses them to fetch the flows that have the highest scores.
+    It also excludes flows that the user has already seen.
     """
 
     # Get flows that the user hasn't seen in their feed yet
@@ -100,25 +104,135 @@ async def feed(db_session: AsyncSession, *, user_id: int, num_flows: int) -> lis
         FlowUserFeed.user_id == user_id
     )
 
-    query = (
-        select(Flow)
-        .join(FlowElement, Flow.id == FlowElement.flow_id)
-        .outerjoin(FlowQuestionUser, FlowElement.id == FlowQuestionUser.flow_element_id)
-        .where(Flow.id.not_in(seen_flow_ids_query))  # Exclude already seen flows
-        .group_by(Flow.id)
-        .order_by(func.count(FlowQuestionUser.id).desc(), Flow.created_at.desc())
-        .options(*get_flow_loader(num_elements=NUM_ELEMENTS_TO_LOAD_IN_FEED))
-        .limit(num_flows)
+    # Get user to fetch their group keys
+    user_result = await db_session.execute(
+        select(User)
+        .options(selectinload(User.intended_education))
+        .where(User.id == user_id)
     )
-    result = await db_session.execute(query)
-    flows = list(result.scalars())
+    user = user_result.scalar_one()
+
+    # Build group keys based on user's profile
+    group_types_to_user_group_keys: dict[
+        FlowFeedScoreGroupTypeEnum, list[dict[str, int | None]]
+    ] = {}
+
+    # Add intended education group key if user has it
+    if user.intended_education:
+        # group_key: dict[str, int | None] = {
+        #     "level_id": user.intended_education.level_id,
+        #     "institution_id": user.intended_education.institution_id,
+        #     "stage_id": user.intended_education.stage_id,
+        #     "course_id": user.intended_education.course_id,
+        # }
+
+        # group_types_to_user_group_keys[
+        #     FlowFeedScoreGroupTypeEnum.INTENDED_EDUCATION
+        # ] = [group_key]
+        pass
+
+    # If user has no group keys, use a fallback strategy
+    if not group_types_to_user_group_keys:
+        # Fallback to showing most answered flows not yet seen
+        logger.info("FALLBACK")
+        query = (
+            select(Flow)
+            .join(FlowElement, Flow.id == FlowElement.flow_id)
+            .outerjoin(
+                FlowQuestionUser, FlowElement.id == FlowQuestionUser.flow_element_id
+            )
+            .where(Flow.id.not_in(seen_flow_ids_query))
+            .group_by(Flow.id)
+            .order_by(func.count(FlowQuestionUser.id).desc(), Flow.created_at.desc())
+            .options(*get_flow_loader(num_elements=NUM_ELEMENTS_TO_LOAD_IN_FEED))
+            .limit(num_flows)
+        )
+        result = await db_session.execute(query)
+        flows = list(result.scalars())
+
+        # Mark these flows as seen
+        for flow in flows:
+            flow_user_feed = FlowUserFeed(user_id=user_id, flow_id=flow.id)
+            db_session.add(flow_user_feed)
+
+        await db_session.flush()
+        return flows
+
+    # Search for all of the FlowScoreFeed records for the user
+    flow_score_feed_query = (
+        select(FlowFeedScore)
+        .options(selectinload(FlowFeedScore.group_type))
+        .where(
+            FlowFeedScore.group_key.in_(
+                [
+                    group_key
+                    for group_keys in group_types_to_user_group_keys.values()
+                    for group_key in group_keys
+                ]
+            )
+        )
+    )
+    flow_score_feed_result = await db_session.scalars(flow_score_feed_query)
+    flow_score_feed_records = list(flow_score_feed_result)
+
+    # Group records by flow_id
+    flow_score_feed_records.sort(key=attrgetter("flow_id"))
+
+    # Calculate weighted scores for each flow
+    flow_scores: dict[int, float] = {}
+    for flow_id, group in itertools.groupby(
+        flow_score_feed_records, key=attrgetter("flow_id")
+    ):
+        total_score = 0.0
+        for record in group:
+            if record.group_type:
+                total_score += record.score * record.group_type.weight
+        flow_scores[flow_id] = total_score
+
+    # Sort flow IDs by score descending
+    sorted_flow_ids = sorted(
+        flow_scores.keys(), key=lambda fid: flow_scores.get(fid, 0), reverse=True
+    )
+
+    # Get list of seen flow IDs
+    seen_flow_ids_result = await db_session.execute(seen_flow_ids_query)
+    seen_flow_ids = [row[0] for row in seen_flow_ids_result]
+
+    # Filter out already seen flows
+    flow_ids_to_fetch = [fid for fid in sorted_flow_ids if fid not in seen_flow_ids][
+        :num_flows
+    ]
+
+    if not flow_ids_to_fetch:
+        # If no scored flows available, fall back to recent flows
+        query = (
+            select(Flow)
+            .where(Flow.id.not_in(seen_flow_ids_query))
+            .order_by(Flow.created_at.desc())
+            .options(*get_flow_loader(num_elements=NUM_ELEMENTS_TO_LOAD_IN_FEED))
+            .limit(num_flows)
+        )
+        result = await db_session.scalars(query)
+        flows = list(result)
+    else:
+        # Fetch the actual Flow objects
+        query = (
+            select(Flow)
+            .where(Flow.id.in_(flow_ids_to_fetch))
+            .options(*get_flow_loader(num_elements=NUM_ELEMENTS_TO_LOAD_IN_FEED))
+        )
+        result = await db_session.scalars(query)
+        flows_dict = {flow.id: flow for flow in result}
+
+        # Sort flows according to the score order
+        flows = [flows_dict[fid] for fid in flow_ids_to_fetch if fid in flows_dict]
 
     # Mark these flows as seen by this user
     for flow in flows:
         flow_user_feed = FlowUserFeed(user_id=user_id, flow_id=flow.id)
         db_session.add(flow_user_feed)
 
-    # Commit the seen records
+    # Save the seen records
     await db_session.flush()
 
     return flows
@@ -867,6 +981,9 @@ def get_flow_loader(num_elements: int | None):
                 selectinload(Question.source_user),
                 selectinload(Question.official_source).selectinload(
                     OfficialQuestionSource.exam
+                ),
+                selectinload(Question.flow_questions).options(
+                    selectinload(FlowQuestion.answers)
                 ),
             ),
             selectinload(FlowQuestion.flow_question_users).options(

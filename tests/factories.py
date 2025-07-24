@@ -40,7 +40,7 @@ from app.education.models import (
 from app.fcm.models import DeviceType, FCMDevice
 from app.files.models import File
 from app.files.storage import storage
-from app.flows.db_types import ContentBlock, ImageBlock, RichText, TextBlock
+from app.flows.db_types import ContentBlockDB, ImageBlockDB, RichText, TextBlock
 from app.flows.models import (
     Choice,
     Exam,
@@ -356,7 +356,7 @@ class FileFactory(AsyncSQLAlchemyFactory[File]):
     size = LazyFunction(get_size_for_file_id)
 
 
-def get_content_blocks() -> list[ContentBlock]:
+def get_content_blocks(file: File) -> list[ContentBlockDB]:
     return [
         TextBlock(
             block_type="text",
@@ -371,9 +371,9 @@ def get_content_blocks() -> list[ContentBlock]:
                 ),
             ],
         ),
-        ImageBlock(
+        ImageBlockDB(
             block_type="image",
-            image_id=1,
+            image_id=file.id,
             alt=Faker().sentence(),
         ),
     ]
@@ -407,9 +407,6 @@ class QuestionFactory(AsyncSQLAlchemyFactory[Question]):
     class Meta:
         model = Question
 
-    content_blocks = LazyFunction(get_content_blocks)
-    answer_content_blocks = LazyFunction(get_content_blocks)
-
     is_active = True
     is_quantitative = False
     difficulty = Iterator(QuestionDifficulty)
@@ -423,6 +420,17 @@ class QuestionFactory(AsyncSQLAlchemyFactory[Question]):
     official_source = SubFactory(OfficialQuestionSourceFactory)
     source_user_id = None
     answer_type = QuestionAnswerType.MULTIPLE_CHOICE
+
+    @classmethod
+    async def create(cls, session: AsyncSession, **kwargs: Any) -> Question:
+        file = await FileFactory.create(session=session)
+        content_blocks = get_content_blocks(file)
+        answer_content_blocks = get_content_blocks(file)
+
+        kwargs.setdefault("content_blocks", content_blocks)
+        kwargs.setdefault("answer_content_blocks", answer_content_blocks)
+
+        return await super().create(session=session, **kwargs)
 
 
 class ChoiceFactory(AsyncSQLAlchemyFactory[Choice]):
@@ -487,13 +495,11 @@ class FlowElementFactory(AsyncSQLAlchemyFactory[FlowElement]):
 
 
 class FlowQuestionFactory(AsyncSQLAlchemyFactory[FlowQuestion]):
-    """Factory for creating FlowQuestion instances."""
-
     class Meta:
         model = FlowQuestion
 
     flow = SubFactory(FlowFactory)
-    question = SubFactory(QuestionFactory)
+
     # Order should be sequential **within** a flow, starting at 0 for every new flow.
     # Using a global Sequence causes order values to grow across tests, which can
     # make newly-created questions exceed the cutoff (< 5) used by
@@ -511,7 +517,6 @@ class FlowQuestionFactory(AsyncSQLAlchemyFactory[FlowQuestion]):
         that orders start at 0 for every flow and remain contiguous, no matter
         how many FlowQuestions have been created in other tests.
         """
-
         flow: Flow | None = kwargs.get("flow")
 
         if flow is not None and "order" not in kwargs:
@@ -523,7 +528,11 @@ class FlowQuestionFactory(AsyncSQLAlchemyFactory[FlowQuestion]):
             max_order: int = result.scalar_one()
             kwargs["order"] = max_order + 1
 
-        return await super().create(session, **kwargs)
+        # 🧙 If no question was provided, create one explicitly via await
+        if "question" not in kwargs:
+            kwargs["question"] = await QuestionFactory.create(session=session)
+
+        return await super().create(session=session, **kwargs)
 
     @classmethod
     async def create_batch(

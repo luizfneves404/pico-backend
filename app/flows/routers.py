@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from fastapi import File as FastAPIFile
 
+import app.files.service as file_service
 import app.flows.area_service as area_service
 import app.flows.campaign_service as campaign_service
 import app.flows.exam_service as exam_service
@@ -64,9 +65,17 @@ async def feed(
         user_id=current_user.id,
         num_flows=pagination.size - 1 if campaign else pagination.size,
     )
-
+    image_id_to_file_url = await file_service.pks_to_urls(
+        db_session,
+        pks=[image_id for flow in flows for image_id in flow.question_image_ids],
+    )
     feed_items: list[FeedItem] = [
-        FlowFeedItem(item_type="flow", item=await FlowInFeed.from_orm_model(flow))
+        FlowFeedItem(
+            item_type="flow",
+            item=await FlowInFeed.from_orm_model_with_context(
+                flow, user_id=current_user.id, image_id_to_file_url=image_id_to_file_url
+            ),
+        )
         for flow in flows
     ]
 
@@ -90,7 +99,16 @@ async def discover_flows(
     flows = await flow_service.discover_flows(
         db_session, user_id=current_user.id, num_flows=pagination.size
     )
-    flows_in_feed = [await FlowInFeed.from_orm_model(flow) for flow in flows]
+    image_id_to_file_url = await file_service.pks_to_urls(
+        db_session,
+        pks=[image_id for flow in flows for image_id in flow.question_image_ids],
+    )
+    flows_in_feed = [
+        await FlowInFeed.from_orm_model_with_context(
+            flow, user_id=current_user.id, image_id_to_file_url=image_id_to_file_url
+        )
+        for flow in flows
+    ]
     return paginate(flows_in_feed, pagination)
 
 
@@ -144,7 +162,13 @@ async def flow_detail(
 
     try:
         flow = await flow_service.get_flow_detail(db_session, flow_id=id)
-        return await FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
+        image_id_to_file_url = await file_service.pks_to_urls(
+            db_session,
+            pks=flow.question_image_ids,
+        )
+        return await FlowDetail.from_orm_model_with_context(
+            flow, user_id=current_user.id, image_id_to_file_url=image_id_to_file_url
+        )
     except flow_service.FlowNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
@@ -167,7 +191,13 @@ async def create_flow(
             topic=topic,
             files=input_files if input_files else [],
         )
-        return await FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
+        image_id_to_file_url = await file_service.pks_to_urls(
+            db_session,
+            pks=flow.question_image_ids,
+        )
+        return await FlowDetail.from_orm_model_with_context(
+            flow, user_id=current_user.id, image_id_to_file_url=image_id_to_file_url
+        )
     except flow_service.FlowValidationError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except flow_service.InvalidFileTypeError as e:
@@ -203,7 +233,13 @@ async def add_questions_to_flow_official(
         flow = await flow_service.add_questions_to_flow_official(
             db_session, current_user.id, id, add_questions_to_flow_official
         )
-        return await FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
+        image_id_to_file_url = await file_service.pks_to_urls(
+            db_session,
+            pks=flow.question_image_ids,
+        )
+        return await FlowDetail.from_orm_model_with_context(
+            flow, user_id=current_user.id, image_id_to_file_url=image_id_to_file_url
+        )
     except flow_service.FlowNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
@@ -223,7 +259,13 @@ async def add_questions_to_flow_ai(
         flow = await flow_service.add_questions_to_flow_ai(
             db_session, current_user.id, id, add_questions_to_flow_ai
         )
-        return await FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
+        image_id_to_file_url = await file_service.pks_to_urls(
+            db_session,
+            pks=flow.question_image_ids,
+        )
+        return await FlowDetail.from_orm_model_with_context(
+            flow, user_id=current_user.id, image_id_to_file_url=image_id_to_file_url
+        )
     except flow_service.FlowNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
@@ -243,7 +285,13 @@ async def add_questions_to_flow_full(
         flow = await flow_service.add_questions_to_flow_full(
             db_session, current_user.id, id, add_questions_to_flow_full
         )
-        return await FlowDetail.from_orm_model_for_user(flow, user_id=current_user.id)
+        image_id_to_file_url = await file_service.pks_to_urls(
+            db_session,
+            pks=flow.question_image_ids,
+        )
+        return await FlowDetail.from_orm_model_with_context(
+            flow, user_id=current_user.id, image_id_to_file_url=image_id_to_file_url
+        )
     except flow_service.FlowNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"

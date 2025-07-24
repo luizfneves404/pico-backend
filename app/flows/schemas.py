@@ -1,10 +1,11 @@
+import logging
 from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, Field
 
-from app.flows.db_types import ContentBlock
+from app.flows.db_types import ImageBlockBase, ImageBlockDB, TextBlock
 from app.flows.models import (
     Campaign,
     Choice,
@@ -18,6 +19,17 @@ from app.flows.models import (
     QuestionDifficulty,
     QuestionSourceType,
 )
+
+logger = logging.getLogger(__name__)
+
+
+class ImageBlockAPI(ImageBlockBase):
+    file_url: str
+
+
+ContentBlockAPI = Annotated[
+    TextBlock | ImageBlockAPI, Field(discriminator="block_type")
+]
 
 
 class SimpleUser(BaseModel):
@@ -60,8 +72,9 @@ class ChoiceInFeed(BaseModel):
 class FlowQuestionInFeed(BaseModel):
     id: int
     element_type: Literal["flow_question"]
-    content_blocks: list[ContentBlock]
-    answer_content_blocks: list[ContentBlock]
+    content_blocks: list[ContentBlockAPI]
+    answer_content_blocks: list[ContentBlockAPI]
+    has_me_answered_in_any_flow: bool
     relevant_answers: list[AnswerInFeed]  # all answers for now
     num_total_answers: int
     choices: list[ChoiceInFeed]
@@ -78,12 +91,39 @@ class FlowQuestionInFeed(BaseModel):
     answer_type: QuestionAnswerType
 
     @classmethod
-    async def from_orm_model(cls, flow_question: FlowQuestion) -> "FlowQuestionInFeed":
+    async def from_orm_model(
+        cls,
+        flow_question: FlowQuestion,
+        *,
+        user_id: int,
+        image_id_to_file_url: dict[int, str],
+    ) -> "FlowQuestionInFeed":
         return cls(
             id=flow_question.question.id,
             element_type="flow_question",
-            content_blocks=flow_question.question.content_blocks,
-            answer_content_blocks=flow_question.question.answer_content_blocks,
+            content_blocks=[
+                ImageBlockAPI(
+                    block_type="image",
+                    alt=block.alt,
+                    file_url=image_id_to_file_url[block.image_id],
+                )
+                if isinstance(block, ImageBlockDB)
+                else block
+                for block in flow_question.question.content_blocks
+            ],
+            answer_content_blocks=[
+                ImageBlockAPI(
+                    block_type="image",
+                    alt=block.alt,
+                    file_url=image_id_to_file_url[block.image_id],
+                )
+                if isinstance(block, ImageBlockDB)
+                else block
+                for block in flow_question.question.answer_content_blocks
+            ],
+            has_me_answered_in_any_flow=flow_question.question.has_user_answered(
+                user_id
+            ),
             relevant_answers=[
                 AnswerInFeed.from_orm_model(answer)
                 for answer in flow_question.flow_question_users
@@ -158,7 +198,9 @@ class FlowInFeed(FlowBase):
     elements: list[FlowQuestionInFeed]
 
     @classmethod
-    async def from_orm_model(cls, flow: Flow) -> "FlowInFeed":
+    async def from_orm_model_with_context(
+        cls, flow: Flow, *, user_id: int, image_id_to_file_url: dict[int, str]
+    ) -> "FlowInFeed":
         flow_base = await FlowBase.from_orm_model(flow)
         return cls(
             id=flow_base.id,
@@ -172,7 +214,9 @@ class FlowInFeed(FlowBase):
             difficulty=flow_base.difficulty,
             max_num_questions=flow_base.max_num_questions,
             elements=[
-                await FlowQuestionInFeed.from_orm_model(element)
+                await FlowQuestionInFeed.from_orm_model(
+                    element, user_id=user_id, image_id_to_file_url=image_id_to_file_url
+                )
                 for i, element in enumerate(flow.elements)
                 if isinstance(element, FlowQuestion)
                 and (i == 0 or flow.elements[i - 1].order == flow.elements[i].order - 1)
@@ -187,8 +231,12 @@ class FlowDetail(FlowInFeed):
     num_user_correct_answers: int
 
     @classmethod
-    async def from_orm_model_for_user(cls, flow: Flow, *, user_id: int) -> "FlowDetail":
-        flow_in_feed = await FlowInFeed.from_orm_model(flow)
+    async def from_orm_model_with_context(
+        cls, flow: Flow, *, user_id: int, image_id_to_file_url: dict[int, str]
+    ) -> "FlowDetail":
+        flow_in_feed = await FlowInFeed.from_orm_model_with_context(
+            flow, user_id=user_id, image_id_to_file_url=image_id_to_file_url
+        )
         return cls(
             id=flow_in_feed.id,
             code=flow_in_feed.code,

@@ -49,7 +49,6 @@ from tests.factories import (
 T = TypeVar("T")
 DEFAULT_TEST_PASSWORD = "defaultpassword"
 BASE_URL = "http://test"
-logger = logging.getLogger(__name__)
 
 
 def pytest_configure():
