@@ -5,6 +5,7 @@ transcription processing, and official question retrieval.
 """
 
 import asyncio
+import base64
 import io
 import logging
 import random
@@ -17,6 +18,7 @@ from pylatexenc.latex2text import LatexNodes2Text
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from starlette.datastructures import Headers
 
 from app.arq_client import enqueue_job
 from app.database import db_manager
@@ -406,7 +408,7 @@ async def generate_flow_cover_image(flow_title: str) -> str:
 
 
 async def save_cover_image_to_flow(
-    db_session, flow_id: int, image_base64: str
+    db_session: AsyncSession, flow_id: int, image_base64: str
 ) -> int | None:
     """
     Save cover image from base64 data to flow.
@@ -419,49 +421,39 @@ async def save_cover_image_to_flow(
     Returns:
         The ID of the created File object, or None if failed
     """
+    logger.info(f"Preparing to save cover image for flow {flow_id}")
+
     try:
-        logger.info(f"Preparing to save cover image for flow {flow_id}")
+        image_data = base64.b64decode(image_base64)
+    except Exception as e:
+        logger.error(f"Failed to decode base64 image for flow {flow_id}: {str(e)}")
+        return None
 
-        # Decode base64 to get image data
-        import base64
+    # Create file-like object in memory
+    image_buffer = io.BytesIO(image_data)
+    filename = f"flow_cover_{flow_id}.jpg"
 
-        try:
-            image_data = base64.b64decode(image_base64)
-        except Exception as e:
-            logger.error(f"Failed to decode base64 image for flow {flow_id}: {str(e)}")
-            return None
+    headers = Headers({"content-type": "image/jpeg"})
+    upload_file = UploadFile(
+        file=image_buffer,
+        filename=filename,
+        size=len(image_data),
+        headers=headers,
+    )
 
-        # Create file-like object in memory
-        image_buffer = io.BytesIO(image_data)
-        filename = f"flow_cover_{flow_id}.jpg"
+    # Save to storage and database
+    file_obj = await create_file(db_session, upload_file)
+    await db_session.flush()
 
-        from starlette.datastructures import Headers
-
-        headers = Headers({"content-type": "image/jpeg"})
-        upload_file = UploadFile(
-            file=image_buffer,
-            filename=filename,
-            size=len(image_data),
-            headers=headers,
-        )
-
-        # Save to storage and database
-        file_obj = await create_file(db_session, upload_file)
+    # Update flow with cover image
+    flow = await db_session.scalar(select(Flow).where(Flow.id == flow_id))
+    if flow:
+        flow.cover_image_id = file_obj.id
+        db_session.add(flow)
         await db_session.flush()
 
-        # Update flow with cover image
-        flow = await db_session.scalar(select(Flow).where(Flow.id == flow_id))
-        if flow:
-            flow.cover_image_id = file_obj.id
-            db_session.add(flow)
-            await db_session.flush()
-
-        logger.info(f"Saved cover image for flow {flow_id}, file_id: {file_obj.id}")
-        return file_obj.id
-
-    except Exception as e:
-        logger.error(f"Failed to save cover image for flow {flow_id}: {str(e)}")
-        return None
+    logger.info(f"Saved cover image for flow {flow_id}, file_id: {file_obj.id}")
+    return file_obj.id
 
 
 #! Exclusively for create_flow_with_optional_files on flow_service.py
