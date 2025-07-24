@@ -340,48 +340,34 @@ def parse_field_value(value: str | None) -> Any:
     - Cell with just quotes '""' -> empty string ""
     - Cell with 'null' -> None
     """
-    # Handle truly empty cells (None from CSV reader)
     if value is None:
         return None
-
-    # Handle explicit empty string marker
     if value == '""':
         return ""
-
-    # Handle whitespace-only as None (configurable behavior)
     if not value or value.strip() == "":
         return None
 
     value = value.strip()
 
-    # Handle explicit null marker
+    # null marker
     if value.lower() == "null":
         return None
 
-    # Handle JSON booleans explicitly
-    if value.lower() in ("true", "false"):
-        return value.lower() == "true"
+    # booleans
+    if value.lower() == "true":
+        return True
+    if value.lower() == "false":
+        return False
 
-    # Try to parse as number (int or float)
-    if value.replace(".", "", 1).replace("-", "", 1).replace("+", "", 1).isdigit():
-        try:
-            # Try int first, then float
-            if "." in value:
-                return float(value)
-            else:
-                return int(value)
-        except ValueError:
-            pass
-
-    # Try to parse as JSON for complex types (lists, dicts)
-    if value.startswith(("[", "{")):
+    # JSON objects/arrays
+    if value.startswith(("{", "[")):
         try:
             return json.loads(value)
         except (json.JSONDecodeError, ValueError):
             pass
 
-    # Default to string
-    return value
+    # 🛑 DO NOT coerce to number here, let pydantic handle it
+    return value  # Always return string unless JSON, bool, or null
 
 
 class CustomModelView(ModelView):
@@ -606,6 +592,8 @@ class CustomModelView(ModelView):
                         "data": [data.model_dump() for data in validated_data_list],
                     }
                 )
+
+        logger.warning(f"Import result: {result.model_dump_json(indent=4)[:1000]}")
 
         return result
 
