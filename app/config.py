@@ -86,6 +86,7 @@ class Settings(BaseSettings):
     uvicorn_host: str = Field(default=...)
     uvicorn_port: int = 8000
     uvicorn_reload: bool = False
+    uvicorn_timeout_keep_alive: int = 70
     admin_url: str = Field(default=...)
     openapi_url: str = Field(default=...)
     openapi_api_key: str = Field(default=...)

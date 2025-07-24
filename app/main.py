@@ -214,4 +214,5 @@ if __name__ == "__main__":
         reload=settings.uvicorn_reload,
         loop="uvloop",
         http="httptools",
+        timeout_keep_alive=settings.uvicorn_timeout_keep_alive,
     )
