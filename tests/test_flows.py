@@ -94,6 +94,7 @@ async def test_flow_feed(user_client: AsyncClient, user: User, session: AsyncSes
         # Check created_by structure and values
         assert flow["created_by"]["id"] in {user.id, another_user.id}
         assert isinstance(flow["created_by"]["username"], str)
+        assert isinstance(flow["created_by"]["name"], str)
 
     response = await user_client.get("/api/flows/feed")
     assert response.status_code == 200
@@ -183,6 +184,7 @@ async def test_discover_flows(
 
         assert flow["created_by"]["id"] in {user.id, another_user.id}
         assert isinstance(flow["created_by"]["username"], str)
+        assert isinstance(flow["created_by"]["name"], str)
 
     response = await user_client.get("/api/flows/discover")
     assert response.status_code == 200
@@ -253,6 +255,7 @@ async def test_get_flow_details(
     assert response_data["created_by"] == {
         "id": user.id,
         "username": user.username,
+        "name": user.name,
     }
     assert response_data["difficulty"] == flow.difficulty
     assert response_data["max_num_questions"] == flow.max_num_questions
@@ -286,6 +289,7 @@ async def test_get_flow_details(
             {
                 "id": question.source_user.id,
                 "username": question.source_user.username,
+                "name": question.source_user.name,
             }
             if question.source_user
             else None
@@ -295,6 +299,7 @@ async def test_get_flow_details(
             assert answer["user"] == {
                 "id": user.id,
                 "username": user.username,
+                "name": user.name,
             }
             assert answer["submitted_text"] == ""
             assert answer["choice_id"] is None or isinstance(answer["choice_id"], int)
@@ -961,6 +966,7 @@ async def test_search_flows_basic_functionality(
         # Check created_by structure
         assert "id" in flow["created_by"]
         assert "username" in flow["created_by"]
+        assert "name" in flow["created_by"]
 
     # Verify correct flows are returned
     flow_ids = {flow["id"] for flow in flows}
@@ -1216,8 +1222,10 @@ async def test_search_flows_different_users(
         assert creator["id"] in {user.id, another_user.id}
         if creator["id"] == user.id:
             assert creator["username"] == user.username
+            assert creator["name"] == user.name
         else:
             assert creator["username"] == another_user.username
+            assert creator["name"] == another_user.name
 
 
 async def test_search_flows_with_flow_elements(
@@ -1329,6 +1337,7 @@ async def test_community_feed_basic_functionality(
         # Check created_by structure
         assert "id" in flow["created_by"]
         assert "username" in flow["created_by"]
+        assert "name" in flow["created_by"]
         assert flow["created_by"]["id"] in {community_user1.id, community_user2.id}
 
 

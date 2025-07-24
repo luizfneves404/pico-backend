@@ -35,6 +35,7 @@ ContentBlockAPI = Annotated[
 class SimpleUser(BaseModel):
     id: int
     username: str
+    name: str
 
 
 class AnswerInFeed(BaseModel):
@@ -46,7 +47,9 @@ class AnswerInFeed(BaseModel):
     def from_orm_model(cls, flow_question_user: FlowQuestionUser) -> "AnswerInFeed":
         return cls(
             user=SimpleUser(
-                id=flow_question_user.user.id, username=flow_question_user.user.username
+                id=flow_question_user.user.id,
+                username=flow_question_user.user.username,
+                name=flow_question_user.user.name,
             ),
             submitted_text=flow_question_user.submitted_text,
             choice_id=flow_question_user.choice_id,
@@ -147,6 +150,7 @@ class FlowQuestionInFeed(BaseModel):
                 SimpleUser(
                     id=flow_question.question.source_user.id,
                     username=flow_question.question.source_user.username,
+                    name=flow_question.question.source_user.name,
                 )
                 if flow_question.question.source_user
                 else None
@@ -185,7 +189,9 @@ class FlowBase(BaseModel):
             action_link=flow.action_link,
             action_text=flow.action_text,
             created_by=SimpleUser(
-                id=flow.created_by.id, username=flow.created_by.username
+                id=flow.created_by.id,
+                username=flow.created_by.username,
+                name=flow.created_by.name,
             ),
             difficulty=flow.difficulty,
             max_num_questions=flow.max_num_questions,
