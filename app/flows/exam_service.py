@@ -18,7 +18,7 @@ async def list_exams(db_session: AsyncSession, *, user_id: int) -> list[Exam]:
         .where(
             User.id == user_id,
             Exam.education_level_id == Educ.level_id,
-            Exam.course_id == Educ.course_id,
+            Exam.course_id.is_not_distinct_from(Educ.course_id),
         )
         .options(selectinload(Exam.country))
     )

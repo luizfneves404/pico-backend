@@ -12,6 +12,9 @@ from app.users.models import User
 from tests.factories import (
     ChoiceFactory,
     CommunityFactory,
+    CountryFactory,
+    EducationLevelFactory,
+    ExamFactory,
     FlowFactory,
     FlowQuestionFactory,
     UserFactory,
@@ -1259,8 +1262,6 @@ async def test_community_feed_basic_functionality(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
     """Test basic community feed functionality returns flows from community members"""
-    from app.community.models import CommunityUser
-    from tests.factories import CommunityFactory
 
     async with session.begin():
         # Create a community
@@ -1393,8 +1394,6 @@ async def test_community_feed_pagination(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
     """Test that community feed pagination works correctly"""
-    from app.community.models import CommunityUser
-    from tests.factories import CommunityFactory
 
     async with session.begin():
         # Create a community
@@ -1453,8 +1452,6 @@ async def test_community_feed_empty_community(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
     """Test community feed with no flows from community members"""
-    from app.community.models import CommunityUser
-    from tests.factories import CommunityFactory
 
     async with session.begin():
         # Create a community with only the current user
@@ -1496,8 +1493,6 @@ async def test_community_feed_user_not_in_community(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
     """Test that community feed works even if requesting user is not in the community"""
-    from app.community.models import CommunityUser
-    from tests.factories import CommunityFactory
 
     async with session.begin():
         # Create a community without adding the current user
@@ -1579,8 +1574,6 @@ async def test_community_feed_with_multiple_communities(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
     """Test that community feed only returns flows from the specified community"""
-    from app.community.models import CommunityUser
-    from tests.factories import CommunityFactory
 
     async with session.begin():
         # Create two communities
@@ -1632,8 +1625,6 @@ async def test_community_feed_with_flow_elements_loaded(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
     """Test that community feed loads flow elements correctly"""
-    from app.community.models import CommunityUser
-    from tests.factories import CommunityFactory
 
     async with session.begin():
         # Create a community
@@ -1659,3 +1650,227 @@ async def test_community_feed_with_flow_elements_loaded(
     flow_data = flows[0]
     assert flow_data["id"] == flow.id
     assert flow_data["num_total_elements"] == 5
+
+
+async def test_list_exams(user_client: AsyncClient, session: AsyncSession, user: User):
+    """Test listing exams filters by user's country, education level, and course"""
+    # Ensure user has education info
+    assert user.current_education is not None
+    assert user.current_education.level is not None
+
+    async with session.begin():
+        # change user's course to None
+
+        user.current_education.course = None
+        session.add(user.current_education)
+        await session.flush()
+        # Create exams that match the user's education info
+        matching_exam1 = await ExamFactory.create(
+            name="ENEM",
+            country=user.country,
+            education_level=user.current_education.level,
+            course=None,
+            session=session,
+        )
+        matching_exam2 = await ExamFactory.create(
+            name="FUVEST",
+            country=user.country,
+            education_level=user.current_education.level,
+            course=None,
+            session=session,
+        )
+
+        other_country = await CountryFactory.create(session=session)
+        await ExamFactory.create(
+            name="Different Country Exam",
+            country=other_country,
+            education_level=user.current_education.level,
+            course=None,
+            session=session,
+        )
+
+        other_level = await EducationLevelFactory.create(session=session)
+        await ExamFactory.create(
+            name="Different Level Exam",
+            country=user.country,
+            education_level=other_level,
+            course=None,
+            session=session,
+        )
+
+    # Get exams list
+    response = await user_client.get("/api/exams")
+    assert response.status_code == 200
+    exams = response.json()
+
+    # Should only return exams that match user's education info
+    assert len(exams) == 2
+
+    exam_names = {exam["name"] for exam in exams}
+    assert "ENEM" in exam_names
+    assert "FUVEST" in exam_names
+    assert "Different Country Exam" not in exam_names
+    assert "Different Level Exam" not in exam_names
+
+    # Verify response structure matches ExamOut schema
+    for exam in exams:
+        assert "name" in exam
+        assert exam["name"] in {matching_exam1.name, matching_exam2.name}
+
+
+async def test_list_exams_empty_result(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test listing exams when no exams match user's education info"""
+    from tests.factories import CountryFactory, EducationLevelFactory, ExamFactory
+
+    # Ensure user has education info
+    assert user.current_education is not None
+    assert user.current_education.level is not None
+    assert user.current_education.course is not None
+
+    async with session.begin():
+        # Create exam that doesn't match user's country
+        other_country = await CountryFactory.create(session=session)
+        await ExamFactory.create(
+            name="Other Country Exam",
+            country=other_country,
+            education_level=user.current_education.level,
+            course=user.current_education.course,
+            session=session,
+        )
+
+        # Create exam that doesn't match user's education level
+        other_level = await EducationLevelFactory.create(session=session)
+        await ExamFactory.create(
+            name="Other Level Exam",
+            country=user.country,
+            education_level=other_level,
+            course=user.current_education.course,
+            session=session,
+        )
+
+    # Get exams list
+    response = await user_client.get("/api/exams")
+    assert response.status_code == 200
+    exams = response.json()
+
+    # Should return empty list
+    assert exams == []
+
+
+async def test_list_areas(user_client: AsyncClient, session: AsyncSession, user: User):
+    """Test listing question areas filters by user's country, education level, and course"""
+    from tests.factories import QuestionAreaFactory
+
+    # Ensure user has education info
+    assert user.current_education is not None
+    assert user.current_education.level is not None
+    assert user.current_education.course is not None
+
+    async with session.begin():
+        # Create areas that match the user's education info
+        matching_area1 = await QuestionAreaFactory.create(
+            name="Matemática",
+            country=user.country,
+            education_level=user.current_education.level,
+            course=user.current_education.course,
+            tags=["math", "algebra"],
+            session=session,
+        )
+        matching_area2 = await QuestionAreaFactory.create(
+            name="Ciências da Natureza",
+            country=user.country,
+            education_level=user.current_education.level,
+            course=user.current_education.course,
+            tags=["science", "biology"],
+            session=session,
+        )
+
+        # Create area that doesn't match the user's country
+        from tests.factories import CountryFactory
+
+        other_country = await CountryFactory.create(session=session)
+        await QuestionAreaFactory.create(
+            name="Different Country Area",
+            country=other_country,
+            education_level=user.current_education.level,
+            course=user.current_education.course,
+            session=session,
+        )
+
+        # Create area that doesn't match the user's education level
+        from tests.factories import EducationLevelFactory
+
+        other_level = await EducationLevelFactory.create(session=session)
+        await QuestionAreaFactory.create(
+            name="Different Level Area",
+            country=user.country,
+            education_level=other_level,
+            course=user.current_education.course,
+            session=session,
+        )
+
+    # Get areas list
+    response = await user_client.get("/api/areas")
+    assert response.status_code == 200
+    areas = response.json()
+
+    # Should only return areas that match user's education info
+    assert len(areas) == 2
+
+    area_names = {area["name"] for area in areas}
+    assert "Matemática" in area_names
+    assert "Ciências da Natureza" in area_names
+    assert "Different Country Area" not in area_names
+    assert "Different Level Area" not in area_names
+
+    # Verify response structure matches QuestionAreaOut schema
+    for area in areas:
+        assert "name" in area
+        assert area["name"] in {matching_area1.name, matching_area2.name}
+
+
+async def test_list_areas_empty_result(
+    user_client: AsyncClient, session: AsyncSession, user: User
+):
+    """Test listing question areas when no areas match user's education info"""
+    from tests.factories import (
+        CountryFactory,
+        EducationLevelFactory,
+        QuestionAreaFactory,
+    )
+
+    # Ensure user has education info
+    assert user.current_education is not None
+    assert user.current_education.level is not None
+    assert user.current_education.course is not None
+
+    async with session.begin():
+        # Create area that doesn't match user's country
+        other_country = await CountryFactory.create(session=session)
+        await QuestionAreaFactory.create(
+            name="Other Country Area",
+            country=other_country,
+            education_level=user.current_education.level,
+            course=user.current_education.course,
+            session=session,
+        )
+
+        # Create area that doesn't match user's education level
+        other_level = await EducationLevelFactory.create(session=session)
+        await QuestionAreaFactory.create(
+            name="Other Level Area",
+            country=user.country,
+            education_level=other_level,
+            course=user.current_education.course,
+            session=session,
+        )
+
+    # Get areas list
+    response = await user_client.get("/api/areas")
+    assert response.status_code == 200
+    areas = response.json()
+
+    # Should return empty list
+    assert areas == []

@@ -53,6 +53,7 @@ from app.flows.models import (
     OfficialQuestionSource,
     Question,
     QuestionAnswerType,
+    QuestionArea,
     QuestionDifficulty,
     QuestionSourceType,
 )
@@ -389,6 +390,19 @@ class ExamFactory(AsyncSQLAlchemyFactory[Exam]):
 
     class Meta:
         model = Exam
+
+
+class QuestionAreaFactory(AsyncSQLAlchemyFactory[QuestionArea]):
+    """Factory for creating QuestionArea instances."""
+
+    class Meta:
+        model = QuestionArea
+
+    name = Sequence(lambda n: f"Area {n}")
+    country = SubFactory(CountryFactory)
+    education_level = SubFactory(EducationLevelFactory)
+    course = SubFactory(CourseFactory)
+    tags = FactoryFaker("words", nb=3)
 
 
 class OfficialQuestionSourceFactory(AsyncSQLAlchemyFactory[OfficialQuestionSource]):

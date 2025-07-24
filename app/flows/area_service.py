@@ -18,7 +18,7 @@ async def list_areas(db_session: AsyncSession, *, user_id: int) -> list[Question
         .where(
             User.id == user_id,
             QuestionArea.education_level_id == Educ.level_id,
-            QuestionArea.course_id == Educ.course_id,
+            QuestionArea.course_id.is_not_distinct_from(Educ.course_id),
         )
     )
     result = await db_session.scalars(stmt)
