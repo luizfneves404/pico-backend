@@ -264,8 +264,8 @@ async def test_get_flow_details(
     assert response_data["max_num_questions"] == flow.max_num_questions
     assert isinstance(response_data["elements"], list)
     assert response_data["num_total_elements"] == 2
-    assert response_data["num_user_total_answers"] == 2
-    assert response_data["num_user_correct_answers"] == 2
+    assert response_data["num_me_total_answers"] == 2
+    assert response_data["num_me_correct_answers"] == 2
 
     # Check elements structure (FlowQuestionInFeed)
     assert len(response_data["elements"]) == 2
@@ -905,8 +905,8 @@ async def test_get_user_flows(
         assert "difficulty" in flow
         assert "created_at" in flow
         assert "max_num_questions" in flow
-        assert "num_user_total_answers" in flow
-        assert "num_user_correct_answers" in flow
+        assert "num_me_total_answers" in flow
+        assert "num_me_correct_answers" in flow
 
 
 async def test_search_flows_basic_functionality(
@@ -963,8 +963,8 @@ async def test_search_flows_basic_functionality(
         assert "difficulty" in flow
         assert "max_num_questions" in flow
         assert "num_total_elements" in flow
-        assert "num_user_total_answers" in flow
-        assert "num_user_correct_answers" in flow
+        assert "num_me_total_answers" in flow
+        assert "num_me_correct_answers" in flow
 
         # Check created_by structure
         assert "id" in flow["created_by"]
@@ -1332,8 +1332,8 @@ async def test_community_feed_basic_functionality(
         assert "difficulty" in flow
         assert "max_num_questions" in flow
         assert "num_total_elements" in flow
-        assert "num_user_total_answers" in flow
-        assert "num_user_correct_answers" in flow
+        assert "num_me_total_answers" in flow
+        assert "num_me_correct_answers" in flow
 
         # Check created_by structure
         assert "id" in flow["created_by"]
@@ -1566,8 +1566,8 @@ async def test_community_feed_with_user_answers(
 
     flow_data = flows[0]
     assert flow_data["id"] == flow.id
-    assert flow_data["num_user_total_answers"] == 2
-    assert flow_data["num_user_correct_answers"] == 1
+    assert flow_data["num_me_total_answers"] == 2
+    assert flow_data["num_me_correct_answers"] == 1
 
 
 async def test_community_feed_with_multiple_communities(
