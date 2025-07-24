@@ -96,7 +96,6 @@ async def search_institutions(
     if institution_type:
         filters.append(Institution.institution_type == institution_type)
 
-    # Build user point once
     user_geom = (
         WKTElement(f"POINT({longitude} {latitude})", srid=4326)
         if latitude is not None and longitude is not None
@@ -106,11 +105,9 @@ async def search_institutions(
     stmt = select(Institution)
 
     if user_geom:
-        # allow null-location but push to end
         null_last = case((Institution.location.is_(None), 1), else_=0)
 
         filters.append(
-            # either no location (we’ll include later) OR within radius
             (Institution.location.is_(None))
             | ST_DWithin(
                 Institution.location,
@@ -123,9 +120,15 @@ async def search_institutions(
         stmt = stmt.order_by(
             null_last,
             ST_Distance(Institution.location, user_geom, type_=Geography),
-        ).limit(MAX_INSTITUTIONS_SEARCH_LIMIT)
+        )
+    else:
+        stmt = stmt.order_by(Institution.name)  # or whatever default you prefer
 
-    stmt = stmt.where(*filters).options(selectinload(Institution.country))
+    stmt = (
+        stmt.where(*filters)
+        .limit(MAX_INSTITUTIONS_SEARCH_LIMIT)
+        .options(selectinload(Institution.country))
+    )
 
     result = await db.execute(stmt)
     return list(result.scalars())
