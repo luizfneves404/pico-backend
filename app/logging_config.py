@@ -31,7 +31,7 @@ def get_logging_config() -> dict[str, Any]:
             "console": {
                 "class": "logging.StreamHandler",
                 "formatter": "default",
-                "level": "INFO",
+                "level": "DEBUG",
                 "stream": "ext://sys.stdout",
             },
             "admin_email": {
@@ -41,7 +41,7 @@ def get_logging_config() -> dict[str, Any]:
             },
         },
         "root": {
-            "level": "DEBUG" if settings.environment == Environment.TEST else "WARNING",
+            "level": "DEBUG" if settings.environment == Environment.TEST else "INFO",
             "handlers": ["console", "admin_email"],
         },
         "loggers": {

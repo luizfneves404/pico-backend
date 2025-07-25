@@ -32,9 +32,12 @@ from app.flows.admin import (
     QuestionAreaAdmin,
 )
 from app.logging_admin import (
-    GetCurrentLevelsView,
+    ApplyLoggingPresetView,
+    ExecuteBulkOperationView,
+    GetAllLoggersView,
     LoggingControlView,
-    SetSqlLoggingLevelView,
+    PreviewBulkOperationView,
+    SetLoggerLevelView,
 )
 from app.notifications.admin import (
     ExternalInAppNotificationAdmin,
@@ -49,9 +52,12 @@ from app.ws.admin import UserOnlineInfoAdmin
 admin_views: list[type[BaseView]] = []
 
 # System & Logging
-admin_views.append(SetSqlLoggingLevelView)
-admin_views.append(GetCurrentLevelsView)
 admin_views.append(LoggingControlView)
+admin_views.append(SetLoggerLevelView)
+admin_views.append(GetAllLoggersView)
+admin_views.append(PreviewBulkOperationView)
+admin_views.append(ExecuteBulkOperationView)
+admin_views.append(ApplyLoggingPresetView)
 
 # Users & Authentication
 admin_views.append(UserAdmin)

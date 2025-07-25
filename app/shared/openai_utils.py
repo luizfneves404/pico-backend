@@ -29,13 +29,12 @@ from .constants import (
 
 EMBEDDING_MODEL = "text-embedding-3-large"
 NUMBER_OF_EMBEDDING_DIMENSIONS = 1024
-MAX_TOKENS_FOR_EMBEDDING_MODEL = 4096  # less than the max to give a buffer
-MAX_ARRAY_LENGTH_FOR_EMBEDDING_API_CALL = 2048
+MAX_CHARS_FOR_EMBEDDING_MODEL = 8192  # less than the max to give a buffer
+EMBEDDING_BATCH_SIZE = 1024
 JSONIFY_INFO_MODEL = "gpt-4o-mini"
 JSONIFY_INFO_SYSTEM_MESSAGE = "Extraia a informação '{info}' do texto a seguir e responda com um JSON contendo a chave '{json_key}' com o valor correspondente. Se não houver {info}, ou por outro motivo não faça sentido extraí-la, responda com o valor null para a chave."
 DELATEXIFY_MODEL = "gpt-4o-mini"
-DEFAULT_TIMEOUT = 10
-DEFAULT_MAX_RETRIES = 5
+DEFAULT_TIMEOUT = 60
 
 # Models that support reasoning_effort parameter
 REASONING_EFFORT_MODELS = ["o3-mini", "o3", "o4-mini"]
@@ -53,7 +52,6 @@ FEEDBACK_TIMEOUT = 90
 async_client = AsyncOpenAI(
     api_key=settings.openai_api_key,
     timeout=DEFAULT_TIMEOUT,
-    max_retries=DEFAULT_MAX_RETRIES,
 )
 
 
@@ -470,9 +468,9 @@ def sanitize_messages_for_log(
                     # Safely access and modify image URL
                     image_url = content_part.get("image_url")
                     if isinstance(image_url, dict) and "url" in image_url:
-                        sanitized_message["content"][idx]["image_url"][
-                            "url"
-                        ] = "[IMAGE]"
+                        sanitized_message["content"][idx]["image_url"]["url"] = (
+                            "[IMAGE]"
+                        )
         sanitized_messages.append(sanitized_message)
     return sanitized_messages
 
@@ -854,7 +852,7 @@ async def compute_embedding(text: str | list[str]) -> list[float] | list[list[fl
         total: list[list[float]] = []
         for group in group_text_chunks(text):
             for item in group:
-                validate_input(item, EMBEDDING_MODEL)
+                validate_input(item)
             response = await openai_request(
                 endpoint="embeddings",
                 model=EMBEDDING_MODEL,
@@ -871,7 +869,7 @@ async def compute_embedding(text: str | list[str]) -> list[float] | list[list[fl
             EMBEDDING_MODEL,
             text[:100],
         )
-        validate_input(text, EMBEDDING_MODEL)
+        validate_input(text)
         result = await openai_request(
             endpoint="embeddings",
             model=EMBEDDING_MODEL,
@@ -883,28 +881,28 @@ async def compute_embedding(text: str | list[str]) -> list[float] | list[list[fl
         return result
 
 
-def validate_input(input_item: str, model: str):
-    num_tokens = count_tokens(input_item, model)
-    if num_tokens > MAX_TOKENS_FOR_EMBEDDING_MODEL:
+def validate_input(input_item: str):
+    num_chars = len(input_item)
+    if num_chars > MAX_CHARS_FOR_EMBEDDING_MODEL:
         raise ValueError(
-            f"Input text exceeds the max token limit of {MAX_TOKENS_FOR_EMBEDDING_MODEL}"
+            f"Input text exceeds the max token limit of {MAX_CHARS_FOR_EMBEDDING_MODEL}"
         )
 
 
 def group_text_chunks(input_list: list[str]) -> Generator[list[str], None, None]:
-    """Group text chunks based on token and array length limits so that separate requests can be made"""
+    """Group text chunks based on char and array length limits so that separate requests can be made"""
     group: list[str] = []
-    current_tokens: int = 0
+    current_chars: int = 0
     for item in input_list:
-        item_tokens = count_tokens(item, EMBEDDING_MODEL)
+        item_chars = len(item)
         if (
-            current_tokens + item_tokens >= MAX_TOKENS_FOR_EMBEDDING_MODEL
-            or len(group) >= MAX_ARRAY_LENGTH_FOR_EMBEDDING_API_CALL
+            current_chars + item_chars >= MAX_CHARS_FOR_EMBEDDING_MODEL
+            or len(group) >= EMBEDDING_BATCH_SIZE
         ):
             yield group
-            group, current_tokens = [], 0
+            group, current_chars = [], 0
         group.append(item)
-        current_tokens += item_tokens
+        current_chars += item_chars
     if group:
         yield group
 
