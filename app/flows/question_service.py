@@ -146,7 +146,6 @@ async def get_official_questions(
     source_year: int | None,
     question_type: QuestionAnswerType,
     difficulty: QuestionDifficulty | None,
-    ensure_privileged_mix: bool,
     exclude_question_ids: set[int] = set(),
 ) -> list[Question]:
     """Get official questions.
@@ -163,7 +162,6 @@ async def get_official_questions(
         source_year (int | None): Filter by source year (exam year)
         question_type (QuestionAnswerType): Filter by question type (multiple choice or open-ended)
         difficulty (QuestionDifficulty | None): Filter by difficulty
-        ensure_privileged_mix (bool): If True, force a significant portion of the questions to be from privileged exams. Ignored if exam_id is provided.
         exclude_question_ids (set[int], optional): question IDs to guarantee will be excluded from the result. Defaults to set().
 
     Raises:
@@ -181,14 +179,9 @@ async def get_official_questions(
         Question.answer_type == question_type,
     )
 
-    # Determine if we need to join through OfficialQuestionSource and Exam
-    if (
-        any([exam_id, exam_country_code, exam_education_level_id, source_year])
-        or ensure_privileged_mix
-    ):
-        query = query.join(OfficialQuestionSource, Question.official_source).join(
-            Exam, OfficialQuestionSource.exam
-        )
+    query = query.join(OfficialQuestionSource, Question.official_source).join(
+        Exam, OfficialQuestionSource.exam
+    )
 
     # Apply area filter
     if question_area_name:
@@ -224,7 +217,7 @@ async def get_official_questions(
         query = query.order_by(func.random())
 
     # Privileged mix
-    if not exam_id and ensure_privileged_mix:
+    if not exam_id:
         privileged_count = int(n_questions * 0.6)
         regular_count = n_questions - privileged_count
 
@@ -1028,7 +1021,6 @@ async def get_topic_query_official_questions(
         question_type=question_type,
         embedding=embedding,
         difficulty=None,
-        ensure_privileged_mix=(exam_id is None),  # Only ensure mix if no specific exam
     )
 
     # Verify question pertinence if we have a topic and questions
@@ -1165,7 +1157,6 @@ async def get_files_query_official_questions(
             embedding=embedding,
             difficulty=None,
             exclude_question_ids=unique_question_ids,  # Properly exclude previous questions
-            ensure_privileged_mix=True,
         )
 
         # Add unique questions to our list and track their block association
