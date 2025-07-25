@@ -387,6 +387,7 @@ class ExamFactory(AsyncSQLAlchemyFactory[Exam]):
     country = SubFactory(CountryFactory)
     education_level = SubFactory(EducationLevelFactory)
     course = SubFactory(CourseFactory)
+    is_privileged = FactoryFaker("boolean")
 
     class Meta:
         model = Exam
