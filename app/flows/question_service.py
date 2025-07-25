@@ -15,7 +15,7 @@ from typing import Any, Coroutine, TypedDict, cast
 from fastapi import UploadFile
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from pylatexenc.latex2text import LatexNodes2Text
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.datastructures import Headers
@@ -64,15 +64,6 @@ TOKENS_PER_BLOCK = 300
 # Constants
 DAYS_AGO_TO_EXCLUDE_RECENT_ANSWERS = 7
 TOP_TAGS_COUNT = 10  # Number of most frequent tags to save to flow.minor_tags
-PRIVILEGED_SOURCES = [
-    "ENEM",
-    "ENEM PPL",
-    "FUVEST",
-    "PUC-Rio",
-    "FGV",
-    "UNICAMP",
-    "UERJ",
-]
 
 VALID_MIME_TYPES_FOR_TRANSCRIPTION = [
     "image/jpeg",
@@ -80,6 +71,12 @@ VALID_MIME_TYPES_FOR_TRANSCRIPTION = [
     "image/jpg",
     "application/pdf",
 ]
+
+
+class QuestionAreaNotFoundError(Exception):
+    """Raised when a question area is not found"""
+
+    pass
 
 
 class FlowNotFoundError(Exception):
@@ -141,18 +138,40 @@ async def get_official_questions(
     db_session: AsyncSession,
     *,
     n_questions: int,
-    question_area_name: str | None = None,
-    exam_id: int | None = None,
-    exam_country_code: str | None = None,
-    exam_education_level_id: int | None = None,
-    source_year: int | None = None,
-    question_type: QuestionAnswerType = QuestionAnswerType.MULTIPLE_CHOICE,
-    difficulty: QuestionDifficulty | None = None,
-    embedding: list[float] | None = None,
-    exclude_question_ids: set[int] | None = None,
-    ensure_privileged_mix: bool = True,
+    embedding: list[float] | None,
+    question_area_name: str | None,
+    exam_id: int | None,
+    exam_country_code: str | None,
+    exam_education_level_id: int | None,
+    source_year: int | None,
+    question_type: QuestionAnswerType,
+    difficulty: QuestionDifficulty | None,
+    ensure_privileged_mix: bool,
+    exclude_question_ids: set[int] = set(),
 ) -> list[Question]:
-    """Get official questions with correct joins to avoid cartesian products."""
+    """Get official questions.
+    As a rule of thumb, if you pass a falsy value, the filter is not applied.
+
+    Args:
+        db_session (AsyncSession): Database session
+        n_questions (int): Number of questions to get
+        embedding (list[float] | None): Embedding that should be used to order the questions that pass the filters
+        question_area_name (str | None): Filter by question area name
+        exam_id (int | None): Filter by exam ID
+        exam_country_code (str | None): Filter by exam country code
+        exam_education_level_id (int | None): Filter by exam education level ID
+        source_year (int | None): Filter by source year (exam year)
+        question_type (QuestionAnswerType): Filter by question type (multiple choice or open-ended)
+        difficulty (QuestionDifficulty | None): Filter by difficulty
+        ensure_privileged_mix (bool): If True, force a significant portion of the questions to be from privileged exams. Ignored if exam_id is provided.
+        exclude_question_ids (set[int], optional): question IDs to guarantee will be excluded from the result. Defaults to set().
+
+    Raises:
+        QuestionAreaNotFoundError: Raised when a question area is not found
+
+    Returns:
+        list[Question]: List of questions gotten from the database
+    """
     logger.info(f"Getting {n_questions} official questions with filters")
 
     # Base query
@@ -163,8 +182,10 @@ async def get_official_questions(
     )
 
     # Determine if we need to join through OfficialQuestionSource and Exam
-    if any([exam_id, exam_country_code, exam_education_level_id, source_year]):
-        # explicit joins to avoid cartesian products
+    if (
+        any([exam_id, exam_country_code, exam_education_level_id, source_year])
+        or ensure_privileged_mix
+    ):
         query = query.join(OfficialQuestionSource, Question.official_source).join(
             Exam, OfficialQuestionSource.exam
         )
@@ -175,7 +196,9 @@ async def get_official_questions(
             select(QuestionArea).where(QuestionArea.name == question_area_name)
         )
         if area is None:
-            raise ValueError(f"Área de questão '{question_area_name}' inexistente")
+            raise QuestionAreaNotFoundError(
+                f"Área de questão '{question_area_name}' inexistente"
+            )
         query = query.where(Question.major_tags.overlap(area.tags))
 
     # Exam-specific filters
@@ -201,13 +224,11 @@ async def get_official_questions(
         query = query.order_by(func.random())
 
     # Privileged mix
-    if ensure_privileged_mix and not exam_id:
+    if not exam_id and ensure_privileged_mix:
         privileged_count = int(n_questions * 0.6)
         regular_count = n_questions - privileged_count
 
-        privileged_q = query.where(
-            or_(*[Exam.name.like(f"{src}%") for src in PRIVILEGED_SOURCES])
-        ).limit(privileged_count)
+        privileged_q = query.where(Exam.is_privileged.is_(True)).limit(privileged_count)
         priv_res = await db_session.scalars(privileged_q)
         priv_questions = list(priv_res)
 
@@ -1006,6 +1027,7 @@ async def get_topic_query_official_questions(
         source_year=source_year,
         question_type=question_type,
         embedding=embedding,
+        difficulty=None,
         ensure_privileged_mix=(exam_id is None),  # Only ensure mix if no specific exam
     )
 
@@ -1141,6 +1163,7 @@ async def get_files_query_official_questions(
             source_year=source_year,
             question_type=question_type,
             embedding=embedding,
+            difficulty=None,
             exclude_question_ids=unique_question_ids,  # Properly exclude previous questions
             ensure_privileged_mix=True,
         )

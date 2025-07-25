@@ -412,7 +412,7 @@ class OfficialQuestionSourceFactory(AsyncSQLAlchemyFactory[OfficialQuestionSourc
         model = OfficialQuestionSource
 
     exam = SubFactory(ExamFactory)
-    year = 2024
+    year = FactoryFaker("random_int", min=2020, max=2025)
 
 
 class QuestionFactory(AsyncSQLAlchemyFactory[Question]):

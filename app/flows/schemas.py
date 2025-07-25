@@ -386,6 +386,7 @@ class ExamOut(BaseModel):
     name: str
     country_code: str
     education_level_id: int
+    years: list[int]
 
     @classmethod
     def from_orm_model(cls, exam: Exam) -> "ExamOut":
@@ -394,6 +395,7 @@ class ExamOut(BaseModel):
             name=exam.name,
             country_code=exam.country.code,
             education_level_id=exam.education_level_id,
+            years=[source.year for source in exam.official_question_sources],
         )
 
 

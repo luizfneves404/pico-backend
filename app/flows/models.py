@@ -605,6 +605,15 @@ class Exam(Base, kw_only=True):
     course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"), default=None)
     course: Mapped["Course | None"] = relationship(lazy="raise_on_sql", default=None)
 
+    is_privileged: Mapped[bool] = mapped_column(default=False)
+
+    official_question_sources: Mapped[list["OfficialQuestionSource"]] = relationship(
+        lazy="raise_on_sql",
+        back_populates="exam",
+        viewonly=True,
+        default_factory=list,
+    )
+
     def __str__(self) -> str:
         return self.name
 
@@ -615,7 +624,11 @@ class OfficialQuestionSource(Base, kw_only=True):
     exam_id: Mapped[int] = mapped_column(
         ForeignKey("exam.id", ondelete="CASCADE"), default=None
     )
-    exam: Mapped["Exam"] = relationship(lazy="raise_on_sql", default=None)
+    exam: Mapped["Exam"] = relationship(
+        lazy="raise_on_sql",
+        default=None,
+        back_populates="official_question_sources",
+    )
 
     def __str__(self) -> str:
         insp = inspect(self)

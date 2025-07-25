@@ -21,6 +21,7 @@ async def list_exams(db_session: AsyncSession, *, user_id: int) -> list[Exam]:
             Exam.course_id.is_not_distinct_from(Educ.course_id),
         )
         .options(selectinload(Exam.country))
+        .options(selectinload(Exam.official_question_sources))
     )
     result = await db_session.scalars(stmt)
     return list(result)

@@ -5,6 +5,7 @@ from typing import Any, Callable, Coroutine
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.community.models import CommunityUser
 from app.flows.models import FlowQuestionUser, FlowUserFeed, Question
@@ -14,9 +15,11 @@ from tests.factories import (
     CommunityFactory,
     CountryFactory,
     EducationLevelFactory,
+    Exam,
     ExamFactory,
     FlowFactory,
     FlowQuestionFactory,
+    OfficialQuestionSourceFactory,
     UserFactory,
 )
 
@@ -1660,7 +1663,6 @@ async def test_list_exams(user_client: AsyncClient, session: AsyncSession, user:
 
     async with session.begin():
         # change user's course to None
-
         user.current_education.course = None
         session.add(user.current_education)
         await session.flush()
@@ -1681,7 +1683,7 @@ async def test_list_exams(user_client: AsyncClient, session: AsyncSession, user:
         )
 
         other_country = await CountryFactory.create(session=session)
-        await ExamFactory.create(
+        country_exam = await ExamFactory.create(
             name="Different Country Exam",
             country=other_country,
             education_level=user.current_education.level,
@@ -1690,13 +1692,19 @@ async def test_list_exams(user_client: AsyncClient, session: AsyncSession, user:
         )
 
         other_level = await EducationLevelFactory.create(session=session)
-        await ExamFactory.create(
+        level_exam = await ExamFactory.create(
             name="Different Level Exam",
             country=user.country,
             education_level=other_level,
             course=None,
             session=session,
         )
+
+        # add 2 sources to each exam
+        for exam in [matching_exam1, matching_exam2, country_exam, level_exam]:
+            await OfficialQuestionSourceFactory.create_batch(
+                2, exam=exam, session=session
+            )
 
     # Get exams list
     response = await user_client.get("/api/exams")
@@ -1706,16 +1714,30 @@ async def test_list_exams(user_client: AsyncClient, session: AsyncSession, user:
     # Should only return exams that match user's education info
     assert len(exams) == 2
 
-    exam_names = {exam["name"] for exam in exams}
-    assert "ENEM" in exam_names
-    assert "FUVEST" in exam_names
-    assert "Different Country Exam" not in exam_names
-    assert "Different Level Exam" not in exam_names
+    async with session.begin():
+        db_exams = await session.scalars(
+            select(Exam)
+            .execution_options(populate_existing=True)
+            .options(selectinload(Exam.official_question_sources))
+        )
+        db_exams = list(db_exams)
 
-    # Verify response structure matches ExamOut schema
-    for exam in exams:
-        assert "name" in exam
-        assert exam["name"] in {matching_exam1.name, matching_exam2.name}
+    exam1 = next(exam for exam in db_exams if exam.name == matching_exam1.name)
+    exam2 = next(exam for exam in db_exams if exam.name == matching_exam2.name)
+
+    matching_exam1_index = next(
+        i for i, exam in enumerate(exams) if exam["name"] == matching_exam1.name
+    )
+    matching_exam2_index = next(
+        i for i, exam in enumerate(exams) if exam["name"] == matching_exam2.name
+    )
+
+    assert set(exams[matching_exam1_index]["years"]) == {
+        source.year for source in exam1.official_question_sources
+    }
+    assert set(exams[matching_exam2_index]["years"]) == {
+        source.year for source in exam2.official_question_sources
+    }
 
 
 async def test_list_exams_empty_result(

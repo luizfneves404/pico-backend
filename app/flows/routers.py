@@ -11,6 +11,7 @@ import app.flows.campaign_service as campaign_service
 import app.flows.exam_service as exam_service
 import app.flows.flow_service as flow_service
 from app.deps import CurrentUserAnnotated, CurrentUserDep, DBSessionAnnotated
+from app.flows import question_service
 from app.flows.schemas import (
     AddQuestionsToFlowAI,
     AddQuestionsToFlowFull,
@@ -244,6 +245,10 @@ async def add_questions_to_flow_official(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
         )
+    except question_service.QuestionAreaNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Question area not found"
+        )
 
 
 @flows_router.post("/{id}/add-questions-ai", response_model=FlowDetail)
@@ -295,6 +300,10 @@ async def add_questions_to_flow_full(
     except flow_service.FlowNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
+        )
+    except question_service.QuestionAreaNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Question area not found"
         )
 
 
