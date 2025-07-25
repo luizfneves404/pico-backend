@@ -388,6 +388,7 @@ class QuestionAdmin(CustomModelView, model=Question):
     import_schema = QuestionImportSchema
 
     import_template_data = {
+        "id": 99999,
         "content_blocks": [
             {
                 "block_type": "text",
@@ -948,7 +949,7 @@ class CampaignAdmin(CustomModelView, model=Campaign):
 
 class ChoiceImportSchema(BaseModel):
     question_id: int
-    text: str
+    text: str | None
     is_correct: bool
     order: int
     image_id: int | None
@@ -1015,7 +1016,7 @@ class ChoiceAdmin(CustomModelView, model=Choice):
         return [
             Choice(
                 question_id=validated_data.question_id,
-                text=validated_data.text,
+                text=validated_data.text or "",
                 is_correct=validated_data.is_correct,
                 order=validated_data.order,
                 image_id=validated_data.image_id,

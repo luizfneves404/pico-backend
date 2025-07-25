@@ -914,7 +914,7 @@ async def task_compute_question_embeddings(
             stmt = (
                 select(Question)
                 .options(selectinload(Question.choices))
-                .where(Question.is_active == True)
+                .where(Question.is_active.is_(True))
             )
         else:
             # Specific questions case (AI): process regardless of is_active status
@@ -976,7 +976,7 @@ async def task_categorize_questions(
             stmt = (
                 select(Question)
                 .options(selectinload(Question.choices))
-                .where(Question.is_active == True)
+                .where(Question.is_active.is_(True))
             )
         else:
             # Specific questions case (AI): process regardless of is_active status
