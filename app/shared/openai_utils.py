@@ -29,8 +29,8 @@ from .constants import (
 
 EMBEDDING_MODEL = "text-embedding-3-large"
 NUMBER_OF_EMBEDDING_DIMENSIONS = 1024
-MAX_CHARS_FOR_EMBEDDING_MODEL = 8192  # less than the max to give a buffer
-EMBEDDING_BATCH_SIZE = 1024
+MAX_CHARS_FOR_EMBEDDING_MODEL = 100000
+EMBEDDING_BATCH_SIZE = 2048
 JSONIFY_INFO_MODEL = "gpt-4o-mini"
 JSONIFY_INFO_SYSTEM_MESSAGE = "Extraia a informação '{info}' do texto a seguir e responda com um JSON contendo a chave '{json_key}' com o valor correspondente. Se não houver {info}, ou por outro motivo não faça sentido extraí-la, responda com o valor null para a chave."
 DELATEXIFY_MODEL = "gpt-4o-mini"
@@ -893,6 +893,13 @@ def group_text_chunks(input_list: list[str]) -> Generator[list[str], None, None]
     """Group text chunks based on char and array length limits so that separate requests can be made"""
     group: list[str] = []
     current_chars: int = 0
+    logger.debug(
+        "Computing embeddings for %d texts will have approximately %d requests using batch size of %d. Total chars: %d",
+        len(input_list),
+        len(input_list) / EMBEDDING_BATCH_SIZE,
+        EMBEDDING_BATCH_SIZE,
+        sum(len(item) for item in input_list),
+    )
     for item in input_list:
         item_chars = len(item)
         if (
