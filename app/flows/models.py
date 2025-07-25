@@ -15,6 +15,7 @@ from sqlalchemy import (
     func,
     inspect,
     select,
+    text,
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
@@ -605,7 +606,7 @@ class Exam(Base, kw_only=True):
     course_id: Mapped[int | None] = mapped_column(ForeignKey("course.id"), default=None)
     course: Mapped["Course | None"] = relationship(lazy="raise_on_sql", default=None)
 
-    is_privileged: Mapped[bool] = mapped_column(default=False)
+    is_privileged: Mapped[bool] = mapped_column(server_default=text("false"))
 
     official_question_sources: Mapped[list["OfficialQuestionSource"]] = relationship(
         lazy="raise_on_sql",
