@@ -90,6 +90,7 @@ def make_worker_settings(
         cron_jobs: Sequence[CronJob] | None = None
         health_check_interval: SecondsTimedelta = 30
         ctx: dict[str, Any] = {"session_factory": session_factory}
+        job_timeout: SecondsTimedelta = 900
 
     return WorkerSettings
 

@@ -29,7 +29,7 @@ from .constants import (
 
 EMBEDDING_MODEL = "text-embedding-3-large"
 NUMBER_OF_EMBEDDING_DIMENSIONS = 1024
-MAX_CHARS_FOR_EMBEDDING_MODEL = 100000
+MAX_CHARS_FOR_EMBEDDING_MODEL = 1000000
 EMBEDDING_BATCH_SIZE = 2048
 JSONIFY_INFO_MODEL = "gpt-4o-mini"
 JSONIFY_INFO_SYSTEM_MESSAGE = "Extraia a informação '{info}' do texto a seguir e responda com um JSON contendo a chave '{json_key}' com o valor correspondente. Se não houver {info}, ou por outro motivo não faça sentido extraí-la, responda com o valor null para a chave."
@@ -894,11 +894,12 @@ def group_text_chunks(input_list: list[str]) -> Generator[list[str], None, None]
     group: list[str] = []
     current_chars: int = 0
     logger.debug(
-        "Computing embeddings for %d texts will have approximately %d requests using batch size of %d. Total chars: %d",
+        "Computing embeddings for %d texts will have approximately %d requests if limited by batch size of %d. Will have approximately %d requests if limited by max chars of %d",
         len(input_list),
         len(input_list) / EMBEDDING_BATCH_SIZE,
         EMBEDDING_BATCH_SIZE,
-        sum(len(item) for item in input_list),
+        sum(len(item) for item in input_list) / MAX_CHARS_FOR_EMBEDDING_MODEL,
+        MAX_CHARS_FOR_EMBEDDING_MODEL,
     )
     for item in input_list:
         item_chars = len(item)
