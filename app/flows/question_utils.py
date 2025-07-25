@@ -26,6 +26,8 @@ from app.shared import openai_utils
 
 logger = logging.getLogger(__name__)
 
+QUESTION_EMBEDDING_BATCH_SIZE = 1000
+
 
 class MinorTagsCategorization(BaseModel):
     """Response model for minor tags categorization."""
@@ -900,59 +902,77 @@ async def task_compute_question_embeddings(
     question_ids: list[int] | None,
 ) -> None:
     """
-    Asynchronously computes and stores embeddings for questions.
+    Asynchronously computes and stores embeddings for questions in batches.
     When question_ids is None (admin case), only process active questions.
     When question_ids is provided (AI questions case), process regardless of is_active status.
 
     Args:
         ctx: ARQ worker context
         question_ids: List of question IDs to process, None means all questions
+        batch_size: Number of questions to process in each batch
     """
     async with get_db_session_for_worker(ctx) as session:
         if question_ids is None:
             # Admin case: only process active questions
-            stmt = (
+            base_stmt = (
                 select(Question)
                 .options(selectinload(Question.choices))
                 .where(Question.is_active.is_(True))
             )
         else:
             # Specific questions case (AI): process regardless of is_active status
-            stmt = (
+            base_stmt = (
                 select(Question)
                 .options(selectinload(Question.choices))
                 .where(Question.id.in_(question_ids))
             )
 
-        # Execute the query
-        result = await session.execute(stmt)
-        questions: list[Question] = list(result.scalars())
+        processed_count = 0
+        offset = 0
 
-        if not questions:
-            logger.info("No questions found for embedding computation")
-            return
-
-        # Build texts for embedding
-        texts_for_embedding: list[str] = []
-        for question in questions:
-            text_content = "\n".join(
-                content.text
-                for block in question.content_blocks
-                if hasattr(block, "block_type") and block.block_type == "text"
-                for content in block.content
-                if hasattr(content, "text")
+        while True:
+            logger.info(
+                f"Processing questions embedding batch {offset // QUESTION_EMBEDDING_BATCH_SIZE + 1}. We are at question {offset + 1}."
             )
-            choices_text = "\n".join(choice.text for choice in question.choices)
-            texts_for_embedding.append(f"{text_content}\n\n{choices_text}")
+            # Process in batches using offset pagination
+            stmt = base_stmt.limit(QUESTION_EMBEDDING_BATCH_SIZE).offset(offset)
+            result = await session.execute(stmt)
+            questions: list[Question] = list(result.scalars())
 
-        # Compute embeddings
-        embeddings = await openai_utils.compute_embedding(texts_for_embedding)
+            if not questions:
+                break
 
-        # Update questions with embeddings
-        for question, embedding in zip(questions, embeddings):
-            question.embedding = embedding
+            # Build texts for embedding
+            texts_for_embedding: list[str] = []
+            for question in questions:
+                text_content = "\n".join(
+                    content.text
+                    for block in question.content_blocks
+                    if hasattr(block, "block_type") and block.block_type == "text"
+                    for content in block.content
+                    if hasattr(content, "text") and content.text
+                )
+                choices_text = "\n".join(
+                    choice.text
+                    for choice in question.choices
+                    if hasattr(choice, "text") and choice.text
+                )
+                texts_for_embedding.append(f"{text_content}\n\n{choices_text}")
 
-        logger.info(f"Computed embeddings for {len(questions)} questions")
+            # Compute embeddings for this batch
+            embeddings = await openai_utils.compute_embedding(texts_for_embedding)
+
+            # Update questions with embeddings
+            for question, embedding in zip(questions, embeddings):
+                question.embedding = embedding
+
+            # Save this batch
+            await session.flush()
+
+            processed_count += len(questions)
+            offset += QUESTION_EMBEDDING_BATCH_SIZE
+
+        logger.info(f"Computed embeddings for {processed_count} questions")
 
 
 async def task_categorize_questions(

@@ -29,12 +29,13 @@ from .constants import (
 
 EMBEDDING_MODEL = "text-embedding-3-large"
 NUMBER_OF_EMBEDDING_DIMENSIONS = 1024
-MAX_CHARS_FOR_EMBEDDING_MODEL = 1000000
+MAX_CHARS_FOR_EMBEDDING_MODEL = 500000
 EMBEDDING_BATCH_SIZE = 2048
 JSONIFY_INFO_MODEL = "gpt-4o-mini"
 JSONIFY_INFO_SYSTEM_MESSAGE = "Extraia a informação '{info}' do texto a seguir e responda com um JSON contendo a chave '{json_key}' com o valor correspondente. Se não houver {info}, ou por outro motivo não faça sentido extraí-la, responda com o valor null para a chave."
 DELATEXIFY_MODEL = "gpt-4o-mini"
 DEFAULT_TIMEOUT = 60
+MAX_RETRIES = 3
 
 # Models that support reasoning_effort parameter
 REASONING_EFFORT_MODELS = ["o3-mini", "o3", "o4-mini"]
@@ -52,6 +53,7 @@ FEEDBACK_TIMEOUT = 90
 async_client = AsyncOpenAI(
     api_key=settings.openai_api_key,
     timeout=DEFAULT_TIMEOUT,
+    max_retries=MAX_RETRIES,
 )
 
 
