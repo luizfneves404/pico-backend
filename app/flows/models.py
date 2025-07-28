@@ -532,15 +532,7 @@ class Question(Base, kw_only=True):
 
     @property
     def question_truncated_text(self) -> str:
-        return (
-            (
-                self.question_text[:100]
-                + f"... ({len(self.question_text) - 200} characters truncated)"
-                + self.choices_text[:100]
-            )
-            if len(self.question_text) + len(self.choices_text) > 200
-            else (self.question_text + "\n\n" + self.choices_text)
-        )
+        return self.question_text[:100] + "..."
 
     @hybrid_property
     def answers(self) -> list["FlowQuestionUser"]:
