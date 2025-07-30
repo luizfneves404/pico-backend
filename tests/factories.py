@@ -502,11 +502,6 @@ class FlowElementFactory(AsyncSQLAlchemyFactory[FlowElement]):
     flow = SubFactory(FlowFactory)
     order = Sequence(lambda n: n)
     element_type = "flow_element"
-    is_active = True
-    is_correct = False
-    text = FactoryFaker("paragraph")
-    subject = "Matemática"
-    source = "ENEM"
 
 
 class FlowQuestionFactory(AsyncSQLAlchemyFactory[FlowQuestion]):
