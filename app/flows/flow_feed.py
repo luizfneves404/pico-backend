@@ -3,11 +3,12 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Awaitable
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, not_, select
 from sqlalchemy.engine import RowMapping
-from sqlalchemy.sql import Select, text
+from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import Label
 
+from app.community.models import Community, CommunityUser
 from app.database import get_db_session_for_worker
 from app.education.models import EducationInfo
 from app.flows.models import (
@@ -42,15 +43,17 @@ class GroupScoreCalculator(ABC):
     @abstractmethod
     def get_user_base_query(self) -> Select[Any]:
         """
-        Return the base query that defines the total population of users for each group.
+        Return the base query that will be used to define the total population of users for each group.
+        It will be grouped by the columns returned by `get_group_columns`.
         """
         pass
 
     @abstractmethod
     def get_answer_base_query(self) -> Select[Any]:
         """
-        Return the base query for counting answers for each group. It should join
+        Return the base query that will be used to count answers for each group. It should join
         all necessary tables to make grouping columns available.
+        It will be grouped by the columns returned by `get_group_columns`.
         """
         pass
 
@@ -62,26 +65,34 @@ class GroupScoreCalculator(ABC):
         return {col.key: getattr(row, col.key) for col in self.get_group_columns()}
 
     def get_user_count_query(self) -> Select[Any]:
-        """Build the complete query to count total users per group."""
+        """Build the complete query to count total users per group, excluding groups where all columns are NULL."""
         group_columns = self.get_group_columns()
-        return (
-            self.get_user_base_query()
-            .add_columns(*group_columns, func.count(User.id).label("total_users"))
-            .group_by(*group_columns)
-        )
+        base_query = self.get_user_base_query()
+
+        # Add a filter to exclude rows where all grouping columns are NULL
+        if group_columns:
+            all_null_condition = and_(*(c.is_(None) for c in group_columns))
+            base_query = base_query.where(not_(all_null_condition))
+
+        return base_query.add_columns(
+            *group_columns, func.count(User.id).label("total_users")
+        ).group_by(*group_columns)
 
     def get_answer_count_query(self) -> Select[Any]:
-        """Build the complete query to count answers per flow and group."""
+        """Build the complete query to count answers per flow and group, excluding groups where all columns are NULL."""
         group_columns = self.get_group_columns()
-        return (
-            self.get_answer_base_query()
-            .add_columns(
-                Flow.id.label("flow_id"),
-                *group_columns,
-                func.count(FlowQuestionUser.id).label("answer_count"),
-            )
-            .group_by(Flow.id, *group_columns)
-        )
+        base_query = self.get_answer_base_query()
+
+        # Add a filter to exclude rows where all grouping columns are NULL
+        if group_columns:
+            all_null_condition = and_(*(c.is_(None) for c in group_columns))
+            base_query = base_query.where(not_(all_null_condition))
+
+        return base_query.add_columns(
+            Flow.id.label("flow_id"),
+            *group_columns,
+            func.count(FlowQuestionUser.id).label("answer_count"),
+        ).group_by(Flow.id, *group_columns)
 
     async def calculate_scores(self, ctx: dict[str, Any], group_type_id: int) -> None:
         """Calculate and save flow scores for this group type."""
@@ -104,25 +115,12 @@ class GroupScoreCalculator(ABC):
 
             # 2. Get answer counts for each flow and group
             answer_results = await db_session.execute(self.get_answer_count_query())
-            query = """SELECT
-            u.id AS user_id,
-            ei.level_id,
-            ei.institution_id,
-            ei.stage_id,
-            ei.course_id
-            FROM "user" AS u
-            JOIN flow_question_user AS fqu ON u.id = fqu.user_id
-            JOIN education_info AS ei ON u.intended_education_id = ei.id
-            WHERE fqu.flow_element_id = 1;"""
-
-            debug = await db_session.execute(text(query))
-            logger.info(f"debug: {debug.all()}")
 
             # 3. Calculate scores and prepare records for insertion
             score_records: list[FlowFeedScore] = []
             for row in answer_results.mappings():
                 lookup_key = tuple(getattr(row, key) for key in group_col_keys)
-                logger.info(f"lookup_key: {lookup_key}")
+                logger.debug(f"lookup_key: {lookup_key}")
                 total_users = user_counts.get(
                     lookup_key, 1
                 )  # Default to 1 to avoid division by zero
@@ -173,9 +171,210 @@ class IntendedEducationGroupScoreCalculator(GroupScoreCalculator):
         )
 
 
-# Registry of calculators
+class EducationLevelGroupScoreCalculator(GroupScoreCalculator):
+    """Calculate scores grouped by users' education level."""
+
+    def get_group_columns(self) -> list[Label[Any]]:
+        return [EducationInfo.level_id.label("level_id")]
+
+    def get_user_base_query(self) -> Select[Any]:
+        return (
+            select()
+            .select_from(User)
+            .join(EducationInfo, EducationInfo.id == User.current_education_id)
+            .where(User.current_education_id.isnot(None))
+        )
+
+    def get_answer_base_query(self) -> Select[Any]:
+        return (
+            select()
+            .select_from(Flow)
+            .join(FlowQuestion, FlowQuestion.flow_id == Flow.id)
+            .join(FlowQuestionUser, FlowQuestionUser.flow_element_id == FlowQuestion.id)
+            .join(User, User.id == FlowQuestionUser.user_id)
+            .join(EducationInfo, EducationInfo.id == User.current_education_id)
+            .where(User.current_education_id.isnot(None))
+        )
+
+
+class CommunityGroupScoreCalculator(GroupScoreCalculator):
+    """Calculate scores grouped by users' community."""
+
+    def get_group_columns(self) -> list[Label[Any]]:
+        return [Community.id.label("community_id")]
+
+    def get_user_base_query(self) -> Select[Any]:
+        return (
+            select()
+            .select_from(User)
+            .join(CommunityUser, CommunityUser.user_id == User.id)
+            .where(CommunityUser.community_id.isnot(None))
+        )
+
+    def get_answer_base_query(self) -> Select[Any]:
+        return (
+            select()
+            .select_from(Flow)
+            .join(FlowQuestion, FlowQuestion.flow_id == Flow.id)
+            .join(FlowQuestionUser, FlowQuestionUser.flow_element_id == FlowQuestion.id)
+            .join(User, User.id == FlowQuestionUser.user_id)
+            .join(CommunityUser, CommunityUser.user_id == User.id)
+            .where(CommunityUser.community_id.isnot(None))
+        )
+
+
+class IntendedCourseGroupScoreCalculator(GroupScoreCalculator):
+    """Calculate scores grouped by users' intended course."""
+
+    def get_group_columns(self) -> list[Label[Any]]:
+        return [EducationInfo.course_id.label("course_id")]
+
+    def get_user_base_query(self) -> Select[Any]:
+        return (
+            select()
+            .select_from(User)
+            .join(EducationInfo, EducationInfo.id == User.intended_education_id)
+            .where(
+                and_(
+                    User.intended_education_id.isnot(None),
+                    EducationInfo.course_id.isnot(None),
+                )
+            )
+        )
+
+    def get_answer_base_query(self) -> Select[Any]:
+        return (
+            select()
+            .select_from(Flow)
+            .join(FlowQuestion, FlowQuestion.flow_id == Flow.id)
+            .join(FlowQuestionUser, FlowQuestionUser.flow_element_id == FlowQuestion.id)
+            .join(User, User.id == FlowQuestionUser.user_id)
+            .join(EducationInfo, EducationInfo.id == User.intended_education_id)
+            .where(
+                and_(
+                    User.intended_education_id.isnot(None),
+                    EducationInfo.course_id.isnot(None),
+                )
+            )
+        )
+
+
+class InstitutionGroupScoreCalculator(GroupScoreCalculator):
+    """Calculate scores grouped by users' current institution."""
+
+    def get_group_columns(self) -> list[Label[Any]]:
+        return [EducationInfo.institution_id.label("institution_id")]
+
+    def get_user_base_query(self) -> Select[Any]:
+        return (
+            select()
+            .select_from(User)
+            .join(EducationInfo, EducationInfo.id == User.current_education_id)
+            .where(
+                and_(
+                    User.current_education_id.isnot(None),
+                    EducationInfo.institution_id.isnot(None),
+                )
+            )
+        )
+
+    def get_answer_base_query(self) -> Select[Any]:
+        return (
+            select()
+            .select_from(Flow)
+            .join(FlowQuestion, FlowQuestion.flow_id == Flow.id)
+            .join(FlowQuestionUser, FlowQuestionUser.flow_element_id == FlowQuestion.id)
+            .join(User, User.id == FlowQuestionUser.user_id)
+            .join(EducationInfo, EducationInfo.id == User.current_education_id)
+            .where(
+                and_(
+                    User.current_education_id.isnot(None),
+                    EducationInfo.institution_id.isnot(None),
+                )
+            )
+        )
+
+
+class StageGroupScoreCalculator(GroupScoreCalculator):
+    """Calculate scores grouped by users' current education stage (for schoolers)."""
+
+    def get_group_columns(self) -> list[Label[Any]]:
+        return [EducationInfo.stage_id.label("stage_id")]
+
+    def get_user_base_query(self) -> Select[Any]:
+        return (
+            select()
+            .select_from(User)
+            .join(EducationInfo, EducationInfo.id == User.current_education_id)
+            .where(
+                and_(
+                    User.current_education_id.isnot(None),
+                    EducationInfo.stage_id.isnot(None),
+                )
+            )
+        )
+
+    def get_answer_base_query(self) -> Select[Any]:
+        return (
+            select()
+            .select_from(Flow)
+            .join(FlowQuestion, FlowQuestion.flow_id == Flow.id)
+            .join(FlowQuestionUser, FlowQuestionUser.flow_element_id == FlowQuestion.id)
+            .join(User, User.id == FlowQuestionUser.user_id)
+            .join(EducationInfo, EducationInfo.id == User.current_education_id)
+            .where(
+                and_(
+                    User.current_education_id.isnot(None),
+                    EducationInfo.stage_id.isnot(None),
+                )
+            )
+        )
+
+
+class CourseGroupScoreCalculator(GroupScoreCalculator):
+    """Calculate scores grouped by users' current course (for university students)."""
+
+    def get_group_columns(self) -> list[Label[Any]]:
+        return [EducationInfo.course_id.label("course_id")]
+
+    def get_user_base_query(self) -> Select[Any]:
+        return (
+            select()
+            .select_from(User)
+            .join(EducationInfo, EducationInfo.id == User.current_education_id)
+            .where(
+                and_(
+                    User.current_education_id.isnot(None),
+                    EducationInfo.course_id.isnot(None),
+                )
+            )
+        )
+
+    def get_answer_base_query(self) -> Select[Any]:
+        return (
+            select()
+            .select_from(Flow)
+            .join(FlowQuestion, FlowQuestion.flow_id == Flow.id)
+            .join(FlowQuestionUser, FlowQuestionUser.flow_element_id == FlowQuestion.id)
+            .join(User, User.id == FlowQuestionUser.user_id)
+            .join(EducationInfo, EducationInfo.id == User.current_education_id)
+            .where(
+                and_(
+                    User.current_education_id.isnot(None),
+                    EducationInfo.course_id.isnot(None),
+                )
+            )
+        )
+
+
 CALCULATORS: dict[FlowFeedScoreGroupTypeEnum, GroupScoreCalculator] = {
+    FlowFeedScoreGroupTypeEnum.COMMUNITY: CommunityGroupScoreCalculator(),
     FlowFeedScoreGroupTypeEnum.INTENDED_EDUCATION: IntendedEducationGroupScoreCalculator(),
+    FlowFeedScoreGroupTypeEnum.INTENDED_COURSE: IntendedCourseGroupScoreCalculator(),
+    FlowFeedScoreGroupTypeEnum.INSTITUTION: InstitutionGroupScoreCalculator(),
+    FlowFeedScoreGroupTypeEnum.EDUCATION_LEVEL: EducationLevelGroupScoreCalculator(),
+    FlowFeedScoreGroupTypeEnum.STAGE: StageGroupScoreCalculator(),
+    FlowFeedScoreGroupTypeEnum.COURSE: CourseGroupScoreCalculator(),
 }
 
 

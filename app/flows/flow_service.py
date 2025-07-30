@@ -93,62 +93,54 @@ class InvalidFileTypeError(Exception):
     pass
 
 
+async def most_answered_flows_not_seen(
+    db_session: AsyncSession, *, user_id: int, num_flows: int
+) -> list[Flow]:
+    """Get the most answered flows that the user hasn't seen yet"""
+    logger.info("Feed: getting most answered flows not yet seen")
+    seen_flow_ids_query = select(FlowUserFeed.flow_id).where(
+        FlowUserFeed.user_id == user_id
+    )
+
+    query = (
+        select(Flow)
+        .join(FlowElement, Flow.id == FlowElement.flow_id)
+        .outerjoin(FlowQuestionUser, FlowElement.id == FlowQuestionUser.flow_element_id)
+        .where(Flow.id.not_in(seen_flow_ids_query))
+        .group_by(Flow.id)
+        .order_by(func.count(FlowQuestionUser.id).desc(), Flow.created_at.desc())
+        .options(*get_flow_loader(num_elements=NUM_ELEMENTS_TO_LOAD_IN_FEED))
+        .limit(num_flows)
+    )
+    result = await db_session.scalars(query)
+    return list(result)
+
+
 async def feed(db_session: AsyncSession, *, user_id: int, num_flows: int) -> list[Flow]:
     """Feed algorithm for a user.
     It calculates the user's group keys and uses them to fetch the flows that have the highest scores.
     It also excludes flows that the user has already seen.
     """
 
-    # Get flows that the user hasn't seen in their feed yet
-    seen_flow_ids_query = select(FlowUserFeed.flow_id).where(
-        FlowUserFeed.user_id == user_id
-    )
-
     # Get user to fetch their group keys
     user_result = await db_session.execute(
         select(User)
         .options(selectinload(User.intended_education))
+        .options(selectinload(User.current_education))
+        .options(selectinload(User.communities))
         .where(User.id == user_id)
     )
     user = user_result.scalar_one()
 
     # Build group keys based on user's profile
-    group_types_to_user_group_keys: dict[
-        FlowFeedScoreGroupTypeEnum, list[dict[str, int | None]]
-    ] = {}
-
-    # Add intended education group key if user has it
-    if user.intended_education:
-        # group_key: dict[str, int | None] = {
-        #     "level_id": user.intended_education.level_id,
-        #     "institution_id": user.intended_education.institution_id,
-        #     "stage_id": user.intended_education.stage_id,
-        #     "course_id": user.intended_education.course_id,
-        # }
-
-        # group_types_to_user_group_keys[
-        #     FlowFeedScoreGroupTypeEnum.INTENDED_EDUCATION
-        # ] = [group_key]
-        pass
+    group_types_to_user_group_keys = build_group_keys_for_user(user)
 
     # If user has no group keys, use a fallback strategy
     if not group_types_to_user_group_keys:
         # Fallback to showing most answered flows not yet seen
-        logger.info("FALLBACK")
-        query = (
-            select(Flow)
-            .join(FlowElement, Flow.id == FlowElement.flow_id)
-            .outerjoin(
-                FlowQuestionUser, FlowElement.id == FlowQuestionUser.flow_element_id
-            )
-            .where(Flow.id.not_in(seen_flow_ids_query))
-            .group_by(Flow.id)
-            .order_by(func.count(FlowQuestionUser.id).desc(), Flow.created_at.desc())
-            .options(*get_flow_loader(num_elements=NUM_ELEMENTS_TO_LOAD_IN_FEED))
-            .limit(num_flows)
+        flows = await most_answered_flows_not_seen(
+            db_session, user_id=user_id, num_flows=num_flows
         )
-        result = await db_session.execute(query)
-        flows = list(result.scalars())
 
         # Mark these flows as seen
         for flow in flows:
@@ -193,10 +185,13 @@ async def feed(db_session: AsyncSession, *, user_id: int, num_flows: int) -> lis
     sorted_flow_ids = sorted(
         flow_scores.keys(), key=lambda fid: flow_scores.get(fid, 0), reverse=True
     )
+    logger.debug(f"Sorted flow IDs: {sorted_flow_ids}")
 
     # Get list of seen flow IDs
-    seen_flow_ids_result = await db_session.execute(seen_flow_ids_query)
-    seen_flow_ids = [row[0] for row in seen_flow_ids_result]
+    seen_flow_ids_query = select(FlowUserFeed.flow_id).where(
+        FlowUserFeed.user_id == user_id
+    )
+    seen_flow_ids = set(await db_session.scalars(seen_flow_ids_query))
 
     # Filter out already seen flows
     flow_ids_to_fetch = [fid for fid in sorted_flow_ids if fid not in seen_flow_ids][
@@ -204,17 +199,12 @@ async def feed(db_session: AsyncSession, *, user_id: int, num_flows: int) -> lis
     ]
 
     if not flow_ids_to_fetch:
-        # If no scored flows available, fall back to recent flows
-        query = (
-            select(Flow)
-            .where(Flow.id.not_in(seen_flow_ids_query))
-            .order_by(Flow.created_at.desc())
-            .options(*get_flow_loader(num_elements=NUM_ELEMENTS_TO_LOAD_IN_FEED))
-            .limit(num_flows)
+        logger.debug("No scored flows available, falling back to most answered flows")
+        flows = await most_answered_flows_not_seen(
+            db_session, user_id=user_id, num_flows=num_flows
         )
-        result = await db_session.scalars(query)
-        flows = list(result)
     else:
+        logger.debug("Fetching flows with scores")
         # Fetch the actual Flow objects
         query = (
             select(Flow)
@@ -226,6 +216,7 @@ async def feed(db_session: AsyncSession, *, user_id: int, num_flows: int) -> lis
 
         # Sort flows according to the score order
         flows = [flows_dict[fid] for fid in flow_ids_to_fetch if fid in flows_dict]
+        flows = flows[:num_flows]
 
     # Mark these flows as seen by this user
     for flow in flows:
@@ -236,6 +227,55 @@ async def feed(db_session: AsyncSession, *, user_id: int, num_flows: int) -> lis
     await db_session.flush()
 
     return flows
+
+
+def build_group_keys_for_user(
+    user: User,
+) -> dict[FlowFeedScoreGroupTypeEnum, list[dict[str, int | None]]]:
+    """Build the group keys for a user. Should not add a group key if the values of the dictionary would all be NULL,
+    and shouldn't even add the group type if there are no group keys.
+    If the user has no group keys, it will return an empty dictionary.
+    """
+    group_keys: dict[FlowFeedScoreGroupTypeEnum, list[dict[str, int | None]]] = {}
+    if user.intended_education:
+        # no need to check if the values are NULL, because if intended_education is not None, level_id is non nullable
+        group_keys[FlowFeedScoreGroupTypeEnum.INTENDED_EDUCATION] = [
+            {
+                "level_id": user.intended_education.level_id,
+                "institution_id": user.intended_education.institution_id,
+                "stage_id": user.intended_education.stage_id,
+                "course_id": user.intended_education.course_id,
+            }
+        ]
+        if user.intended_education.course_id:
+            group_keys[FlowFeedScoreGroupTypeEnum.INTENDED_COURSE] = [
+                {"course_id": user.intended_education.course_id}
+            ]
+
+    if user.current_education:
+        if user.current_education.institution_id:
+            group_keys[FlowFeedScoreGroupTypeEnum.INSTITUTION] = [
+                {"institution_id": user.current_education.institution_id}
+            ]
+        if user.current_education.level_id:
+            group_keys[FlowFeedScoreGroupTypeEnum.EDUCATION_LEVEL] = [
+                {"level_id": user.current_education.level_id}
+            ]
+        if user.current_education.stage_id:
+            group_keys[FlowFeedScoreGroupTypeEnum.STAGE] = [
+                {"stage_id": user.current_education.stage_id}
+            ]
+        if user.current_education.course_id:
+            group_keys[FlowFeedScoreGroupTypeEnum.COURSE] = [
+                {"course_id": user.current_education.course_id}
+            ]
+
+    if user.communities:
+        group_keys[FlowFeedScoreGroupTypeEnum.COMMUNITY] = [
+            {"community_id": community.id} for community in user.communities
+        ]
+
+    return group_keys
 
 
 async def discover_flows(

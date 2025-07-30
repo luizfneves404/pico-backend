@@ -21,18 +21,19 @@ from app.config import settings
 from app.database import SessionFactory, db_manager
 from app.fcm.fcm_service import task_send_notifications
 from app.firebase_config import init_firebase
+from app.flows.flow_feed import task_score_flows_for_feed
 from app.flows.question_service import (
-    task_generate_transcriptions,
     task_generate_flow_cover_image,
+    task_generate_transcriptions,
 )
 from app.flows.question_utils import (
-    task_compute_question_embeddings,
-    task_categorize_minor_tags,
-    task_categorize_major_tags,
-    task_generate_question_answers,
     task_analyze_question_quantitativeness,
+    task_categorize_major_tags,
+    task_categorize_minor_tags,
+    task_compute_question_embeddings,
     task_consolidate_flow_tags,
     task_generate_and_consolidate_tags,
+    task_generate_question_answers,
 )
 from app.flows.tasks import task_mark_question_timed_out
 from app.logging_config import get_logging_config
@@ -87,7 +88,14 @@ def make_worker_settings(
         on_startup: StartupShutdown | None = startup
         on_shutdown: StartupShutdown | None = shutdown
         burst: bool = burst_mode
-        cron_jobs: Sequence[CronJob] | None = None
+        cron_jobs: Sequence[CronJob] | None = [
+            cron(
+                task_score_flows_for_feed,
+                minute={10, 30, 50},
+                name="score_flows_for_feed",
+            )
+        ]
+
         health_check_interval: SecondsTimedelta = 30
         ctx: dict[str, Any] = {"session_factory": session_factory}
         job_timeout: SecondsTimedelta = 900

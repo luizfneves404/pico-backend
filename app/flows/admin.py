@@ -22,6 +22,8 @@ from app.flows.models import (
     Exam,
     Flow,
     FlowElement,
+    FlowFeedScore,
+    FlowFeedScoreGroupType,
     FlowQuestion,
     FlowQuestionUser,
     FlowTranscriptionBlock,
@@ -748,6 +750,7 @@ class ExamImportSchema(BaseModel):
     country_id: int
     education_level_id: int
     course_id: int | None
+    is_privileged: bool
 
 
 class ExamAdmin(CustomModelView, model=Exam):
@@ -792,6 +795,7 @@ class ExamAdmin(CustomModelView, model=Exam):
         "country_id": 1,
         "education_level_id": 1,
         "course_id": 1,
+        "is_privileged": False,
     }
 
     async def to_orm_model(
@@ -803,6 +807,7 @@ class ExamAdmin(CustomModelView, model=Exam):
                 country_id=validated_data.country_id,
                 education_level_id=validated_data.education_level_id,
                 course_id=validated_data.course_id,
+                is_privileged=validated_data.is_privileged,
             )
             for validated_data in validated_data_list
         ]
@@ -1141,4 +1146,42 @@ class FlowQuestionUserAdmin(CustomModelView, model=FlowQuestionUser):
         FlowQuestionUser.submitted_text,
         FlowQuestionUser.feedback,
         FlowQuestionUser.grade,
+    ]
+
+
+class FlowFeedScoreAdmin(CustomModelView, model=FlowFeedScore):
+    icon = "fa-solid fa-star"
+
+    column_list = [
+        FlowFeedScore.id,
+        FlowFeedScore.group_type,
+        FlowFeedScore.group_key,
+        FlowFeedScore.flow,
+        FlowFeedScore.score,
+        FlowFeedScore.created_at,
+    ]
+
+    form_columns = [
+        FlowFeedScore.group_type,
+        FlowFeedScore.group_key,
+        FlowFeedScore.flow,
+        FlowFeedScore.score,
+    ]
+
+
+class FlowFeedScoreGroupTypeAdmin(CustomModelView, model=FlowFeedScoreGroupType):
+    icon = "fa-solid fa-star"
+
+    column_list = [
+        FlowFeedScoreGroupType.id,
+        FlowFeedScoreGroupType.group_type,
+        FlowFeedScoreGroupType.created_at,
+        FlowFeedScoreGroupType.enabled,
+        FlowFeedScoreGroupType.weight,
+    ]
+
+    form_columns = [
+        FlowFeedScoreGroupType.group_type,
+        FlowFeedScoreGroupType.enabled,
+        FlowFeedScoreGroupType.weight,
     ]

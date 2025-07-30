@@ -23,6 +23,8 @@ from app.flows.admin import (
     ExamAdmin,
     FlowAdmin,
     FlowElementAdmin,
+    FlowFeedScoreAdmin,
+    FlowFeedScoreGroupTypeAdmin,
     FlowQuestionAdmin,
     FlowQuestionUserAdmin,
     FlowTranscriptionBlockAdmin,
@@ -94,6 +96,8 @@ admin_views.append(ChoiceAdmin)
 admin_views.append(ExamAdmin)
 admin_views.append(OfficialQuestionSourceAdmin)
 admin_views.append(CampaignAdmin)
+admin_views.append(FlowFeedScoreAdmin)
+admin_views.append(FlowFeedScoreGroupTypeAdmin)
 # Notifications
 admin_views.append(InAppNotificationAdmin)
 admin_views.append(ExternalInAppNotificationAdmin)

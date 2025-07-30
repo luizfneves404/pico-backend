@@ -862,7 +862,7 @@ class FlowFeedScoreGroupTypeEnum(StrEnum):
     INTENDED_EDUCATION = "intended_education"
     INTENDED_COURSE = "intended_course"
     INSTITUTION = "institution"
-    INSTITUTION_TYPE = "institution_type"
+    EDUCATION_LEVEL = "education_level"
     # for schoolers, which will have a grade:
     STAGE = "stage"
     # for university students, which will have a course:
@@ -872,6 +872,15 @@ class FlowFeedScoreGroupTypeEnum(StrEnum):
 class FlowFeedScoreGroupType(Base, kw_only=True):
     """
     Represents a group of users for calculating flow feed score.
+    If all values in the group_key are NULL, the group is not valid and should not be used.
+    Types:
+    - COMMUNITY: All users in the same Community
+    - INTENDED_EDUCATION: All users with the same exact intended education (level, stage, course, institution)
+    - INTENDED_COURSE: All users with the same intended course (same intended_education.course_id)
+    - INSTITUTION: All users with the same institution (same current_education.institution_id)
+    - EDUCATION_LEVEL: All users with the same education level (same current_education.level_id)
+    - STAGE: All users with the same stage (same current_education.level.stages.id)
+    - COURSE: All users with the same course (same current_education.course_id)
     """
 
     group_type: Mapped[FlowFeedScoreGroupTypeEnum] = mapped_column(unique=True)
