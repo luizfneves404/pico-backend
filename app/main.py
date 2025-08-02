@@ -205,7 +205,6 @@ async def aasa():
 
 fastapi_app.mount("/static", StaticFiles(directory="static"), name="static")
 
-
 if __name__ == "__main__":
     uvicorn.run(
         "app.main:fastapi_app",

@@ -8,6 +8,7 @@ from io import BytesIO
 from typing import Any, Protocol, Sequence
 
 import boto3
+from fastapi import Request
 from jinja2 import Template
 from pydantic import BaseModel
 
@@ -20,7 +21,7 @@ from app.users.models import User
 
 logger = logging.getLogger(__name__)
 
-HTML_TEMPLATE = Template("""
+ERROR_EMAIL_HTML_TEMPLATE = Template("""
     <!DOCTYPE html>
     <html>
     <head>
@@ -252,7 +253,7 @@ class AdminEmailHandler(logging.Handler):
                 text_parts.extend(["Traceback:", "────────────", traceback_text])
 
             # Generate HTML version
-            html_content = HTML_TEMPLATE.render(
+            html_content = ERROR_EMAIL_HTML_TEMPLATE.render(
                 level=record.levelname,
                 logger=record.name,
                 location=f"{record.pathname}:{record.lineno}",
@@ -282,3 +283,47 @@ class AdminEmailHandler(logging.Handler):
                 f"Not sending error email to avoid infinite recursion. Error inside AdminEmailHandler.emit was: {e}",
                 exc_info=True,
             )
+
+
+PASSWORD_RESET_EMAIL_TEMPLATE = """
+    <html>
+        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2>Password Reset Request</h2>
+            <p>Click the button below to reset your password:</p>
+            
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{reset_link}" 
+                   style="background-color: #007AFF; color: white; padding: 15px 30px; 
+                          text-decoration: none; border-radius: 8px; display: inline-block;
+                          font-weight: bold;">
+                    Reset Password
+                </a>
+            </div>
+            
+            <p style="color: #666; font-size: 12px;">
+                This link will expire in 15 minutes.<br>
+                If you didn't request this, please ignore this email.
+            </p>
+        </body>
+    </html>
+"""
+
+
+async def send_password_reset_email(
+    request: Request,
+    email: str,
+    token: str,
+):
+    """Send password reset email"""
+    # Email content
+    reset_link = request.url_for("password_reset_page", token=token)
+    subject = "Password Reset Request"
+    html_body = PASSWORD_RESET_EMAIL_TEMPLATE.format(reset_link=str(reset_link))
+
+    email_message = EmailMessage(
+        subject=subject,
+        body_html=html_body,
+        to_emails=[email],
+    )
+
+    await enqueue_email(email_message)

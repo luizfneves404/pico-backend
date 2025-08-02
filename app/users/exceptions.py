@@ -60,3 +60,7 @@ class InvalidCourseIdError(Exception):
 
 class InvalidStageIdError(Exception):
     pass
+
+
+class InvalidResetTokenError(Exception):
+    pass

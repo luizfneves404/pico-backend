@@ -1,7 +1,9 @@
 import logging
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Form, HTTPException, status
+from fastapi.requests import Request
+from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
 
 import app.users.jwt_token as jwt_token
@@ -13,6 +15,7 @@ from app.pagination import (
     get_pagination_params,
     paginate,
 )
+from app.templating import templates
 from app.users import service
 from app.users.jwt_token import TokenError
 from app.users.schemas import (
@@ -22,6 +25,9 @@ from app.users.schemas import (
     OnlineInfo,
     OtherUserOut,
     PasswordRequest,
+    PasswordResetRequest,
+    PasswordResetResponse,
+    PasswordStr,
     RawPhoneNumbersIn,
     RefreshRequest,
     SentinelUserOut,
@@ -180,6 +186,93 @@ async def apple_auth(
     except service.EmailAlreadyExists:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already exists"
+        )
+
+
+@token_router.post("/password-reset/request", response_model=PasswordResetResponse)
+async def request_password_reset_endpoint(
+    request: Request,
+    password_reset_request: PasswordResetRequest,
+    db_session: DBSessionAnnotated,
+) -> PasswordResetResponse:
+    """
+    Request password reset email
+
+    Sends a password reset email to the user if the email exists.
+    Always returns success for security reasons.
+    """
+    await service.request_password_reset(
+        request, db_session, password_reset_request.email
+    )
+
+    return PasswordResetResponse(
+        message="If an account with that email exists, a password reset link has been sent."
+    )
+
+
+@token_router.get(
+    "/password-reset/page/{token}",
+    response_class=HTMLResponse,
+    name="password_reset_page",
+)
+async def password_reset_page(request: Request, token: str) -> HTMLResponse:
+    """Show password reset form"""
+    # Validate token exists and isn't expired (optional - for better UX)
+    try:
+        await service.get_valid_reset_token(token)
+
+    except service.InvalidResetTokenError:
+        return templates.TemplateResponse(
+            "password_reset_error.html",
+            {"request": request, "error": "Invalid reset link"},
+        )
+
+    return templates.TemplateResponse(
+        "password_reset.html", {"request": request, "token": token}
+    )
+
+
+@token_router.post(
+    "/password-reset/page/{token}",
+    response_class=HTMLResponse,
+    name="password_reset_page",
+)
+async def password_reset_submit(
+    request: Request,
+    db_session: DBSessionAnnotated,
+    token: str,
+    new_password: PasswordStr = Form(),
+    confirm_password: PasswordStr = Form(),
+) -> HTMLResponse:
+    """Handle password reset form submission"""
+
+    # Validate passwords match
+    if new_password != confirm_password:
+        return templates.TemplateResponse(
+            "password_reset.html",
+            {"request": request, "token": token, "error": "Passwords do not match"},
+        )
+
+    try:
+        # Reset the password
+        await service.reset_password(db_session, token, new_password.get_secret_value())
+
+        return templates.TemplateResponse(
+            "password_reset_success.html", {"request": request}
+        )
+
+    except service.InvalidTokenError as e:
+        return templates.TemplateResponse(
+            "password_reset_error.html", {"request": request, "error": str(e)}
+        )
+    except service.UserNotFoundError:
+        return templates.TemplateResponse(
+            "password_reset_error.html",
+            {
+                "request": request,
+                "token": token,
+                "error": "User not found.",
+            },
         )
 
 

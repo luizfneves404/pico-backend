@@ -1,13 +1,16 @@
 import logging
 import random
 import re
+import secrets
 import unicodedata
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
+from fastapi import Request
 from geoalchemy2 import WKTElement
-from pydantic import ValidationError
+from pydantic import AwareDatetime, BaseModel, ValidationError
 from pydantic_core import PydanticCustomError
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -20,6 +23,8 @@ import app.users.external_auth as external_auth
 from app.countries.service import get_country
 from app.education import service as education_service
 from app.education.models import EducationInfo
+from app.mail import send_password_reset_email
+from app.redis_client import get_redis
 from app.shared.validation import UNSET, phone_number_adapter, validate_lowercase_email
 from app.users.constants import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -40,6 +45,7 @@ from app.users.exceptions import (
     InvalidCredentialsError,
     InvalidInstitutionIdError,
     InvalidLevelIdError,
+    InvalidResetTokenError,
     InvalidStageIdError,
     InvalidTokenError,
     PhoneNumberAlreadyExists,
@@ -70,6 +76,7 @@ __all__ = [
     "InvalidTokenError",
     "AccountExistsError",
     "InvalidCountryCodeError",
+    "InvalidResetTokenError",
     # Constants
     "ACCESS_TOKEN_EXPIRE_MINUTES",
     "DELETED_USERNAME",
@@ -865,3 +872,72 @@ def get_password_hash(password: str) -> str:
     """
     ph = PasswordHasher()
     return ph.hash(password)
+
+
+class ResetPasswordTokenData(BaseModel):
+    user_id: int
+    email: str
+    expires_at: AwareDatetime
+
+
+async def request_password_reset(
+    request: Request, db_session: AsyncSession, email: str
+) -> None:
+    """Request password reset for user by email"""
+    user = await get_user(db_session, email=email)
+    if not user:
+        return
+
+    # Generate secure token
+    token = secrets.token_urlsafe(32)
+
+    now = datetime.now(timezone.utc)
+
+    # Store token with expiration (15 minutes)
+    token_data = ResetPasswordTokenData(
+        user_id=user.id,
+        email=email,
+        expires_at=now + timedelta(minutes=15),
+    )
+
+    await get_redis().setex(
+        f"reset_token:{token}",
+        timedelta(minutes=15),
+        token_data.model_dump_json(),
+    )
+
+    await send_password_reset_email(request, email, token)
+
+
+async def get_valid_reset_token(token: str) -> ResetPasswordTokenData:
+    """Get a valid reset token"""
+    try:
+        token_data = ResetPasswordTokenData.model_validate_json(
+            await get_redis().get(f"reset_token:{token}")
+        )
+    except ValidationError as e:
+        raise InvalidResetTokenError(f"Invalid or expired reset token: {e.errors()}")
+
+    if token_data.expires_at < datetime.now(timezone.utc):
+        raise InvalidResetTokenError("Reset token has expired")
+    return token_data
+
+
+async def reset_password(
+    db_session: AsyncSession, token: str, new_password: str
+) -> bool:
+    """Reset password using token from email"""
+    # Get token data
+    token_data = await get_valid_reset_token(token)
+
+    # Get user and update password
+    user = await get_user(db_session, id=token_data.user_id)
+    if not user:
+        raise UserNotFoundError("User not found")
+
+    user.hashed_password = get_password_hash(new_password)
+
+    # Delete used token
+    await get_redis().delete(f"reset_token:{token}")
+
+    return True

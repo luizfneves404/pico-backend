@@ -256,3 +256,11 @@ class OnlineInfo(BaseModel):
     id: int
     is_online: bool
     last_online: AwareDatetime | None
+
+
+class PasswordResetRequest(BaseModel):
+    email: LowercaseEmailStr
+
+
+class PasswordResetResponse(BaseModel):
+    message: str
