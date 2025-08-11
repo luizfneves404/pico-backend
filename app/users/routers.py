@@ -460,6 +460,11 @@ async def update_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid course id",
         )
+    except service.InvalidCountryCodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid country code",
+        )
 
 
 @user_authenticated_router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)

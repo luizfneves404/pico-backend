@@ -20,7 +20,7 @@ from sqlalchemy.orm import selectinload
 import app.community.service as community_service
 import app.mail as mail
 import app.users.external_auth as external_auth
-from app.countries.service import get_country
+from app.countries.service import CountryNotFound, get_country
 from app.education import service as education_service
 from app.education.models import EducationInfo
 from app.mail import send_password_reset_email
@@ -512,8 +512,9 @@ async def update_user_fields(
 
     # Handle country_code field explicitly
     if updates.country_code is not UNSET:
-        country = await get_country(db_session, country_code=updates.country_code)
-        if not country:
+        try:
+            country = await get_country(db_session, country_code=updates.country_code)
+        except CountryNotFound:
             raise InvalidCountryCodeError(
                 f"Invalid country code: {updates.country_code}"
             )
