@@ -15,6 +15,7 @@ from app.pagination import (
     get_pagination_params,
     paginate,
 )
+from app.shared.validation import PasswordStr
 from app.templating import templates
 from app.users import service
 from app.users.jwt_token import TokenError
@@ -27,7 +28,6 @@ from app.users.schemas import (
     PasswordRequest,
     PasswordResetRequest,
     PasswordResetResponse,
-    PasswordStr,
     RawPhoneNumbersIn,
     RefreshRequest,
     SentinelUserOut,

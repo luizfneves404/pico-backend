@@ -10,8 +10,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from fastapi import Request
 from geoalchemy2 import WKTElement
-from pydantic import AwareDatetime, BaseModel, ValidationError
-from pydantic_core import PydanticCustomError
+from pydantic import AwareDatetime, BaseModel, TypeAdapter, ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,7 +24,12 @@ from app.education import service as education_service
 from app.education.models import EducationInfo
 from app.mail import send_password_reset_email
 from app.redis_client import get_redis
-from app.shared.validation import UNSET, phone_number_adapter, validate_lowercase_email
+from app.shared.validation import (
+    LowercaseEmailStr,
+    UnsetDefault,
+    UsernameStr,
+    phone_number_adapter,
+)
 from app.users.constants import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     DELETED_EMAIL,
@@ -55,7 +59,7 @@ from app.users.exceptions import (
     UserNotFoundError,
 )
 from app.users.models import SignupSource, User
-from app.users.schemas import EducationInfoIn, UserUpdate, validate_username_field
+from app.users.schemas import EducationInfoIn, UserUpdate
 from app.users.social import (
     check_contacts,
     get_ranking,
@@ -130,16 +134,16 @@ async def _set_education_field(
 
     if education_info:
         # Update existing education
-        if education_data.level_id is not UNSET:
+        if education_data.level_id is not UnsetDefault:
             education_info.level_id = education_data.level_id
 
-        if education_data.stage_id is not UNSET:
+        if education_data.stage_id is not UnsetDefault:
             education_info.stage_id = education_data.stage_id
 
-        if education_data.institution_id is not UNSET:
+        if education_data.institution_id is not UnsetDefault:
             education_info.institution_id = education_data.institution_id
 
-        if education_data.course_id is not UNSET:
+        if education_data.course_id is not UnsetDefault:
             education_info.course_id = education_data.course_id
 
         try:
@@ -338,18 +342,22 @@ async def _create_education_from_data(
     Returns:
         Created Education object or None if no data provided
     """
-    if education_data.level_id is UNSET:
+    if education_data.level_id is UnsetDefault:
         raise ValueError("Level id is required if creating education")
 
     institution_id = (
         education_data.institution_id
-        if education_data.institution_id is not UNSET
+        if education_data.institution_id is not UnsetDefault
         else None
     )
     course_id = (
-        education_data.course_id if education_data.course_id is not UNSET else None
+        education_data.course_id
+        if education_data.course_id is not UnsetDefault
+        else None
     )
-    stage_id = education_data.stage_id if education_data.stage_id is not UNSET else None
+    stage_id = (
+        education_data.stage_id if education_data.stage_id is not UnsetDefault else None
+    )
 
     return await education_service.build_education(
         db_session,
@@ -364,7 +372,8 @@ async def validate_username(
     db_session: AsyncSession, username: str
 ) -> tuple[bool, str | None]:
     try:
-        validated_username = validate_username_field(username)
+        username_adapter: TypeAdapter[UsernameStr] = TypeAdapter(UsernameStr)
+        validated_username = username_adapter.validate_python(username)
         user = await get_user(db_session, username=validated_username)
         return user is None, validated_username
     except ValueError:
@@ -375,10 +384,11 @@ async def validate_email(
     db_session: AsyncSession, email: str
 ) -> tuple[bool, str | None]:
     try:
-        validated_email = validate_lowercase_email(email)
+        email_adapter: TypeAdapter[LowercaseEmailStr] = TypeAdapter(LowercaseEmailStr)
+        validated_email = email_adapter.validate_python(email)
         user = await get_user(db_session, email=validated_email)
         return user is None, validated_email
-    except PydanticCustomError:
+    except ValueError:
         return False, None
 
 
@@ -447,21 +457,21 @@ async def update_user_fields(
     updated_fields: list[str] = []
 
     # Handle current_education field explicitly
-    if updates.current_education is not UNSET:
+    if updates.current_education is not UnsetDefault:
         await _set_education_field(
             db_session, user, updates.current_education, "current_education"
         )
         updated_fields.append("current_education")
 
     # Handle intended_education field explicitly
-    if updates.intended_education is not UNSET:
+    if updates.intended_education is not UnsetDefault:
         await _set_education_field(
             db_session, user, updates.intended_education, "intended_education"
         )
         updated_fields.append("intended_education")
 
     # Handle username field explicitly
-    if updates.username is not UNSET:
+    if updates.username is not UnsetDefault:
         if updates.username.strip().lower() != user.username.lower():
             try:
                 user.username = updates.username.strip()
@@ -474,18 +484,18 @@ async def update_user_fields(
                 raise
 
     # Handle name field explicitly
-    if updates.name is not UNSET:
+    if updates.name is not UnsetDefault:
         if updates.name != user.name:
             user.name = updates.name.strip()
             updated_fields.append("name")
 
     # Handle password field explicitly
-    if updates.password is not UNSET:
+    if updates.password is not UnsetDefault:
         user.hashed_password = get_password_hash(updates.password.get_secret_value())
         updated_fields.append("password")
 
     # Handle phone_number field explicitly
-    if updates.phone_number is not UNSET:
+    if updates.phone_number is not UnsetDefault:
         if updates.phone_number != user.phone_number:
             try:
                 user.phone_number = updates.phone_number
@@ -498,7 +508,7 @@ async def update_user_fields(
                 raise
 
     # Handle email field explicitly
-    if updates.email is not UNSET:
+    if updates.email is not UnsetDefault:
         if updates.email != user.email:
             try:
                 user.email = updates.email
@@ -511,7 +521,7 @@ async def update_user_fields(
                 raise
 
     # Handle country_code field explicitly
-    if updates.country_code is not UNSET:
+    if updates.country_code is not UnsetDefault:
         try:
             country = await get_country(db_session, country_code=updates.country_code)
         except CountryNotFound:
@@ -522,7 +532,7 @@ async def update_user_fields(
         await db_session.flush()
         updated_fields.append("country_code")
 
-    if updates.location is not UNSET:
+    if updates.location is not UnsetDefault:
         new_location = WKTElement(
             f"POINT({updates.location.longitude} {updates.location.latitude})",
             srid=4326,

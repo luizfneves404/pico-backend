@@ -1,67 +1,27 @@
-import re
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from pydantic import (
-    AfterValidator,
     AwareDatetime,
     BaseModel,
-    BeforeValidator,
     ConfigDict,
     Field,
-    SecretStr,
     StringConstraints,
 )
 
 from app.education.schemas import Location
 from app.shared.validation import (
-    UNSET,
+    CountryCodeStr,
     CustomPhoneNumber,
     LowercaseEmailStr,
+    PasswordStr,
     StripWhitespaceStr,
-    type_UNSET,
+    Unset,
+    UnsetDefault,
+    UsernameStr,
 )
 from app.users.models import SignupSource, User
 
-PasswordStr = Annotated[SecretStr, StringConstraints(max_length=255)]
-
-
-def validate_name_field(value: Any) -> str:
-    if isinstance(value, dict):
-        if "name" in value and isinstance(value["name"], str):
-            return value["name"]
-        raise ValueError(
-            "Field must be a string or an object with a 'name' field or None"
-        )
-    elif hasattr(value, "name") and isinstance(getattr(value, "name"), str):
-        return getattr(value, "name")
-    elif value is None:
-        return ""
-    raise ValueError("Field must be a string or an object with a 'name' field or None")
-
-
-ObjectName = Annotated[str, BeforeValidator(validate_name_field)]
-
-
-def validate_username_field(value: str) -> str:
-    """
-    Validate that the username fits the normalization rules.
-
-    Args:
-        value: The username string to validate.
-
-    Returns:
-        The original username string if valid.
-
-    Raises:
-        ValueError: If the username does not fit the normalization rules.
-    """
-    # Username must only contain a-z, A-Z, 0-9, and underscores, and no spaces or accents
-    if not re.fullmatch(r"[a-z0-9_]+", value):
-        raise ValueError("Username contains invalid characters or format")
-    return value
-
-
-UsernameStr = Annotated[str, AfterValidator(validate_username_field)]
+NameStr = Annotated[StripWhitespaceStr, StringConstraints(min_length=1, max_length=150)]
 
 
 class TokenResponse(BaseModel):
@@ -95,20 +55,20 @@ class GoogleAuthRequest(SocialTokenRequest):
 class AppleAuthRequest(SocialTokenRequest):
     """Request schema for Apple social authentication."""
 
-    name: StripWhitespaceStr
+    name: NameStr
 
 
 class UserBase(BaseModel):
     model_config = ConfigDict(coerce_numbers_to_str=True, from_attributes=True)
-    name: StripWhitespaceStr = Field(min_length=1, max_length=150)
-    username: UsernameStr = Field(min_length=1, max_length=50)
+    name: NameStr
+    username: UsernameStr
     phone_number: CustomPhoneNumber | Literal[""]
     email: LowercaseEmailStr
 
 
 class UserIn(BaseModel):
     model_config = ConfigDict(coerce_numbers_to_str=True, from_attributes=True)
-    name: StripWhitespaceStr = Field(min_length=1, max_length=150)
+    name: NameStr
     email: LowercaseEmailStr
     password: PasswordStr
     referred_by_username: UsernameStr | Literal[""]
@@ -179,7 +139,7 @@ class UserOut(OtherUserOut):
 
 class SentinelUserOut(BaseModel):
     id: int
-    username: StripWhitespaceStr
+    username: UsernameStr
     email: LowercaseEmailStr
     phone_number: CustomPhoneNumber | Literal[""]
 
@@ -205,10 +165,10 @@ class UserIdsIn(BaseModel):
 
 
 class EducationInfoIn(BaseModel):
-    level_id: int | type_UNSET = UNSET
-    stage_id: int | type_UNSET = UNSET
-    institution_id: int | type_UNSET = UNSET
-    course_id: int | type_UNSET = UNSET
+    level_id: int | Unset = UnsetDefault
+    stage_id: int | Unset = UnsetDefault
+    institution_id: int | Unset = UnsetDefault
+    course_id: int | Unset = UnsetDefault
 
 
 # New unified update schemas
@@ -217,15 +177,15 @@ class UserUpdate(BaseModel):
 
     model_config = ConfigDict(coerce_numbers_to_str=True)
 
-    name: StripWhitespaceStr | type_UNSET = Field(UNSET, min_length=1, max_length=150)
-    username: UsernameStr | type_UNSET = Field(UNSET, min_length=1, max_length=50)
-    password: PasswordStr | type_UNSET = UNSET
-    phone_number: CustomPhoneNumber | type_UNSET = UNSET
-    email: LowercaseEmailStr | type_UNSET = UNSET
-    current_education: EducationInfoIn | type_UNSET = UNSET
-    intended_education: EducationInfoIn | type_UNSET = UNSET
-    country_code: str | type_UNSET = Field(UNSET, max_length=2)
-    location: Location | type_UNSET = UNSET
+    name: NameStr | Unset = UnsetDefault
+    username: UsernameStr | Unset = UnsetDefault
+    password: PasswordStr | Unset = UnsetDefault
+    phone_number: CustomPhoneNumber | Unset = UnsetDefault
+    email: LowercaseEmailStr | Unset = UnsetDefault
+    current_education: EducationInfoIn | Unset = UnsetDefault
+    intended_education: EducationInfoIn | Unset = UnsetDefault
+    country_code: CountryCodeStr | Unset = UnsetDefault
+    location: Location | Unset = UnsetDefault
 
 
 class UserUpdateRequest(BaseModel):

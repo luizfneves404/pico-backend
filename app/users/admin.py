@@ -9,10 +9,9 @@ from wtforms import PasswordField
 from app.config import LowercaseEmailStr
 from app.education.models import EducationInfo
 from app.shared.admin import CustomModelView
-from app.shared.validation import CustomPhoneNumber
+from app.shared.validation import CustomPhoneNumber, PasswordStr, UsernameStr
 from app.users import service as user_service
 from app.users.models import SignupSource, User
-from app.users.schemas import PasswordStr, UsernameStr
 
 
 def format_string(value: Any) -> Any:
