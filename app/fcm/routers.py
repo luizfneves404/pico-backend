@@ -13,6 +13,7 @@ router = APIRouter(prefix="/fcm_devices", tags=["fcm_devices"])
 
 @router.post(
     "",
+    name="create_or_update_fcm_device",
 )
 async def device_create_or_update(
     device_in: FCMDeviceIn,

@@ -190,7 +190,7 @@ async def apple_auth(
 
 
 @token_router.post("/password-reset/request", response_model=PasswordResetResponse)
-async def request_password_reset_endpoint(
+async def request_password_reset(
     request: Request,
     password_reset_request: PasswordResetRequest,
     db_session: DBSessionAnnotated,
@@ -213,7 +213,7 @@ async def request_password_reset_endpoint(
 @token_router.get(
     "/password-reset/page/{token}",
     response_class=HTMLResponse,
-    name="password_reset_page",
+    name="get_password_reset_page",
 )
 async def password_reset_page(request: Request, token: str) -> HTMLResponse:
     """Show password reset form"""
@@ -235,7 +235,7 @@ async def password_reset_page(request: Request, token: str) -> HTMLResponse:
 @token_router.post(
     "/password-reset/page/{token}",
     response_class=HTMLResponse,
-    name="password_reset_page",
+    name="submit_password_reset_page",
 )
 async def password_reset_submit(
     request: Request,
@@ -276,7 +276,7 @@ async def password_reset_submit(
         )
 
 
-@user_router.post("/validate")
+@user_router.post("/validate", name="validate_field_of_user")
 async def validate_user_field(
     request: UserFieldValidationRequest,
     db_session: DBSessionAnnotated,

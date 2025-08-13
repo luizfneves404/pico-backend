@@ -11,6 +11,7 @@ from fastapi.openapi.docs import (
 )
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.routing import Route
@@ -204,6 +205,25 @@ async def aasa():
 
 
 fastapi_app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+def use_route_names_as_operation_ids(app: FastAPI) -> None:
+    """
+    Simplify operation IDs so that generated API clients have simpler function
+    names.
+
+    Should be called only after all routes have been added.
+    """
+    present_route_names: set[str] = set()
+    for route in app.routes:
+        if isinstance(route, APIRoute):
+            if route.name in present_route_names:
+                raise Exception(f"Route name {route.name} is not unique")
+            present_route_names.add(route.name)
+            route.operation_id = route.name
+
+
+use_route_names_as_operation_ids(fastapi_app)
 
 if __name__ == "__main__":
     uvicorn.run(

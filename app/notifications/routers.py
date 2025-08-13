@@ -37,7 +37,7 @@ async def count_unseen_notifications(
     )
 
 
-@router.post("/mark-all-as-seen")
+@router.post("/mark-all-as-seen", name="mark_all_notifications_as_seen")
 async def mark_all_as_seen(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,

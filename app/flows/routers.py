@@ -221,7 +221,11 @@ async def is_flow_ready_for_question_creation(
         )
 
 
-@flows_router.post("/{id}/add-questions-official", response_model=FlowDetail)
+@flows_router.post(
+    "/{id}/add-questions-official",
+    response_model=FlowDetail,
+    name="add_questions_to_flow_from_official",
+)
 async def add_questions_to_flow_official(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
@@ -251,7 +255,11 @@ async def add_questions_to_flow_official(
         )
 
 
-@flows_router.post("/{id}/add-questions-ai", response_model=FlowDetail)
+@flows_router.post(
+    "/{id}/add-questions-ai",
+    response_model=FlowDetail,
+    name="add_questions_to_flow_from_ai",
+)
 async def add_questions_to_flow_ai(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
@@ -277,7 +285,11 @@ async def add_questions_to_flow_ai(
         )
 
 
-@flows_router.post("/{id}/add-questions-full", response_model=FlowDetail)
+@flows_router.post(
+    "/{id}/add-questions-full",
+    response_model=FlowDetail,
+    name="add_questions_to_flow_full",
+)
 async def add_questions_to_flow_full(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
@@ -354,7 +366,7 @@ async def delete_flow(
 
 
 @flows_router.get("/user/{user_id}", response_model=PaginatedResponse[FlowInSearch])
-async def user_flows(
+async def list_user_flows(
     db_session: DBSessionAnnotated,
     user_id: int,
     pagination: Annotated[PaginationParams, Depends(get_pagination_params)],

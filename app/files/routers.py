@@ -3,14 +3,18 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
-from app.config import LocalConfig, settings
+from app.config import Environment, LocalConfig, settings
 
 router = APIRouter(prefix="/files", tags=["files"])
 
 
-@router.get("/{file_id}")
+@router.get(
+    "/{file_id}",
+    name="get_local_file",
+    include_in_schema=settings.environment != Environment.PROD,
+)
 async def get_file(file_id: str) -> FileResponse:
-    """Get a file from storage.
+    """Get a file from local storage (should not be used in production).
 
     Args:
         file_id: The unique identifier of the file

@@ -1,7 +1,7 @@
 from typing import Any, ClassVar, Sequence, Union
 
 from geoalchemy2 import WKTElement
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import InstrumentedAttribute
 
 from app.education.models import (
@@ -116,7 +116,13 @@ class InstitutionAdmin(CustomModelView, model=Institution):
 
 
 class EducationLevelImportSchema(BaseModel):
-    name_i18n: str
+    name_i18n: str = Field(
+        title="Internationalized Name",
+        description="A dictionary mapping language codes (e.g., 'en', 'es') to the course name.",
+        examples=[
+            {"en": "High School", "es": "Educación Secundaria"},
+        ],
+    )
 
 
 class EducationLevelAdmin(CustomModelView, model=EducationLevel):
@@ -190,7 +196,13 @@ class LevelStageAdmin(CustomModelView, model=LevelStage):
 
 
 class CourseImportSchema(BaseModel):
-    name_i18n: str
+    name_i18n: str = Field(
+        title="Internationalized Name",
+        description="A dictionary mapping language codes (e.g., 'en', 'es') to the course name.",
+        examples=[
+            {"en": "Introduction to Python", "es": "Introducción a Python"},
+        ],
+    )
     level_id: int
     user_submitted: bool
 
