@@ -87,7 +87,7 @@ alembic history
 To start the server:
 
 ```bash
-python -m app.main
+python -m app.serve
 ```
 
 To start the worker:

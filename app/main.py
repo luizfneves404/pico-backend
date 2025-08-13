@@ -4,7 +4,6 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Awaitable, Callable
 
-import uvicorn
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from fastapi.openapi.docs import (
     get_swagger_ui_html,
@@ -29,6 +28,7 @@ from app.fcm.routers import router as fcm_router
 from app.files.routers import router as files_router
 from app.firebase_config import init_firebase
 from app.flows.routers import areas_router, exam_router, flows_router
+from app.instrumentation import instrument_app
 from app.logging_config import get_logging_config
 from app.notifications.routers import router as in_app_notifications_router
 from app.redis_client import use_redis
@@ -84,7 +84,6 @@ fastapi_app = FastAPI(
     docs_url=None,
 )
 
-
 # middlewares
 
 
@@ -137,7 +136,7 @@ async def logging_middleware(
 async def health_check_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ):
-    if request.url.path == "/health":
+    if request.url.path == settings.health_check_url:
         return Response(content="Healthy")
     return await call_next(request)
 
@@ -225,13 +224,4 @@ def use_route_names_as_operation_ids(app: FastAPI) -> None:
 
 use_route_names_as_operation_ids(fastapi_app)
 
-if __name__ == "__main__":
-    uvicorn.run(
-        "app.main:fastapi_app",
-        host=settings.uvicorn_host,
-        port=settings.uvicorn_port,
-        reload=settings.uvicorn_reload,
-        loop="uvloop",
-        http="httptools",
-        timeout_keep_alive=settings.uvicorn_timeout_keep_alive,
-    )
+instrument_app(fastapi_app)

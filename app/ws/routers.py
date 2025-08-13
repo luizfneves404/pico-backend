@@ -18,7 +18,9 @@ from app.database import db_manager
 from app.users.models import User
 from app.ws.schemas import MessageType, WebsocketMessage
 
-router = APIRouter(prefix="/ws", tags=["websockets"])
+WEBSOCKET_URL = "/ws"
+
+router = APIRouter(prefix=WEBSOCKET_URL, tags=["websockets"])
 logger = logging.getLogger(__name__)
 
 

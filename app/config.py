@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     mock_openai: bool = Field(default=...)
     mock_gemini: bool = Field(default=...)
     docs_url: str = Field(default=...)
+    health_check_url: str = Field(default="/health")
 
     admin_names: list[str] = Field(default=...)
     admin_emails: list[LowercaseEmailStr] = Field(default=...)

@@ -36,6 +36,7 @@ from app.flows.question_utils import (
     task_generate_question_answers,
 )
 from app.flows.tasks import task_mark_question_timed_out
+from app.instrumentation import instrument_worker
 from app.logging_config import get_logging_config
 from app.mail import task_send_email
 
@@ -54,6 +55,8 @@ def make_worker_settings(
 ) -> type:
     async def startup(ctx: dict[str, Any]):
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+
+        instrument_worker()
 
         if not log_configured:
             logging.config.dictConfig(get_logging_config())

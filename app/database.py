@@ -3,6 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncContextManager, AsyncGenerator, AsyncIterator, Callable
 
+import logfire
 from sqlalchemy.ext.asyncio import (
     AsyncConnection,
     AsyncEngine,
@@ -44,6 +45,7 @@ class DatabaseSessionManager:
             pool_size=CONNECTION_POOL_SIZE,
             max_overflow=CONNECTION_POOL_MAX_OVERFLOW,
         )
+        logfire.instrument_sqlalchemy(engine=self._engine)
         self._sessionmaker = async_sessionmaker(
             bind=self._engine,
             expire_on_commit=False,

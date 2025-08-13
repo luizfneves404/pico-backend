@@ -8,4 +8,4 @@ echo "Migrating..."
 alembic upgrade head
 echo "Migrations complete"
 
-exec python -m app.main
+exec python -m app.serve
