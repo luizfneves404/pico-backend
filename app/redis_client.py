@@ -3,19 +3,17 @@ from typing import AsyncIterator
 
 import redis.asyncio as redis
 
-from app.config import settings
-
 _redis: redis.Redis | None = None
 
 
-def init() -> None:
+def init(url: str) -> None:
     """Initialize the Redis connection.
 
     Args:
-        redis_url: Redis connection URL
+        url: Redis connection URL
     """
     global _redis
-    _redis = redis.from_url(settings.redis_url, decode_responses=True)
+    _redis = redis.from_url(url, decode_responses=True)
 
 
 async def close() -> None:
@@ -28,14 +26,14 @@ async def close() -> None:
 
 
 @contextlib.asynccontextmanager
-async def use_redis() -> AsyncIterator[None]:
+async def use_redis(url: str) -> AsyncIterator[None]:
     """Use the Redis connection.
 
     Args:
-        redis_url: Redis connection URL
+        url: Redis connection URL
     """
     try:
-        init()
+        init(url)
         yield
     finally:
         await close()

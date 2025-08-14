@@ -7,14 +7,19 @@ services:
         - INSTALL_TEST=true
     volumes:
       - ./uv_cache:/tmp/uv_cache
+      - /var/run/docker.sock:/var/run/docker.sock # for local testing
+    
+    group_add:
+      - "${DOCKER_GROUP_ID:-1001}" 
+      
     command: /bin/bash /code/docker/docker-test-entrypoint.sh
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
 
     environment:
+      - DOCKER_HOST=${DOCKER_HOST:-unix:///var/run/docker.sock} # uses CI/CD variable if available, otherwise uses local docker socket
+
       - ADMIN_URL=admin
       - AWS_SES_FROM_EMAIL=pico@example.com
       - DATABASE_URL=postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@postgres:5432/picodb
@@ -49,14 +54,6 @@ services:
       # Other configuration
       - ADMIN_EMAILS
       - ADMIN_NAMES
-  
-  redis:
-    image: redis:latest
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 5s
-      timeout: 5s
-      retries: 5
 
   postgres:
     build:

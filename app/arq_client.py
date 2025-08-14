@@ -5,21 +5,19 @@ from typing import Any, AsyncIterator
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
 
-from app.config import settings
-
 _redis: ArqRedis | None = None
 
 logger = logging.getLogger(__name__)
 
 
-async def init() -> None:
+async def init(url: str) -> None:
     """Initialize the ARQ Redis connection pool.
 
     Args:
         redis_url: Redis connection URL
     """
     global _redis
-    _redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+    _redis = await create_pool(RedisSettings.from_dsn(url))
 
 
 async def close() -> None:
@@ -32,7 +30,7 @@ async def close() -> None:
 
 
 @contextlib.asynccontextmanager
-async def arq_redis() -> AsyncIterator[None]:
+async def arq_redis(url: str) -> AsyncIterator[None]:
     """Use the ARQ Redis connection pool.
 
     Args:
@@ -40,7 +38,7 @@ async def arq_redis() -> AsyncIterator[None]:
     """
     global _redis
     try:
-        await init()
+        await init(url)
         yield
     finally:
         await close()
@@ -71,7 +69,7 @@ async def enqueue_job(function: str, *args: Any, **kwargs: Any) -> None:
     client = _get_redis()
 
     # Strip args and kwargs if too big for logging
-    def truncate_if_large(obj: Any, max_length: int = 200) -> str:
+    def truncate_if_large(obj: Any, max_length: int = 400) -> str:
         obj_str = str(obj)
         if len(obj_str) > max_length:
             return obj_str[:max_length] + "... (truncated)"

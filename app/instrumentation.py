@@ -64,6 +64,8 @@ class ArqPollingSampler(Sampler):
 
 
 def instrument_base() -> None:
+    # logfire.instrument_sqlalchemy() # this should work, but I think there's a bug in logfire's sqlalchemy instrumentation
+    # instead, we are instrumenting the engine in database.py
     logfire.instrument_redis()
     logfire.instrument_openai()
 
@@ -90,6 +92,7 @@ def instrument_app(app: FastAPI) -> None:
     logfire.configure(
         environment=settings.environment,
         service_name="backend",
+        distributed_tracing=False,
     )
     instrument_base()
     logfire.instrument_fastapi(
@@ -106,6 +109,7 @@ def instrument_worker() -> None:
         environment=settings.environment,
         service_name="worker",
         sampling=logfire.SamplingOptions(head=ParentBased(ArqPollingSampler())),
+        distributed_tracing=True,
     )
     instrument_base()
     ArqInstrumentor().instrument()

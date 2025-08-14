@@ -40,6 +40,8 @@ from app.instrumentation import instrument_worker
 from app.logging_config import get_logging_config
 from app.mail import task_send_email
 
+logger = logging.getLogger(__name__)
+
 
 async def ping(ctx: dict[Any, Any]) -> Literal["pong"]:
     return "pong"
@@ -50,21 +52,34 @@ def make_worker_settings(
     redis_url: str,
     database_url: str,
     burst_mode: bool,
-    log_configured: bool,
+    inside_app: bool,
     session_factory: SessionFactory | None,
 ) -> type:
+    """
+    Create a worker settings object.
+
+    Args:
+        redis_url (str): The URL of the Redis server.
+        database_url (str): The URL of the database.
+        burst_mode (bool): Whether to run in burst mode.
+        inside_app (bool): Whether the worker is running inside the app. If True, worker will not configure it's own logging or instrumentation.
+        session_factory (SessionFactory | None): The session factory.
+
+    Returns:
+        type: The worker settings object.
+    """
+
     async def startup(ctx: dict[str, Any]):
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
-        instrument_worker()
-
-        if not log_configured:
+        if not inside_app:
+            instrument_worker()
             logging.config.dictConfig(get_logging_config())
+            init_firebase()
 
-        init_firebase()
         db_manager.init(database_url)
-        redis_client.init()
-        await arq_client.init()
+        redis_client.init(redis_url)
+        await arq_client.init(redis_url)
 
     async def shutdown(ctx: dict[str, Any]):
         await db_manager.close()
@@ -111,7 +126,7 @@ if __name__ == "__main__":
         redis_url=settings.redis_url,
         database_url=settings.database_url,
         burst_mode=False,
-        log_configured=False,
+        inside_app=False,
         session_factory=None,
     )
     if "--check" in sys.argv:

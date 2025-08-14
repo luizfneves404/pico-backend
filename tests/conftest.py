@@ -22,8 +22,10 @@ from httpx import ASGITransport, AsyncClient
 from httpx_ws.transport import ASGIWebSocketTransport
 from sqlalchemy import NullPool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from testcontainers.redis import AsyncRedisContainer
 
 import app.arq_client as arq_client
+import app.mail as mail
 import app.users.jwt_token as jwt_token
 from alembic.command import upgrade
 from app.arq_worker import make_worker_settings
@@ -50,6 +52,8 @@ T = TypeVar("T")
 DEFAULT_TEST_PASSWORD = "defaultpassword"
 BASE_URL = "http://test"
 
+logger = logging.getLogger(__name__)
+
 
 def pytest_configure():
     """
@@ -58,6 +62,18 @@ def pytest_configure():
     are collected or run.
     """
     logging.config.dictConfig(get_logging_config())
+
+
+def pytest_exception_interact(
+    node: pytest.Item | pytest.Collector,
+    call: pytest.CallInfo[Any],
+    report: pytest.TestReport,
+) -> None:
+    if report.failed:
+        if call.excinfo is not None:
+            logger.warning("Test failed", exc_info=call.excinfo.value)
+        else:
+            logger.warning("Test failed, no excinfo")
 
 
 class DummySESClient:
@@ -86,8 +102,6 @@ class DummySESClient:
 @pytest.fixture(autouse=True)
 def dummy_ses_client() -> DummySESClient:
     """Returns a new dummy SES client instance for each test."""
-    import app.mail as mail
-
     dummy_ses_client = DummySESClient()
     mail.inject_client(dummy_ses_client)
     return dummy_ses_client
@@ -114,7 +128,7 @@ async def migrated_postgres_template(pg_url: str) -> AsyncGenerator[str, None]:
     """
     Creates temporary database and applies migrations.
 
-    Has "session" scope, so is called only once per tests run.
+    Has "session" scope, so is called only once per tests run (unless using pytest-xdist, in which case it runs once per worker).
     """
     async with tmp_database(pg_url, "pytest") as tmp_url:
         alembic_config = alembic_config_from_url(tmp_url)
@@ -205,9 +219,22 @@ async def websocket_session(
         yield session
 
 
+@pytest.fixture(scope="session")
+def redis_url() -> Generator[str, None, None]:
+    """Starts a Redis container and yields it."""
+    with AsyncRedisContainer("redis:7-alpine") as redis_cont:
+        host = redis_cont.get_container_host_ip()
+        port = redis_cont.get_exposed_port(redis_cont.port)
+
+        if redis_cont.password:
+            yield f"redis://:{redis_cont.password}@{host}:{port}"
+        else:
+            yield f"redis://{host}:{port}"
+
+
 @pytest.fixture
-async def redis_for_tests():
-    async with use_redis():
+async def redis_for_tests(redis_url: str):
+    async with use_redis(redis_url):
         redis_client = get_redis()
         await redis_client.flushall()
         yield
@@ -216,14 +243,15 @@ async def redis_for_tests():
 @pytest.fixture()
 async def arq_worker(
     migrated_postgres_template: str,
+    redis_url: str,
     session_factory: SessionFactory,
 ) -> AsyncGenerator[Worker, None]:
-    async with arq_client.arq_redis():
+    async with arq_client.arq_redis(redis_url):
         worker_settings = make_worker_settings(
-            redis_url=settings.redis_url,
+            redis_url=redis_url,
             database_url=migrated_postgres_template,
             burst_mode=True,
-            log_configured=True,
+            inside_app=True,
             session_factory=session_factory,
         )
         # Clear Redis at the start of the test session

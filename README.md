@@ -126,6 +126,8 @@ To run tests in docker compose:
 sudo docker compose --file docker-compose-test.yml up --build --abort-on-container-exit
 ```
 
+If the tests fail because docker didn't have the permissions, add DOCKER_GROUP_ID to .env, based on the output of `getent group docker | cut -d: -f3`.
+
 # Choices i made
 
 ## uv

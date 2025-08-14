@@ -31,7 +31,7 @@ def get_logging_config() -> dict[str, Any]:
             "console": {
                 "class": "logging.StreamHandler",
                 "formatter": "default",
-                "level": "DEBUG",
+                "level": "INFO",
                 "stream": "ext://sys.stdout",
             },
             "admin_email": {
@@ -70,6 +70,8 @@ def get_logging_config() -> dict[str, Any]:
             },
             "arq": {"level": "DEBUG", "propagate": True},
             "faker": {"level": "INFO", "propagate": True},
+            "testcontainers": {"level": "INFO", "propagate": True},
+            "docker": {"level": "INFO", "propagate": True},
         },
     }
 
