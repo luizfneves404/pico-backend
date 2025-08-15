@@ -2,12 +2,16 @@
 
 services:
   web:
-    # Use the CI job's network
+    # Use the CI job's network so that docker:dind can be found at DOCKER_HOST
     network_mode: "host"
-    # The healthcheck isn't reliable with host networking
-    depends_on: []
     environment:
+      - DOCKER_HOST
       # Override the database URL to use localhost for the CI's host network
       - DATABASE_URL=postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@localhost:5432/picodb
 
       - REDIS_URL=redis://localhost:6379 # isn't used, but might as well add for consistency
+
+  postgres:
+    # The postgres container also needs to join the shared network
+    # so the web service can find it at localhost.
+    network_mode: "host"
