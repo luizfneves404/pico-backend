@@ -5,6 +5,7 @@ services:
       dockerfile: docker/Dockerfile
       args:
         - INSTALL_TEST=true
+
     volumes:
       - ./uv_cache:/tmp/uv_cache
       - /var/run/docker.sock:/var/run/docker.sock # for local testing
@@ -13,6 +14,7 @@ services:
       - "${DOCKER_GROUP_ID:-1001}" 
       
     command: /bin/bash /code/docker/docker-test-entrypoint.sh
+
     depends_on:
       postgres:
         condition: service_healthy
@@ -28,7 +30,7 @@ services:
       - FCM_DRY_RUN=true
       - OPENAPI_API_KEY=123456
       - OPENAPI_URL=/openapi.json
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://redis:6379 # isn't used because we use testcontainers for redis
       - SECRET_KEY=REDACTED_SECRET_KEY
       - STORAGE__BACKEND=local
       - STORAGE__BASE_PATH=storage

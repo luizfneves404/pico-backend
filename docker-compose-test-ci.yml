@@ -1,0 +1,11 @@
+# pass docker-compose-test.yml before this file, so that this one overrides the other one
+
+services:
+  web:
+    # Use the CI job's network
+    network_mode: "host"
+    # The healthcheck isn't reliable with host networking
+    depends_on: []
+    environment:
+      # Override the database URL to use localhost for the CI's host network
+      - DATABASE_URL=postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@localhost:5432/picodb
