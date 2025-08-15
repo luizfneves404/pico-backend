@@ -5,7 +5,7 @@ services:
     # Use the CI job's network so that docker:dind can be found at DOCKER_HOST
     network_mode: "host"
     environment:
-      - DOCKER_HOST
+      - DOCKER_HOST=tcp://127.0.0.1:2375
       # Override the database URL to use localhost for the CI's host network
       - DATABASE_URL=postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@localhost:5432/picodb
 
