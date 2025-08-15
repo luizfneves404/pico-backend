@@ -14,7 +14,7 @@ from opentelemetry.sdk.trace.sampling import (
 from opentelemetry.trace import Link, SpanKind, TraceState
 from opentelemetry.util.types import Attributes
 
-from app.config import settings
+from app.config import Environment, settings
 from app.ws.routers import WEBSOCKET_URL
 
 # This attribute key is standard for OpenTelemetry database instrumentations.
@@ -93,6 +93,7 @@ def instrument_app(app: FastAPI) -> None:
         environment=settings.environment,
         service_name="backend",
         distributed_tracing=False,
+        console=None if settings.environment == Environment.DEV else False,
     )
     instrument_base()
     logfire.instrument_fastapi(

@@ -41,7 +41,7 @@ def get_logging_config() -> dict[str, Any]:
             },
         },
         "root": {
-            "level": "DEBUG" if settings.environment == Environment.TEST else "INFO",
+            "level": "DEBUG",
             "handlers": ["console", "admin_email"],
         },
         "loggers": {
@@ -49,9 +49,7 @@ def get_logging_config() -> dict[str, Any]:
             "tests": {"level": "DEBUG", "propagate": True},
             "alembic": {"level": "DEBUG", "propagate": True},
             "sqlalchemy.engine": {
-                "level": "DEBUG"
-                if settings.environment != Environment.PROD
-                else "WARNING",
+                "level": "WARNING",
                 "propagate": True,
             },
             "botocore": {"level": "INFO", "propagate": True},
