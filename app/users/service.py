@@ -802,9 +802,11 @@ async def delete_user(
     Raises:
         InvalidCredentialsError: If password is incorrect
     """
-    # TODO: if its google or apple, we have to think about what to do
-    if not verify_password(current_password, user.hashed_password):
-        raise InvalidCredentialsError
+    # TODO: improve dealing with google and apple users
+    if not user.google_id and not user.apple_id:
+        if not verify_password(current_password, user.hashed_password):
+            raise InvalidCredentialsError
+
     logger.info(f"Deleting user {user.id}")
     # TODO: delete from analytics too
     await db_session.delete(user)
