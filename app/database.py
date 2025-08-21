@@ -1,5 +1,6 @@
 import contextlib
 import logging
+import ssl
 from contextlib import asynccontextmanager
 from typing import Any, AsyncContextManager, AsyncGenerator, AsyncIterator, Callable
 
@@ -22,6 +23,7 @@ import app.flows.models  # noqa: F401
 import app.notifications.models  # noqa: F401
 import app.users.models  # noqa: F401
 import app.ws.models  # noqa: F401
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +40,20 @@ class DatabaseSessionManager:
         self._sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
     def init(self, db_url: str) -> None:
+        if settings.database_ssl_verify_full:
+            sslctx = ssl.create_default_context(
+                ssl.Purpose.SERVER_AUTH, cafile=settings.database_ca_cert_file
+            )
+            sslctx.check_hostname = True
+        else:
+            sslctx = False
         self._engine = create_async_engine(
             url=db_url,
             pool_pre_ping=True,
             isolation_level="READ COMMITTED",
             pool_size=CONNECTION_POOL_SIZE,
             max_overflow=CONNECTION_POOL_MAX_OVERFLOW,
+            connect_args={"ssl": sslctx},
         )
         logfire.instrument_sqlalchemy(engine=self._engine)
         self._sessionmaker = async_sessionmaker(
