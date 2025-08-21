@@ -15,11 +15,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-        
+
     environment:
       - ADMIN_URL=admin
       - AWS_SES_FROM_EMAIL=pico@example.com
       - DATABASE_URL=postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@postgres:5432/picodb
+      - DATABASE_SSL_VERIFY_FULL=false
       - DOCS_URL=/docs
       - ENVIRONMENT=test
       - FCM_DRY_RUN=true
@@ -47,13 +48,13 @@ services:
       - OPENAI_API_KEY
       - PEN_TO_PRINT_RAPIDAPI_KEY
       - TINIFY_API_KEY
-      
+
       # Other configuration
       - ADMIN_EMAILS
       - ADMIN_NAMES
-  
+
   worker:
-    build: 
+    build:
       context: .
       dockerfile: docker/Dockerfile
     volumes:
@@ -69,11 +70,12 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      
+
     environment:
       - ADMIN_URL=admin
       - AWS_SES_FROM_EMAIL=pico@example.com
       - DATABASE_URL=postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@postgres:5432/picodb
+      - DATABASE_SSL_VERIFY_FULL=false
       - DOCS_URL=/docs
       - ENVIRONMENT=test
       - FCM_DRY_RUN=true
@@ -101,11 +103,11 @@ services:
       - OPENAI_API_KEY
       - PEN_TO_PRINT_RAPIDAPI_KEY
       - TINIFY_API_KEY
-      
+
       # Other configuration
       - ADMIN_EMAILS
       - ADMIN_NAMES
-  
+
   redis:
     image: redis:latest
     healthcheck:

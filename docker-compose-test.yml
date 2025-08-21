@@ -9,10 +9,10 @@ services:
     volumes:
       - ./uv_cache:/tmp/uv_cache
       - /var/run/docker.sock:/var/run/docker.sock # for local testing
-    
+
     group_add:
-      - "${DOCKER_GROUP_ID:-1001}" 
-      
+      - "${DOCKER_GROUP_ID:-1001}"
+
     command: /bin/bash /code/docker/docker-test-entrypoint.sh
 
     depends_on:
@@ -25,6 +25,7 @@ services:
       - ADMIN_URL=admin
       - AWS_SES_FROM_EMAIL=pico@example.com
       - DATABASE_URL=postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@postgres:5432/picodb
+      - DATABASE_SSL_VERIFY_FULL=false
       - DOCS_URL=/docs
       - ENVIRONMENT=test
       - FCM_DRY_RUN=true
@@ -52,7 +53,7 @@ services:
       - OPENAI_API_KEY
       - PEN_TO_PRINT_RAPIDAPI_KEY
       - TINIFY_API_KEY
-      
+
       # Other configuration
       - ADMIN_EMAILS
       - ADMIN_NAMES
