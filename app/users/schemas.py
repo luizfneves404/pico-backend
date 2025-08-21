@@ -55,7 +55,7 @@ class GoogleAuthRequest(SocialTokenRequest):
 class AppleAuthRequest(SocialTokenRequest):
     """Request schema for Apple social authentication."""
 
-    name: NameStr
+    name: NameStr | None = None
 
 
 class UserBase(BaseModel):

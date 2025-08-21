@@ -64,3 +64,7 @@ class InvalidStageIdError(Exception):
 
 class InvalidResetTokenError(Exception):
     pass
+
+
+class MissingNameError(Exception):
+    pass

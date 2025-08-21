@@ -52,6 +52,7 @@ from app.users.exceptions import (
     InvalidResetTokenError,
     InvalidStageIdError,
     InvalidTokenError,
+    MissingNameError,
     PhoneNumberAlreadyExists,
     ReferredByNotFoundError,
     SocialAuthError,
@@ -81,6 +82,7 @@ __all__ = [
     "AccountExistsError",
     "InvalidCountryCodeError",
     "InvalidResetTokenError",
+    "MissingNameError",
     # Constants
     "ACCESS_TOKEN_EXPIRE_MINUTES",
     "DELETED_USERNAME",
@@ -630,7 +632,7 @@ async def authenticate_user_by_apple(
     db_session: AsyncSession,
     *,
     id_token: str,
-    name: str,
+    name: str | None = None,
     signup_source: SignupSource,
     referred_by_username: str,
 ) -> User:
@@ -639,6 +641,7 @@ async def authenticate_user_by_apple(
     Args:
         db_session: Database session
         id_token: Apple ID token
+        name: Name of the user. Can be None because the user may be just logging in, not signing up.
         signup_source: How the user came to know the app. Defaults to SignupSource.UNKNOWN.
     Returns:
         Authenticated user
@@ -666,6 +669,9 @@ async def authenticate_user_by_apple(
             # you're going to have to do more to convince me that
             # this email on your apple account is yours
             raise AccountExistsError
+    else:
+        if name is None:
+            raise MissingNameError("Name is required when creating a new user")
 
     return await _create_social_user(
         db_session,
