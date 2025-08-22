@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logging.config.dictConfig(get_logging_config())
     init_firebase()
 
-    async with db_manager.use_db(settings.database_url):
+    async with db_manager.use_db(settings.database_pool_url or settings.database_url):
         async with use_redis(settings.redis_url):
             async with arq_client.arq_redis(settings.redis_url):
                 admin = AdminWithImport(

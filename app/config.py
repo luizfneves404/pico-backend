@@ -116,6 +116,7 @@ class Settings(BaseSettings):
     local_timezone: str = Field(default="America/Sao_Paulo")
 
     database_url: str = Field(default=...)
+    database_pool_url: str | None = Field(default=None)
     database_ssl_verify_full: bool = Field(default=True)
     database_ca_cert_file: str | None = Field(default=None)
 

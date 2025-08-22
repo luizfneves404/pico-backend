@@ -124,7 +124,7 @@ def make_worker_settings(
 if __name__ == "__main__":
     settings = make_worker_settings(
         redis_url=settings.redis_url,
-        database_url=settings.database_url,
+        database_url=settings.database_pool_url or settings.database_url,
         burst_mode=False,
         inside_app=False,
         session_factory=None,
