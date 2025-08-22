@@ -119,10 +119,9 @@ class Settings(BaseSettings):
         default=...,
         description="The database URL. Has to be passed because of migrations.",
     )
-    database_pool_url: str | None = Field(
-        default=None,
-        description="The database pool URL. If not provided, the database URL will be used.",
-    )
+    database_create_pool: bool = Field(default=...)
+    database_pool_size: int = Field(default=5)
+    database_pool_max_overflow: int = Field(default=30)
     database_ssl_verify_full: bool = Field(default=True)
     database_ca_cert_file: str | None = Field(default=None)
 

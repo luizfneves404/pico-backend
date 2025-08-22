@@ -145,7 +145,7 @@ async def migrated_postgres_template(pg_url: str) -> AsyncGenerator[str, None]:
 async def sessionmanager_for_tests(
     migrated_postgres_template: str,
 ) -> AsyncGenerator[DatabaseSessionManager, None]:
-    async with db_manager.use_db(migrated_postgres_template, create_pool=True):
+    async with db_manager.use_db(migrated_postgres_template):
         yield db_manager
 
 
@@ -250,7 +250,6 @@ async def arq_worker(
         worker_settings = make_worker_settings(
             redis_url=redis_url,
             database_url=migrated_postgres_template,
-            create_pool=True,
             burst_mode=True,
             inside_app=True,
             session_factory=session_factory,

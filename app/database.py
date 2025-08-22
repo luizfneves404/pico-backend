@@ -28,10 +28,6 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-
-CONNECTION_POOL_SIZE = 5
-CONNECTION_POOL_MAX_OVERFLOW = 30
-
 type SessionFactory = Callable[[], AsyncContextManager[AsyncSession]]
 
 
@@ -42,14 +38,13 @@ class DatabaseSessionManager:
 
     def init(
         self,
-        db_url: str = settings.database_pool_url or settings.database_url,
-        create_pool: bool = settings.database_pool_url is not None,
+        db_url: str = settings.database_url,
     ) -> None:
         """Initializes the database session manager.
 
         Args:
-            db_url (str, optional): The database URL. If not provided, settings.database_pool_url will take precedence, and then settings.database_url.
-            create_pool (bool, optional): Whether to create a pool of connections. Defaults to True if settings.database_pool_url is not None, otherwise False.
+            db_url (str, optional): The database URL. Defaults to settings.database_url.
+            create_pool (bool, optional): Whether to create a pool of connections. Defaults to settings.database_create_pool.
         """
         if settings.database_ssl_verify_full:
             sslctx = ssl.create_default_context(
@@ -58,22 +53,20 @@ class DatabaseSessionManager:
             sslctx.check_hostname = True
         else:
             sslctx = False
-        if create_pool:
-            self._engine = create_async_engine(
-                url=db_url,
-                pool_pre_ping=True,
-                isolation_level="READ COMMITTED",
-                pool_size=CONNECTION_POOL_SIZE,
-                max_overflow=CONNECTION_POOL_MAX_OVERFLOW,
-                connect_args={"ssl": sslctx},
-            )
-        else:
-            self._engine = create_async_engine(
-                url=db_url,
-                isolation_level="READ COMMITTED",
-                connect_args={"ssl": sslctx},
-                poolclass=NullPool,
-            )
+
+        self._engine = create_async_engine(
+            url=db_url,
+            pool_pre_ping=True,
+            isolation_level="READ COMMITTED",
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_pool_max_overflow,
+            connect_args={"ssl": sslctx},
+            echo_pool="debug",
+            poolclass=None  # None creates the default pool
+            if settings.database_create_pool
+            else NullPool,
+        )
+
         logfire.instrument_sqlalchemy(engine=self._engine)
         self._sessionmaker = async_sessionmaker(
             bind=self._engine,
@@ -103,8 +96,7 @@ class DatabaseSessionManager:
     @contextlib.asynccontextmanager
     async def use_db(
         self,
-        db_url: str = settings.database_pool_url or settings.database_url,
-        create_pool: bool = settings.database_pool_url is not None,
+        db_url: str = settings.database_url,
     ) -> AsyncIterator[None]:
         """Context manager that initializes the database connection and closes it when done.
 
@@ -114,7 +106,7 @@ class DatabaseSessionManager:
         Yields:
             None
         """
-        self.init(db_url=db_url, create_pool=create_pool)
+        self.init(db_url=db_url)
         try:
             yield
         finally:

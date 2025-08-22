@@ -49,8 +49,7 @@ async def ping(ctx: dict[Any, Any]) -> Literal["pong"]:
 
 def make_worker_settings(
     *,
-    database_url: str = settings.database_pool_url or settings.database_url,
-    create_pool: bool = settings.database_pool_url is not None,
+    database_url: str = settings.database_url,
     redis_url: str,
     burst_mode: bool,
     inside_app: bool,
@@ -78,7 +77,7 @@ def make_worker_settings(
             logging.config.dictConfig(get_logging_config())
             init_firebase()
 
-        db_manager.init(db_url=database_url, create_pool=create_pool)
+        db_manager.init(db_url=database_url)
         redis_client.init(redis_url)
         await arq_client.init(redis_url)
 
