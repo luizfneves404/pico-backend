@@ -61,7 +61,6 @@ class DatabaseSessionManager:
             pool_size=settings.database_pool_size,
             max_overflow=settings.database_pool_max_overflow,
             connect_args={"ssl": sslctx},
-            echo_pool="debug",
             poolclass=None  # None creates the default pool
             if settings.database_create_pool
             else NullPool,
