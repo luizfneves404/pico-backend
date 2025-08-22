@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import NullPool
 
 # all of these are needed so that the Base subclasses are registered
 import app.community.models  # noqa: F401
@@ -39,7 +40,17 @@ class DatabaseSessionManager:
         self._engine: AsyncEngine | None = None
         self._sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
-    def init(self, db_url: str) -> None:
+    def init(
+        self,
+        db_url: str = settings.database_pool_url or settings.database_url,
+        create_pool: bool = settings.database_pool_url is not None,
+    ) -> None:
+        """Initializes the database session manager.
+
+        Args:
+            db_url (str, optional): The database URL. If not provided, settings.database_pool_url will take precedence, and then settings.database_url.
+            create_pool (bool, optional): Whether to create a pool of connections. Defaults to True if settings.database_pool_url is not None, otherwise False.
+        """
         if settings.database_ssl_verify_full:
             sslctx = ssl.create_default_context(
                 ssl.Purpose.SERVER_AUTH, cafile=settings.database_ca_cert_file
@@ -47,14 +58,22 @@ class DatabaseSessionManager:
             sslctx.check_hostname = True
         else:
             sslctx = False
-        self._engine = create_async_engine(
-            url=db_url,
-            pool_pre_ping=True,
-            isolation_level="READ COMMITTED",
-            pool_size=CONNECTION_POOL_SIZE,
-            max_overflow=CONNECTION_POOL_MAX_OVERFLOW,
-            connect_args={"ssl": sslctx},
-        )
+        if create_pool:
+            self._engine = create_async_engine(
+                url=db_url,
+                pool_pre_ping=True,
+                isolation_level="READ COMMITTED",
+                pool_size=CONNECTION_POOL_SIZE,
+                max_overflow=CONNECTION_POOL_MAX_OVERFLOW,
+                connect_args={"ssl": sslctx},
+            )
+        else:
+            self._engine = create_async_engine(
+                url=db_url,
+                isolation_level="READ COMMITTED",
+                connect_args={"ssl": sslctx},
+                poolclass=NullPool,
+            )
         logfire.instrument_sqlalchemy(engine=self._engine)
         self._sessionmaker = async_sessionmaker(
             bind=self._engine,
@@ -82,7 +101,11 @@ class DatabaseSessionManager:
         self._sessionmaker = None
 
     @contextlib.asynccontextmanager
-    async def use_db(self, db_url: str) -> AsyncIterator[None]:
+    async def use_db(
+        self,
+        db_url: str = settings.database_pool_url or settings.database_url,
+        create_pool: bool = settings.database_pool_url is not None,
+    ) -> AsyncIterator[None]:
         """Context manager that initializes the database connection and closes it when done.
 
         Args:
@@ -91,7 +114,7 @@ class DatabaseSessionManager:
         Yields:
             None
         """
-        self.init(db_url)
+        self.init(db_url=db_url, create_pool=create_pool)
         try:
             yield
         finally:

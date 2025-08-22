@@ -115,8 +115,14 @@ class Settings(BaseSettings):
     )
     local_timezone: str = Field(default="America/Sao_Paulo")
 
-    database_url: str = Field(default=...)
-    database_pool_url: str | None = Field(default=None)
+    database_url: str = Field(
+        default=...,
+        description="The database URL. Has to be passed because of migrations.",
+    )
+    database_pool_url: str | None = Field(
+        default=None,
+        description="The database pool URL. If not provided, the database URL will be used.",
+    )
     database_ssl_verify_full: bool = Field(default=True)
     database_ca_cert_file: str | None = Field(default=None)
 

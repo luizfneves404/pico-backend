@@ -145,7 +145,7 @@ async def migrated_postgres_template(pg_url: str) -> AsyncGenerator[str, None]:
 async def sessionmanager_for_tests(
     migrated_postgres_template: str,
 ) -> AsyncGenerator[DatabaseSessionManager, None]:
-    async with db_manager.use_db(migrated_postgres_template):
+    async with db_manager.use_db(migrated_postgres_template, create_pool=True):
         yield db_manager
 
 
