@@ -119,7 +119,7 @@ class Settings(BaseSettings):
         default=...,
         description="The database URL. Has to be passed because of migrations.",
     )
-    database_create_pool: bool = Field(default=...)
+    database_create_pool: bool = Field(default=True)
     database_pool_size: int = Field(default=5)
     database_pool_max_overflow: int = Field(default=30)
     database_ssl_verify_full: bool = Field(default=True)
