@@ -1,5 +1,5 @@
 from geoalchemy2 import WKTElement
-from geoalchemy2.functions import ST_Distance, ST_DWithin
+from geoalchemy2.functions import ST_Distance
 from geoalchemy2.types import Geography
 from sqlalchemy import ColumnElement, case, select
 from sqlalchemy.exc import IntegrityError
@@ -106,16 +106,6 @@ async def search_institutions(
 
     if user_geom:
         null_last = case((Institution.location.is_(None), 1), else_=0)
-
-        filters.append(
-            (Institution.location.is_(None))
-            | ST_DWithin(
-                Institution.location,
-                user_geom,
-                MAX_DISTANCE_INSTITUTION_SEARCH,
-                type_=Geography,
-            )
-        )
 
         stmt = stmt.order_by(
             null_last,
