@@ -607,10 +607,15 @@ async def authenticate_user_by_google(
     existing_user = await get_user(db_session, email=google_user_info.email)
     if existing_user:
         if google_user_info.email_verified:
-            # oh, sorry, this email on your google account must be yours! let me give it to you!
-            existing_user.google_id = google_user_info.sub
-            existing_user.hashed_password = ""  # now you can't login with password
-            await db_session.flush()
+            # oh, sorry, this email on your google account must be yours! let me give you access to this existing account!
+            await db_session.execute(
+                update(User)
+                .where(User.id == existing_user.id)
+                .values(
+                    google_id=google_user_info.sub,
+                    hashed_password="",
+                )
+            )  # needs to be one query so as not to fail the constraint
             return existing_user
         else:
             # you're going to have to do more to convince me that this email on your google account is yours
@@ -661,9 +666,14 @@ async def authenticate_user_by_apple(
         if user_info.email_verified:
             # oh, sorry, this email on your apple account must be yours! let
             # me give you access to this existing account!
-            existing_user.apple_id = user_info.sub
-            existing_user.hashed_password = ""  # now you can't login with password
-            await db_session.flush()
+            await db_session.execute(
+                update(User)
+                .where(User.id == existing_user.id)
+                .values(
+                    apple_id=user_info.sub,
+                    hashed_password="",
+                )
+            )  # needs to be one query so as not to fail the constraint
             return existing_user
         else:
             # you're going to have to do more to convince me that
