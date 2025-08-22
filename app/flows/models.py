@@ -112,8 +112,13 @@ class FlowSourceType(StrEnum):
 
 class Flow(Base, kw_only=True):
     title: Mapped[str] = mapped_column(Text)
-    created_by_id: Mapped[int] = mapped_column(ForeignKey("user.id"), default=None)
-    created_by: Mapped["User"] = relationship(lazy="raise_on_sql", default=None)
+    created_by_id: Mapped[int] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), default=None
+    )
+    created_by: Mapped["User"] = relationship(
+        lazy="raise_on_sql",
+        default=None,
+    )
     difficulty: Mapped[FlowDifficulty] = mapped_column()
     question_answer_type: Mapped[QuestionAnswerType] = mapped_column()
     source_type: Mapped[FlowSourceType] = mapped_column()

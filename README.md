@@ -13,7 +13,8 @@
 - When defining a column for a subclass and using single table inheritance, choose its type as non-nullable as in "Mapped[int]" but set nullable=True in the mapped_column definition of the new column. No need to set a default, it will be set to null. We do it like this because not all subclasses will have the new column, and it's better to have a nullable column than a non-nullable column with a default. Or, if dealing with a relationship, define the relationship attribute and the foreign key attribute in the subclass like "Mapped["ChildClass"]" and "child_id: Mapped[int]" but pass nullable=True to the foreign key mapped_column.
 - Don't use column_property with alias, since it will force some early evaluation and break things. Use hybrid_property instead.
 - If you use a third mapped class as a many-to-many table, add viewonly=True to the relationship connecting the two other mapped classes to avoid conflicts.
-- Use lazy="raise_on_sql" basically always on relationships, we don't want to do db access implicitly (even though using async sqlalchemy would already block this implicit db access, i prefer to be explicit). When you want to define a "strong" relationship, where a child should be deleted if the parent is, you probably want to use the following, plus any other kwargs you want to pass to the relationship:
+- Use lazy="raise_on_sql" basically always on relationships, we don't want to do db access implicitly (even though using async sqlalchemy would already block this implicit db access, i prefer to be explicit).
+- When you want to define a "strong" relationship, where a child should be deleted if the parent is deleted, you probably want to use the following *on the parent-to-child relationship*, plus any other kwargs you want to pass to the relationship:
 
 ```python
 relationship(
@@ -22,6 +23,8 @@ relationship(
     passive_deletes=True,
 )
 ```
+
+Remember to add ondelete="CASCADE" *to the child foreign key*, e.g. ForeignKey("parent.id", ondelete="CASCADE")
 
 - ~~if you add a geoalchemy2 column, you may have to remove from the migration file the "create_index", because the column definition may already create the index~~. This is not needed anymore, since we are using the env.py file to skip the creation of those indexes.
 - If you want to use a default value that is a list, use insert_default=list instead of default_factory=list. This is because sqladmin cannot handle default_factory=list well, it renders the field as required on the form.

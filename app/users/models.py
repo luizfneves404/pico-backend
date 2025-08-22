@@ -106,6 +106,8 @@ class User(Base, kw_only=True):
         foreign_keys=[Flow.created_by_id],
         lazy="raise_on_sql",
         default_factory=list,
+        cascade=ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
+        passive_deletes=True,
     )
 
     user_online_info: Mapped["UserOnlineInfo"] = relationship(
