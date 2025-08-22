@@ -5,7 +5,6 @@ Otherwise i would have to take a lot of care not to import certain files, etc.
 
 import asyncio
 import logging.config
-import sys
 from typing import Any, Literal, Sequence
 
 import uvloop
@@ -13,7 +12,7 @@ from arq import run_worker
 from arq.connections import RedisSettings
 from arq.cron import CronJob, cron
 from arq.typing import SecondsTimedelta, StartupShutdown, WorkerCoroutine
-from arq.worker import Function, check_health
+from arq.worker import Function
 
 import app.arq_client as arq_client
 import app.redis_client as redis_client
@@ -128,7 +127,4 @@ if __name__ == "__main__":
         inside_app=False,
         session_factory=None,
     )
-    if "--check" in sys.argv:
-        check_health(settings)
-    else:
-        run_worker(settings)
+    run_worker(settings)

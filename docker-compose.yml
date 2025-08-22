@@ -61,7 +61,7 @@ services:
       - ./app:/code/app
     command: /code/docker/docker-worker-entrypoint.sh
     healthcheck:
-      test: [ "CMD", "python", "-m", "app.arq_worker", "--check" ]
+      test: [ "CMD", "python", "-m", "app.arq_check" ]
       interval: 5s
       timeout: 5s
       retries: 5
