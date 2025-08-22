@@ -49,6 +49,8 @@ async def ping(ctx: dict[Any, Any]) -> Literal["pong"]:
 
 def make_worker_settings(
     *,
+    database_url: str = settings.database_pool_url or settings.database_url,
+    create_pool: bool = settings.database_pool_url is not None,
     redis_url: str,
     burst_mode: bool,
     inside_app: bool,
@@ -59,6 +61,7 @@ def make_worker_settings(
 
     Args:
         redis_url (str): The URL of the Redis server.
+        database_url (str): The URL of the database.
         burst_mode (bool): Whether to run in burst mode.
         inside_app (bool): Whether the worker is running inside the app. If True, worker will not configure it's own logging or instrumentation.
         session_factory (SessionFactory | None): The session factory.
@@ -75,7 +78,7 @@ def make_worker_settings(
             logging.config.dictConfig(get_logging_config())
             init_firebase()
 
-        db_manager.init()
+        db_manager.init(db_url=database_url, create_pool=create_pool)
         redis_client.init(redis_url)
         await arq_client.init(redis_url)
 

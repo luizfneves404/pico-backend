@@ -250,6 +250,7 @@ async def arq_worker(
         worker_settings = make_worker_settings(
             redis_url=redis_url,
             database_url=migrated_postgres_template,
+            create_pool=True,
             burst_mode=True,
             inside_app=True,
             session_factory=session_factory,
