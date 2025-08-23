@@ -10,7 +10,7 @@ from typing import Any
 
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -913,27 +913,28 @@ async def task_compute_question_embeddings(
     """
     async with get_db_session_for_worker(ctx) as session:
         if question_ids is None:
-            # Admin case: only process active questions
-            base_stmt = (
-                select(Question)
-                .options(selectinload(Question.choices))
-                .where(Question.is_active.is_(True))
+            # Admin case: only process active questions that are official and have no embedding yet
+            condition = (
+                Question.is_active.is_(True)
+                & (Question.source_type == QuestionSourceType.OFFICIAL)
+                & Question.embedding.is_(None)
             )
         else:
             # Specific questions case (AI): process regardless of is_active status
-            base_stmt = (
-                select(Question)
-                .options(selectinload(Question.choices))
-                .where(Question.id.in_(question_ids))
-            )
+            condition = Question.id.in_(question_ids)
 
+        result = await session.execute(select(func.count(Question.id)).where(condition))
+        num_questions = result.scalar_one()
+
+        logger.info(f"Computing embeddings for {num_questions} questions")
+
+        base_stmt = (
+            select(Question).options(selectinload(Question.choices)).where(condition)
+        )
         processed_count = 0
         offset = 0
 
         while True:
-            logger.info(
-                f"Processing questions embedding batch {offset // QUESTION_EMBEDDING_BATCH_SIZE + 1}. We are at question {offset + 1}."
-            )
             # Process in batches using offset pagination
             stmt = base_stmt.limit(QUESTION_EMBEDDING_BATCH_SIZE).offset(offset)
             result = await session.execute(stmt)
@@ -941,6 +942,10 @@ async def task_compute_question_embeddings(
 
             if not questions:
                 break
+
+            logger.info(
+                f"Processing questions embedding batch {offset // QUESTION_EMBEDDING_BATCH_SIZE + 1}. We are at question {offset + 1}."
+            )
 
             # Build texts for embedding
             texts_for_embedding: list[str] = []
