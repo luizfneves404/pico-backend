@@ -10,7 +10,7 @@ from typing import Any
 
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -909,7 +909,6 @@ async def task_compute_question_embeddings(
     Args:
         ctx: ARQ worker context
         question_ids: List of question IDs to process, None means all questions
-        batch_size: Number of questions to process in each batch
     """
     async with get_db_session_for_worker(ctx) as session:
         if question_ids is None:
@@ -923,28 +922,31 @@ async def task_compute_question_embeddings(
             # Specific questions case (AI): process regardless of is_active status
             condition = Question.id.in_(question_ids)
 
-        result = await session.execute(select(func.count(Question.id)).where(condition))
-        num_questions = result.scalar_one()
+        # First: fetch all matching IDs
+        result = await session.execute(select(Question.id).where(condition))
+        all_ids: list[int] = list(result.scalars())
 
-        logger.info(f"Computing embeddings for {num_questions} questions")
+    num_questions = len(all_ids)
+    logger.info(f"Computing embeddings for {num_questions} questions")
 
-        base_stmt = (
-            select(Question).options(selectinload(Question.choices)).where(condition)
-        )
-        processed_count = 0
-        offset = 0
+    processed_count = 0
 
-        while True:
-            # Process in batches using offset pagination
-            stmt = base_stmt.limit(QUESTION_EMBEDDING_BATCH_SIZE).offset(offset)
+    # Now paginate IDs manually
+    for batch_start in range(0, num_questions, QUESTION_EMBEDDING_BATCH_SIZE):
+        batch_ids = all_ids[batch_start : batch_start + QUESTION_EMBEDDING_BATCH_SIZE]
+
+        async with get_db_session_for_worker(ctx) as session:
+            stmt = (
+                select(Question)
+                .options(selectinload(Question.choices))
+                .where(Question.id.in_(batch_ids))
+            )
             result = await session.execute(stmt)
             questions: list[Question] = list(result.scalars())
 
-            if not questions:
-                break
-
             logger.info(
-                f"Processing questions embedding batch {offset // QUESTION_EMBEDDING_BATCH_SIZE + 1}. We are at question {offset + 1}."
+                f"Processing questions embedding batch {batch_start // QUESTION_EMBEDDING_BATCH_SIZE + 1}. "
+                f"We are at question {batch_start + 1}."
             )
 
             # Build texts for embedding
@@ -971,13 +973,9 @@ async def task_compute_question_embeddings(
             for question, embedding in zip(questions, embeddings):
                 question.embedding = embedding
 
-            # Save this batch
-            await session.flush()
+        processed_count += len(questions)
 
-            processed_count += len(questions)
-            offset += QUESTION_EMBEDDING_BATCH_SIZE
-
-        logger.info(f"Computed embeddings for {processed_count} questions")
+    logger.info(f"Computed embeddings for {processed_count} questions")
 
 
 async def task_categorize_questions(
