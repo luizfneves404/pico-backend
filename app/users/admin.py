@@ -2,7 +2,7 @@ from typing import Any, ClassVar, Sequence, Union
 
 from fastapi import Request
 from pydantic import BaseModel
-from sqlalchemy import Select, select
+from sqlalchemy import Select
 from sqlalchemy.orm import InstrumentedAttribute, selectinload
 from wtforms import PasswordField
 
@@ -131,7 +131,9 @@ class UserAdmin(CustomModelView, model=User):
     ]
 
     def list_query(self, request: Request) -> Select[tuple[User]]:
-        return select(User).options(
+        stmt: Select[tuple[User]] = super().list_query(request)  # type: ignore
+
+        return stmt.options(
             selectinload(User.referrals),
             selectinload(User.current_education),
             selectinload(User.intended_education),
@@ -139,35 +141,36 @@ class UserAdmin(CustomModelView, model=User):
         )
 
     def form_edit_query(self, request: Request) -> Select[tuple[User]]:
-        return select(User).options(
+        # Start with the base query provided by SQLAdmin
+        stmt: Select[tuple[User]] = super().form_edit_query(request)  # type: ignore
+
+        # Add eager loads, but keep the WHERE clause intact
+        return stmt.options(
             selectinload(User.referrals),
             selectinload(User.current_education),
             selectinload(User.intended_education),
             selectinload(User.referred_by),
         )
 
-    async def get_object_for_details(self, value: Any) -> Any:
-        stmt = (
-            select(User)
-            .options(
-                selectinload(User.referrals),
-                selectinload(User.current_education).options(
-                    selectinload(EducationInfo.level),
-                    selectinload(EducationInfo.institution),
-                    selectinload(EducationInfo.stage),
-                    selectinload(EducationInfo.course),
-                ),
-                selectinload(User.intended_education).options(
-                    selectinload(EducationInfo.level),
-                    selectinload(EducationInfo.institution),
-                    selectinload(EducationInfo.stage),
-                    selectinload(EducationInfo.course),
-                ),
-                selectinload(User.referred_by),
-            )
-            .where(User.id == int(value))
+    def details_query(self, request: Request) -> Select[tuple[User]]:
+        stmt: Select[tuple[User]] = super().details_query(request)  # type: ignore
+
+        return stmt.options(
+            selectinload(User.referrals),
+            selectinload(User.current_education).options(
+                selectinload(EducationInfo.level),
+                selectinload(EducationInfo.institution),
+                selectinload(EducationInfo.stage),
+                selectinload(EducationInfo.course),
+            ),
+            selectinload(User.intended_education).options(
+                selectinload(EducationInfo.level),
+                selectinload(EducationInfo.institution),
+                selectinload(EducationInfo.stage),
+                selectinload(EducationInfo.course),
+            ),
+            selectinload(User.referred_by),
         )
-        return await self._get_object_by_pk(stmt)
 
     async def on_model_change(
         self, data: dict[str, Any], model: User, is_created: bool, request: Request
