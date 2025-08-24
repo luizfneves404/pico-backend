@@ -41,7 +41,7 @@ class InstitutionIn(BaseModel):
 class SearchInstitutionsRequest(BaseModel):
     name: str | None = Field(default=None)
     location: Location | None = Field(default=None)
-    institution_type: InstitutionType
+    education_level_id: int | None = Field(default=None)
 
 
 class CourseOut(BaseModel):

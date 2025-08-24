@@ -86,15 +86,15 @@ async def search_institutions(
     db: AsyncSession,
     *,
     name: str | None,
-    institution_type: str,
+    education_level_id: int | None,
     latitude: float | None,
     longitude: float | None,
 ) -> list[Institution]:
     filters: list[ColumnElement[bool]] = []
     if name:
         filters.append(Institution.name.ilike(f"%{name}%"))
-    if institution_type:
-        filters.append(Institution.institution_type == institution_type)
+    if education_level_id:
+        filters.append(Institution.level_id == education_level_id)
 
     user_geom = (
         WKTElement(f"POINT({longitude} {latitude})", srid=4326)

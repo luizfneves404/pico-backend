@@ -912,38 +912,45 @@ async def task_compute_question_embeddings(
     Args:
         ctx: ARQ worker context
         question_ids: List of question IDs to process, None means all questions
-        batch_size: Number of questions to process in each batch
     """
     async with get_db_session_for_worker(ctx) as session:
         if question_ids is None:
-            # Admin case: only process active questions
-            base_stmt = (
-                select(Question)
-                .options(selectinload(Question.choices))
-                .where(Question.is_active.is_(True))
+            # Admin case: only process active questions that are official and have no embedding yet
+            condition = (
+                Question.is_active.is_(True)
+                & (Question.source_type == QuestionSourceType.OFFICIAL)
+                & Question.embedding.is_(None)
             )
         else:
             # Specific questions case (AI): process regardless of is_active status
-            base_stmt = (
+            condition = Question.id.in_(question_ids)
+
+        # First: fetch all matching IDs
+        result = await session.execute(select(Question.id).where(condition))
+        all_ids: list[int] = list(result.scalars())
+
+    num_questions = len(all_ids)
+    logger.info(f"Computing embeddings for {num_questions} questions")
+
+    processed_count = 0
+
+    # Now paginate IDs manually
+    for batch_start in range(0, num_questions, QUESTION_EMBEDDING_BATCH_SIZE):
+        batch_ids = all_ids[batch_start : batch_start + QUESTION_EMBEDDING_BATCH_SIZE]
+
+        async with get_db_session_for_worker(ctx) as session:
+            stmt = (
                 select(Question)
                 .options(selectinload(Question.choices))
-                .where(Question.id.in_(question_ids))
+                .where(Question.id.in_(batch_ids))
             )
-
-        processed_count = 0
-        offset = 0
-
-        while True:
-            logger.info(
-                f"Processing questions embedding batch {offset // QUESTION_EMBEDDING_BATCH_SIZE + 1}. We are at question {offset + 1}."
-            )
-            # Process in batches using offset pagination
-            stmt = base_stmt.limit(QUESTION_EMBEDDING_BATCH_SIZE).offset(offset)
             result = await session.execute(stmt)
             questions: list[Question] = list(result.scalars())
 
-            if not questions:
-                break
+            logger.info(
+                f"Processing questions embedding batch {batch_start // QUESTION_EMBEDDING_BATCH_SIZE + 1}. "
+                f"We are at question {batch_start + 1}."
+            )
 
             # Build texts for embedding
             texts_for_embedding: list[str] = []
@@ -969,13 +976,9 @@ async def task_compute_question_embeddings(
             for question, embedding in zip(questions, embeddings):
                 question.embedding = embedding
 
-            # Save this batch
-            await session.flush()
+        processed_count += len(questions)
 
-            processed_count += len(questions)
-            offset += QUESTION_EMBEDDING_BATCH_SIZE
-
-        logger.info(f"Computed embeddings for {processed_count} questions")
+    logger.info(f"Computed embeddings for {processed_count} questions")
 
 
 async def task_categorize_questions(

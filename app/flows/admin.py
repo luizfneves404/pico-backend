@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqladmin import action
 from sqladmin.fields import JSONField
-from sqlalchemy import Select, select
+from sqlalchemy import Select
 from sqlalchemy.orm import selectinload
 from wtforms import Field, widgets
 from wtforms.validators import Optional
@@ -182,30 +182,29 @@ class FlowAdmin(CustomModelView, model=Flow):
     }
 
     def list_query(self, request: Request) -> Select[tuple[Flow]]:
-        return select(Flow).options(
+        stmt: Select[tuple[Flow]] = super().list_query(request)  # type: ignore
+
+        return stmt.options(
             selectinload(Flow.created_by),
             selectinload(Flow.cover_image),
         )
 
-    async def get_object_for_details(self, value: Any) -> Any:
-        stmt = (
-            select(Flow)
-            .options(
-                selectinload(Flow.created_by),
-                selectinload(Flow.cover_image),
-                selectinload(Flow.elements.of_type(FlowQuestion)).options(
-                    selectinload(FlowQuestion.question).options(
-                        selectinload(Question.choices),
-                        selectinload(Question.source_user),
-                        selectinload(Question.official_source),
-                    ),
-                    selectinload(FlowQuestion.flow_question_users),
+    def details_query(self, request: Request) -> Select[tuple[Flow]]:
+        stmt: Select[tuple[Flow]] = super().details_query(request)  # type: ignore
+
+        return stmt.options(
+            selectinload(Flow.created_by),
+            selectinload(Flow.cover_image),
+            selectinload(Flow.elements.of_type(FlowQuestion)).options(
+                selectinload(FlowQuestion.question).options(
+                    selectinload(Question.choices),
+                    selectinload(Question.source_user),
+                    selectinload(Question.official_source),
                 ),
-                selectinload(Flow.elements.of_type(FlowElement)),
-            )
-            .where(Flow.id == int(value))
+                selectinload(FlowQuestion.flow_question_users),
+            ),
+            selectinload(Flow.elements.of_type(FlowElement)),
         )
-        return await self._get_object_by_pk(stmt)
 
 
 class FlowTranscriptionBlockAdmin(CustomModelView, model=FlowTranscriptionBlock):
@@ -660,23 +659,23 @@ class QuestionAdmin(CustomModelView, model=Question):
         return questions
 
     def list_query(self, request: Request) -> Select[tuple[Question]]:
-        return select(Question).options(
+        stmt: Select[tuple[Question]] = super().list_query(request)  # type: ignore
+
+        return stmt.options(
             selectinload(Question.official_source),
             selectinload(Question.source_user),
             selectinload(Question.choices),
         )
 
     def form_edit_query(self, request: Request) -> Select[tuple[Question]]:
-        return (
-            select(Question)
-            .options(
-                selectinload(Question.official_source).options(
-                    selectinload(OfficialQuestionSource.exam),
-                ),
-                selectinload(Question.source_user),
-                selectinload(Question.choices),
-            )
-            .where(Question.id == int(request.path_params["pk"]))
+        stmt: Select[tuple[Question]] = super().form_edit_query(request)  # type: ignore
+
+        return stmt.options(
+            selectinload(Question.official_source).options(
+                selectinload(OfficialQuestionSource.exam),
+            ),
+            selectinload(Question.source_user),
+            selectinload(Question.choices),
         )
 
     async def on_model_change(
@@ -1080,23 +1079,22 @@ class FlowQuestionAdmin(CustomModelView, model=FlowQuestion):
     ]
 
     def list_query(self, request: Request) -> Select[tuple[FlowQuestion]]:
-        return select(FlowQuestion).options(
+        stmt: Select[tuple[FlowQuestion]] = super().list_query(request)  # type: ignore
+
+        return stmt.options(
             selectinload(FlowQuestion.flow_question_users),
             selectinload(FlowQuestion.flow),
             selectinload(FlowQuestion.question),
         )
 
-    async def get_object_for_details(self, value: Any) -> Any:
-        stmt = (
-            select(FlowQuestion)
-            .options(
-                selectinload(FlowQuestion.flow_question_users),
-                selectinload(FlowQuestion.flow),
-                selectinload(FlowQuestion.question),
-            )
-            .where(FlowQuestion.id == int(value))
+    def details_query(self, request: Request) -> Select[tuple[FlowQuestion]]:
+        stmt: Select[tuple[FlowQuestion]] = super().details_query(request)  # type: ignore
+
+        return stmt.options(
+            selectinload(FlowQuestion.flow_question_users),
+            selectinload(FlowQuestion.flow),
+            selectinload(FlowQuestion.question),
         )
-        return await self._get_object_by_pk(stmt)
 
 
 class FlowQuestionUserAdmin(CustomModelView, model=FlowQuestionUser):

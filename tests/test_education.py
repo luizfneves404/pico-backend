@@ -133,7 +133,7 @@ async def test_search_institutions_by_name(
         "/api/education/institutions/search",
         json={
             "name": "MIT",
-            "institution_type": "college",
+            "education_level_id": education_level.id,
         },
     )
     assert response.status_code == 200
@@ -144,7 +144,7 @@ async def test_search_institutions_by_name(
     assert "MIT" in institution_names
 
 
-async def test_search_institutions_by_type(
+async def test_search_institutions_by_education_level(
     client: AsyncClient,
     session: AsyncSession,
     education_level: EducationLevel,
@@ -153,6 +153,11 @@ async def test_search_institutions_by_type(
     """Test searching institutions by type."""
     # Create institutions of different types
     async with session.begin():
+        new_education_level = EducationLevel(
+            name_i18n={"en": "College"},
+        )
+        session.add(new_education_level)
+        await session.flush([new_education_level])
         await create_institution(
             session,
             name="Harvard School",
@@ -167,14 +172,14 @@ async def test_search_institutions_by_type(
             institution_type="college",
             country_code=country.code,
             user_submitted=False,
-            level_id=education_level.id,
+            level_id=new_education_level.id,
         )
 
     # Search for schools only
     response = await client.post(
         "/api/education/institutions/search",
         json={
-            "institution_type": "school",
+            "education_level_id": education_level.id,
         },
     )
     assert response.status_code == 200
@@ -207,7 +212,7 @@ async def test_search_institutions_with_location(
     response = await client.post(
         "/api/education/institutions/search",
         json={
-            "institution_type": "college",
+            "education_level_id": education_level.id,
             "location": {
                 "latitude": -23.5505,
                 "longitude": -46.6333,
@@ -260,7 +265,7 @@ async def test_search_institutions_empty_results(client: AsyncClient) -> None:
         "/api/education/institutions/search",
         json={
             "name": "NonExistentUniversity",
-            "institution_type": "college",
+            "education_level_id": 9999,
         },
     )
     assert response.status_code == 200
@@ -273,7 +278,7 @@ async def test_search_institutions_invalid_type(client: AsyncClient) -> None:
     response = await client.post(
         "/api/education/institutions/search",
         json={
-            "institution_type": "invalid_type",
+            "education_level_id": "yadayadayada",
         },
     )
     assert response.status_code == 422

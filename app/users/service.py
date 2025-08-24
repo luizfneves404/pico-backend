@@ -614,6 +614,7 @@ async def authenticate_user_by_google(
                 .values(
                     google_id=google_user_info.sub,
                     hashed_password="",
+                    apple_id="",
                 )
             )  # needs to be one query so as not to fail the constraint
             return existing_user
@@ -672,6 +673,7 @@ async def authenticate_user_by_apple(
                 .values(
                     apple_id=user_info.sub,
                     hashed_password="",
+                    google_id="",
                 )
             )  # needs to be one query so as not to fail the constraint
             return existing_user

@@ -58,7 +58,7 @@ async def search_institutions(
     institutions = await education_service.search_institutions(
         db_session,
         name=search_institutions.name,
-        institution_type=search_institutions.institution_type,
+        education_level_id=search_institutions.education_level_id,
         latitude=search_institutions.location.latitude
         if search_institutions.location
         else None,

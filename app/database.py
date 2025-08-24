@@ -52,7 +52,7 @@ class DatabaseSessionManager:
             )
             sslctx.check_hostname = True
         else:
-            sslctx = False
+            sslctx = "prefer"
 
         self._engine = create_async_engine(
             url=db_url,
