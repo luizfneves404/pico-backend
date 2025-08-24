@@ -427,7 +427,7 @@ class Question(Base, kw_only=True):
         ForeignKey("official_question_source.id"), default=None
     )
     source_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("user.id"), default=None
+        ForeignKey("user.id", ondelete="CASCADE"), default=None
     )  # add constraint according to source type
 
     official_source: Mapped["OfficialQuestionSource | None"] = relationship(
