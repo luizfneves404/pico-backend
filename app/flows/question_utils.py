@@ -117,7 +117,7 @@ async def categorize_minor_tags(
     db_session: AsyncSession, question_id: int, temperature: float = 0.1
 ) -> MinorTagsCategorization:
     """
-    Generate minor tags for a question using TAGS approach with gpt-4.1-mini.
+    Generate minor tags for a question using TAGS approach with gpt-5-mini.
     Focuses only on central topics/themes of the question.
 
     Args:
@@ -169,7 +169,7 @@ async def generate_answer(
     question_id: int,
 ) -> AnswerGeneration:
     """
-    Generate answer explanation using o3 model.
+    Generate answer explanation using gpt-5 model.
 
     Args:
         db_session: Database session
@@ -256,9 +256,9 @@ Alternativa correta: {correct_choice_letter}
                 {"role": "user", "content": user_message},
             ]
 
-        # Use o3 model with reasoning effort for better quality
+        # Use gpt-5 model with reasoning effort for better quality
         response = await openai_utils.get_completion(
-            model="o3",
+            model="gpt-5",
             temperature=None,  # Temperature is ignored for reasoning models
             messages=messages,
             timeout=90,
@@ -287,7 +287,7 @@ async def is_quantitative(
     image_urls: list[str] | None = None,
 ) -> QuantitativeAnalysis:
     """
-    Analyze if a question requires paper to be solved using o4-mini.
+    Analyze if a question requires paper to be solved using gpt-5.
 
     Args:
         question_text_with_choices: Complete question text with choices
@@ -321,13 +321,13 @@ async def is_quantitative(
                 {"role": "user", "content": question_text_with_choices},
             ]
 
-        # Use o4-mini with medium reasoning effort
+        # Use gpt-5 with high reasoning effort
         response = await openai_utils.get_completion(
-            model="o4-mini",
+            model="gpt-5",
             temperature=None,
             messages=messages,
             timeout=30,
-            reasoning_effort="medium",
+            reasoning_effort="high",
         )
 
         # Parse the simple true/false response
@@ -394,7 +394,7 @@ async def categorize_major_tag(
     db_session: AsyncSession, question_id: int, temperature: float = 0.1
 ) -> MajorTagCategorization:
     """
-    Generate major tag (subject) for a question using gpt-4.1-mini.
+    Generate major tag (subject) for a question using gpt-5-mini.
 
     Args:
         db_session: Database session
@@ -491,10 +491,11 @@ Texto extraído:
                 ]
 
             response = await openai_utils.get_completion(
-                model="gpt-4.1-mini",
+                model="gpt-5-mini",
                 temperature=0.1,
                 messages=messages,  # type: ignore
                 timeout=20,
+                reasoning_effort="medium",
             )
 
             response_text = response.content.strip()
@@ -532,10 +533,11 @@ Texto extraído:
             ]
 
         response = await openai_utils.get_completion(
-            model="gpt-4.1-mini",
+            model="gpt-5-mini",
             temperature=0.1,
             messages=fallback_messages,  # type: ignore
             timeout=20,
+            reasoning_effort="medium",
         )
 
         response_text = response.content.strip()
@@ -589,10 +591,11 @@ Analise a questão e identifique as tags mais apropriadas.
             messages.append({"role": "user", "content": user_message})
 
         response = await openai_utils.get_completion(
-            model="gpt-4.1-mini",
+            model="gpt-5-mini",
             temperature=temperature,
             messages=messages,
             timeout=20,
+            reasoning_effort="medium",
         )
 
         # Parse the response to extract tags

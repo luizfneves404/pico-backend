@@ -682,9 +682,9 @@ async def add_questions_to_flow_official(
     flow_input_type = flow.flow_input_type
     n_questions_map = (
         {
-            QuestionDensity.LOW: 2,
-            QuestionDensity.MEDIUM: 4,
-            QuestionDensity.HIGH: 6,
+            QuestionDensity.LOW: 1,
+            QuestionDensity.MEDIUM: 2,
+            QuestionDensity.HIGH: 3,
         }
         if flow_input_type == FlowInputType.FILES
         else {
@@ -765,9 +765,9 @@ async def add_questions_to_flow_ai(
     flow_input_type = flow.flow_input_type
     n_questions_map = (
         {
-            QuestionDensity.LOW: 2,
-            QuestionDensity.MEDIUM: 4,
-            QuestionDensity.HIGH: 6,
+            QuestionDensity.LOW: 1,
+            QuestionDensity.MEDIUM: 2,
+            QuestionDensity.HIGH: 3,
         }
         if flow_input_type == FlowInputType.FILES
         else {
@@ -840,15 +840,15 @@ async def add_questions_to_flow_full(
     flow_input_type = flow.flow_input_type
     n_questions_map = (
         {
-            QuestionDensity.LOW: 2,
-            QuestionDensity.MEDIUM: 4,
-            QuestionDensity.HIGH: 6,
+            QuestionDensity.LOW: 1,
+            QuestionDensity.MEDIUM: 2,
+            QuestionDensity.HIGH: 3,
         }
         if flow_input_type == FlowInputType.FILES
         else {
             QuestionDensity.LOW: 10,
-            QuestionDensity.MEDIUM: 20,
-            QuestionDensity.HIGH: 30,
+            QuestionDensity.MEDIUM: 15,
+            QuestionDensity.HIGH: 20,
         }
     )
 
@@ -977,7 +977,7 @@ async def check_if_topic_involves_math_calculations(topic: str) -> bool:
 
     try:
         result = await get_completion(
-            model="gpt-4.1-nano",
+            model="gpt-5-mini",
             temperature=0.3,
             messages=[
                 {"role": "system", "content": SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT},
@@ -985,6 +985,7 @@ async def check_if_topic_involves_math_calculations(topic: str) -> bool:
             ],
             json_mode=False,
             timeout=15,
+            reasoning_effort="medium",
         )
 
         response = result.content.strip().upper()

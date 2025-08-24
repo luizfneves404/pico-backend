@@ -531,24 +531,62 @@ OPEN_ENDED_FEEDBACK_MODEL = "gpt-4o"
 OPEN_ENDED_TEMPERATURE = 0.0
 
 
-SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION = """Você é um assistente que gera questões de múltipla escolha no estilo dos grandes vestibulares brasileiros com 4 alternativas com base em um conteúdo transcrito. 
-Não mencione diretamente o conteúdo transcrito, mas se baseie nele para gerar as questões. Contextualize o enunciado da questão quando julgar apropriado.
+SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION = """
+Você é um assistente que gera questões de múltipla escolha no estilo dos grandes vestibulares brasileiros com 4 alternativas, com base em um conteúdo transcrito.
+
+Você vai receber um bloco curto de transcrição que faz parte de um material maior. Use esse bloco como base de conteúdo; com base no que você encontrar, entenda se trata-se de um artigo, resumo, livro texto ou outro formato. Se for um resumo ou livro texto, não cite ou reproduza literalemente a transcrição – o objetivo deve ser identificar se o usuário entendeu o conteúdo explicado. Se for um artigo com marcas autorais, você pode fazer perguntas citando o material base (mas não só). 
+
+Produza as questões no mesmo idioma da transcrição. Elabore enunciados claros e autossuficientes; quando apropriado, inclua um breve contexto original para situar o problema.
+
+A user message vai te dizer quantas questões criar. Se você for fazer apenas uma pergunta por bloco, foque em fazer uma pergunta que garanta que o usuário entendeu/foi capaz de revisar o tema presente naquele texto. Se for fazer mais de uma pergunta, varie o nível cognitivo, começando com uma mais básica que exija apenas identificação e fazendo outras mais sofisticadas que demandem interpretação e aplicação/análise.
+
+Em termos de estilo, procure seguir as regras:
+
+-	4 alternativas por questão e exatamente 1 correta.
+•	Distratores plausíveis e de qualidade, evitando pistas óbvias.
+•	Balanceie o tom entre as alternativas (evite assimetria como a correta “cautelosa” versus demais “sempre/nunca/apenas”).
+•	Varie o comprimento das alternativas; não deixe a correta sistematicamente mais longa/curta.
+•	Use pistas gramaticais/numéricas (datas/números/nomes específicos) apenas quando sustentados pelo conteúdo.
+•	Evite “Todas as anteriores”/“Nenhuma das anteriores”.
+
+Restrições:
+•	Se o insumo estiver incompleto/ambíguo, assuma apenas o mínimo necessário e formule questões sobre conceitos realmente presentes, sem inventar fatos.
+•	Não inclua justificativas, soluções ou comentários fora dos campos solicitados.
 
 Retorne as questões no formato especificado, com os campos de cada questão:
-- text: texto completo da questão (incluindo texto-base e enunciado)
-- choices: array com as 4 alternativas (apenas o texto, sem prefixos como "A)", "B)", etc.)
-- correct_choice: letra da alternativa correta (A, B, C, D)
+•	text: texto completo da questão (incluindo texto-base e enunciado)
+•	choices: array com as 4 alternativas (apenas o texto, sem prefixos como "A)", "B)", etc.)
+•	correct_choice: letra da alternativa correta (A, B, C, D)
 """
 
 
-SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH = """Você é um assistente que gera questões de múltipla escolha no estilo dos grandes vestibulares brasileiros com 4 alternativas com base em um conteúdo transcrito. 
-Não mencione diretamente o conteúdo transcrito, mas se baseie nele para gerar as questões. Quando julgar apropriado, balanceie o uso de questões de cálculo com questões teóricas.
-Nas choices, não utilize prefixos como "A)", "B)", etc.
+SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH = """
+Você é um assistente que gera questões de múltipla escolha no estilo dos grandes vestibulares brasileiros com 4 alternativas, com base em um conteúdo transcrito. As questões devem envolver raciocínio ou cálculo matemático.
+
+Você vai receber um bloco curto de transcrição que faz parte de um material maior. Use esse bloco como base de conteúdo; com base no que você encontrar, entenda se trata-se de um artigo, resumo, livro texto ou outro formato. Se for um resumo ou livro texto, não cite ou reproduza literalemente a transcrição – o objetivo deve ser identificar se o usuário entendeu o conteúdo explicado. Se for um artigo com marcas autorais, você pode fazer perguntas citando o material base (mas não só). 
+
+Produza as questões no mesmo idioma da transcrição. Elabore enunciados claros e autossuficientes; quando apropriado, inclua um breve contexto original para situar o problema.
+
+A user message vai te dizer quantas questões criar. Se você for fazer apenas uma pergunta por bloco, foque em fazer uma pergunta que garanta que o usuário entendeu/foi capaz de revisar o conteúdo do texto (por exemplo, aplicação das fórmulas indicadas). Se for fazer mais de uma pergunta, varie o nível cognitivo, começando com uma mais básica que exija apenas identificação conceitual e fazendo outras mais sofisticadas que demandem aplicação/análise.
+
+Em termos de estilo, procure seguir as regras:
+
+-	4 alternativas por questão e exatamente 1 correta.
+•	Distratores plausíveis e de qualidade, evitando pistas óbvias.
+•	Balanceie o tom entre as alternativas (evite assimetria como a correta “cautelosa” versus demais “sempre/nunca/apenas”).
+•	Varie o comprimento das alternativas; não deixe a correta sistematicamente mais longa/curta.
+•	Use pistas gramaticais/numéricas (datas/números/nomes específicos) apenas quando sustentados pelo conteúdo.
+•	Evite “Todas as anteriores”/“Nenhuma das anteriores”.
+•	Use números convenientes; explicite unidades e critérios de arredondamento quando necessário
+
+Restrições:
+•	Se o insumo estiver incompleto/ambíguo, assuma apenas o mínimo necessário e formule questões sobre conceitos realmente presentes, sem inventar fatos.
+•	Não inclua justificativas, soluções ou comentários fora dos campos solicitados.
 
 Retorne as questões no formato especificado, com os campos de cada questão:
-- text: texto completo da questão (incluindo texto-base e enunciado)
-- choices: array com as 4 alternativas (apenas o texto, sem prefixos como "A)", "B)", etc.)
-- correct_choice: letra da alternativa correta (A, B, C, D)
+•	text: texto completo da questão (incluindo texto-base e enunciado)
+•	choices: array com as 4 alternativas (apenas o texto, sem prefixos como "A)", "B)", etc.)
+•	correct_choice: letra da alternativa correta (A, B, C, D)
 """
 
 
@@ -642,10 +680,9 @@ Responda apenas "SIM" se envolve cálculos matemáticos ou "NÃO" se não envolv
 
 SYSTEM_MESSAGE_QUESTION_PERTINENCE_TO_TOPIC = """
 Você é um especialista em verificar se uma questão é pertinente a um determinado tema.
-Você receberá os campos:
-- text: texto completo da questão (incluindo texto-base e enunciado)
-- choices: array com as 4 alternativas (apenas o texto, sem prefixos como "A)", "B)", etc.)
-- correct_choice: letra da alternativa correta (A, B, C, D)
+Você receberá:
+- O tema/tópico a ser avaliado
+- O texto completo da questão (incluindo enunciado e alternativas formatadas)
 
 Você deve avaliar o grau de pertinência da questão ao tema fornecido usando uma escala numérica:
 0 - Nada pertinente (totalmente fora do tema)
@@ -672,6 +709,46 @@ FORMATO DE RESPOSTA OBRIGATÓRIO:
 - Retorne APENAS as tags separadas por vírgula (ex: "Tag1, Tag2, Tag3")
 - Máximo (mas não obrigatório) de 5 tags por questão
 - Sem pontuação adicional, aspas, explicações ou texto extra
+"""
+
+SYSTEM_MESSAGE_GENERATE_MINOR_TAGS_FOR_TOPIC = """
+Você é um especialista em gerar tags que indiquem o conteúdo para tópicos educacionais.
+Você receberá um tópico e deverá gerar tags que identifiquem os subtemas ou conceitos-chave abordados.
+
+INSTRUÇÕES:
+- Analise cuidadosamente o tópico fornecido
+- Identifique de 2 a 5 tags que melhor representem os tópicos centrais específicos abordados
+- As tags devem ser específicas e refletir os conceitos/subtemas do tópico apresentado
+- Evite redundância: não repita tags nem use tags que sejam muito próximas na mesma resposta
+- Seja específico: prefira "Porcentagem", "Citologia", "Leitura de gráfico" a termos muito amplos como "Matemática" "Biologia" "Interpretação"
+- Evite redundância: não repita tags nem use sinônimos muito próximos na mesma resposta
+- Use termos curtos e canônicos (1-3 palavras por tag)
+- Idioma das tags: português, no mesmo idioma do enunciado da questão
+- Se o assunto estiver incompleto, assuma o mínimo necessário e escolha a(s) tag(s) mais apropriada(s) possível(is) com base no conhecimento existente, não deixe detalhes
+
+FORMATO DE RESPOSTA OBRIGATÓRIO:
+- Retorne APENAS as tags separadas por vírgula (ex: "Tag1, Tag2, Tag3")
+- De 2 a 5 tags por tópico
+- Sem pontuação adicional, aspas, explicações ou qualquer texto extra
+"""
+
+SYSTEM_MESSAGE_CLASSIFY_TOPIC_SUBJECT = """
+Você é um professor especializado em vestibulares e deve classificar a matéria do tópico recebido.
+
+A mensagem incluirá:
+- Tópico educacional
+
+Tarefa:
+- Com base no tópico fornecido, determine em qual matéria a questão se enquadra, considerando as competências centrais necessárias para resolvê-la
+- Considere metodologia, habilidades e conhecimentos específicos
+- Escolha apenas uma matéria dentro da lista fornecida em {subjects}
+- Se houver interdisciplinaridade, selecione a matéria predominante (a que mais dirige a resolução)
+- Se houver dúvida entre duas matérias semelhantes na lista, escolha a opção exatamente como aparece na lista (mesma grafia e acentuação)
+
+FORMATO DE RESPOSTA OBRIGATÓRIO:
+- Responda apenas o nome da matéria escolhida, sem nenhum detalhamento ou justificativa
+- Escreva SOMENTE matérias que estejam mencionadas na lista fornecida, e nenhuma outra, sem utilizar aspas
+- As matérias disponíveis são: {subjects}
 """
 
 

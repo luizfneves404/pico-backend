@@ -58,7 +58,7 @@ from app.flows.schemas import PromptType
 from app.shared import ai_utils, gemini_utils, openai_utils
 
 logger = logging.getLogger(__name__)
-TOKENS_PER_BLOCK = 300
+TOKENS_PER_BLOCK = 200
 
 
 # Constants
@@ -327,7 +327,7 @@ async def task_generate_transcriptions(
         big_text = " ".join(cleaned)
 
         block_texts = ai_utils.split_text_into_chunks(
-            big_text, TOKENS_PER_BLOCK, "gpt-4.1-nano"
+            big_text, TOKENS_PER_BLOCK, "gpt-5-nano"
         )
         if not block_texts:
             raise ValueError("Falha ao gerar transcrições.")
@@ -411,7 +411,7 @@ async def generate_flow_cover_image(flow_title: str) -> str:
     """
     logger.info(f"Generating cover image for flow {flow_title}")
     prompt = PROMPT_COVER_GENERATION.format(flow_title=flow_title)
-    image_base64 = await openai_utils.generate_image(prompt, format="jpeg")
+    image_base64 = await openai_utils.generate_image(prompt, format="jpeg", model="gpt-image-1")
     if image_base64:
         logger.info(
             f"Successfully generated cover image for flow {flow_title}: {len(image_base64)} chars"
@@ -520,11 +520,12 @@ async def check_if_titles_involve_math_calculations(block_titles: list[str]) -> 
         },
     ]
     response = await openai_utils.get_completion(
-        model="gpt-4.1-nano",
+        model="gpt-5-mini",
         temperature=0.2,
         messages=cast(list[ChatCompletionMessageParam], messages),
         json_mode=False,
-        timeout=15,
+        timeout=30,
+        reasoning_effort="medium",
     )
 
     return response.content.strip().upper() == "SIM"
@@ -546,17 +547,18 @@ async def generate_tags_for_topic(topic: str) -> tuple[list[str], list[str]]:
 
         # Generate minor tags (specific topics)
         minor_tags_response = await openai_utils.get_completion(
-            model="gpt-4.1-mini",
+            model="gpt-5-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": "Você é um especialista em educação. Baseado no tópico fornecido, identifique de 2 a 5 tags específicas que melhor representem os subtemas ou conceitos-chave. Retorne APENAS as tags separadas por vírgula, sem explicações.",
+                    "content": SYSTEM_MESSAGE_GENERATE_MINOR_TAGS_FOR_TOPIC,
                 },
                 {"role": "user", "content": f"Tópico: {topic}"},
             ],
             json_mode=False,
-            timeout=15,
+            timeout=30,
             temperature=0.3,
+            reasoning_effort="medium",
         )
 
         minor_tags_text = minor_tags_response.content.strip()
@@ -577,11 +579,9 @@ async def _classify_topic_subject(topic: str) -> str:
     try:
         # Get all subjects from ENEM_AREAS
         all_subjects = sum(ENEM_AREAS.values(), [])
-        system_message = f"""Você é um professor especializado em vestibulares e deve dizer qual a matéria do tópico que é enviado a você.
-Baseado no tópico fornecido, você deve definir em que matéria está o tópico, usando a lista de matérias abaixo. Tente responder considerando que tipos de conhecimento ou competências são abordados no tópico e os temas com que se relacionam. Escolha apenas uma matéria.
-Responda apenas o nome da matéria escolhida, sem nenhum detalhamento ou justificativa.
-Escreva SOMENTE matérias que estejam mencionadas a seguir, e nenhuma outra, sem utilizar aspas. As matérias disponíveis são:
-{chr(10).join(all_subjects)}"""
+        system_message = SYSTEM_MESSAGE_CLASSIFY_TOPIC_SUBJECT.format(
+            subjects=chr(10).join(all_subjects)
+        )
 
         messages: list[ChatCompletionMessageParam] = [
             {"role": "system", "content": system_message},
@@ -589,10 +589,11 @@ Escreva SOMENTE matérias que estejam mencionadas a seguir, e nenhuma outra, sem
         ]
 
         response = await openai_utils.get_completion(
-            model="gpt-4.1-mini",
+            model="gpt-5-mini",
             temperature=0.1,
             messages=messages,
-            timeout=20,
+            timeout=30,
+            reasoning_effort="medium",
         )
 
         response_text = response.content.strip()
@@ -619,8 +620,8 @@ async def get_topic_user_generated_questions(
     """
     Generate AI questions based on a topic for a flow.
     """
-    model = "o4-mini" if requires_math else random.choice(["gpt-4.1", "o3"])
-    reasoning_models = ["o4-mini", "o3"]
+    model = "gpt-5" 
+    reasoning_models = ["gpt-5"]
 
     logger.info(
         f"Generating {n_questions} AI questions for flow {flow.id} with topic: {flow.input_topic}"
@@ -656,8 +657,8 @@ async def get_topic_user_generated_questions(
         temperature=0.5,
         messages=messages,
         response_format=QuestionSet,
-        reasoning_effort="high" if model in reasoning_models else None,
-        timeout=120 if model in reasoning_models else 60,
+        reasoning_effort="medium",
+        timeout=90,
     )
 
     questions_data = response.content
@@ -769,8 +770,8 @@ async def get_files_user_generated_questions(
     """
     Generate AI questions based on uploaded files for a flow.
     """
-    model = "o4-mini" if requires_math else random.choice(["gpt-4.1", "o3"])
-    reasoning_models = ["o4-mini", "o3"]
+    model = "gpt-5" 
+    reasoning_models = ["gpt-5"]
 
     query = (
         select(FlowTranscriptionBlock)
@@ -832,8 +833,8 @@ async def get_files_user_generated_questions(
                 temperature=0.5,
                 messages=messages,
                 response_format=QuestionSet,
-                reasoning_effort="high" if model in reasoning_models else None,
-                timeout=120 if model in reasoning_models else 60,
+                reasoning_effort="medium",
+                timeout=90,
             )
 
             questions_data = response.content
@@ -1267,14 +1268,15 @@ async def _generate_block_title(block_text: str) -> str:
     """Generate a concise title/query for a transcription block."""
     try:
         response = await openai_utils.get_completion(
-            model="gpt-4.1-nano",
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": SYSTEM_MESSAGE_BLOCK_TITLE},
                 {"role": "user", "content": block_text},
             ],
             json_mode=False,
-            timeout=15,
+            timeout=30,
             temperature=0.5,
+            reasoning_effort="medium",
         )
         return response.content.strip()
     except Exception as e:
@@ -1298,7 +1300,7 @@ async def generate_flow_title_from_block_titles(
 
     try:
         result = await openai_utils.get_completion(
-            model="gpt-4.1-nano",
+            model="gpt-5-mini",
             temperature=0.5,
             messages=[
                 {
@@ -1310,6 +1312,7 @@ async def generate_flow_title_from_block_titles(
                     "content": f"Títulos das transcrições:\n{titles_text}",
                 },
             ],
+            reasoning_effort="medium",
         )
 
         title = result.content.strip()
@@ -1330,7 +1333,7 @@ async def verify_question_pertinence_to_topic(
     question_id: int,
     topic: str,
 ) -> int:
-    """Verify question pertinence to a topic using gpt-4.1-nano or gpt-4o (with vision) on a scale of 0-5"""
+    """Verify question pertinence to a topic using gpt-5-mini (with vision) on a scale of 0-5"""
     try:
         # Get the question with choices loaded
         question = await db_session.scalar(
@@ -1396,7 +1399,7 @@ async def verify_question_pertinence_to_topic(
                 except Exception as e:
                     logger.warning(f"Failed to get URL for image {image_file.id}: {e}")
 
-        # Use gpt-4.1-nano for all cases (supports both text and images)
+        # Use gpt-5-mini for all cases (supports both text and images)
         messages = [
             {
                 "role": "system",
@@ -1409,11 +1412,12 @@ async def verify_question_pertinence_to_topic(
         ]
 
         response = await openai_utils.get_completion(
-            model="gpt-4.1-nano",
+            model="gpt-5-mini",
             messages=cast(list[ChatCompletionMessageParam], messages),
             json_mode=False,
-            timeout=30,  # Increased timeout for vision capabilities
+            timeout=45,  # Increased timeout for vision capabilities
             temperature=0.5,
+            reasoning_effort="medium",
         )
 
         # Extract the numeric score from the response
@@ -1444,10 +1448,10 @@ async def verify_question_pertinence_to_topic(
 async def generate_tags_for_question(
     question_text_and_choices: str,
 ) -> list[str]:
-    """Generate tags for a question (based on question text and choices) using gpt-4.1-nano"""
+    """Generate tags for a question (based on question text and choices) using gpt-5-mini"""
     try:
         response = await openai_utils.get_completion(
-            model="gpt-4.1-nano",
+            model="gpt-5-mini",
             messages=[
                 {
                     "role": "system",
@@ -1456,8 +1460,9 @@ async def generate_tags_for_question(
                 {"role": "user", "content": question_text_and_choices},
             ],
             json_mode=False,
-            timeout=15,
+            timeout=30,
             temperature=0.1,
+            reasoning_effort="medium",
         )
         tags = response.content.strip()
         return tags.split(",")
