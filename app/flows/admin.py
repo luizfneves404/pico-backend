@@ -484,6 +484,45 @@ class QuestionAdmin(CustomModelView, model=Question):
         )
 
     @action(
+        name="recompute_embeddings",
+        label="Recomputar embeddings",
+        confirmation_message="Tem certeza que quer recomputar embeddings para as perguntas selecionadas? Isso irá sobrescrever embeddings existentes.",
+        add_in_detail=False,
+        add_in_list=True,
+    )
+    async def recompute_question_embeddings(self, request: Request) -> RedirectResponse:
+        """Recompute embeddings for all questions in the list, overriding existing ones."""
+        pks_str = request.query_params.get("pks", "")
+
+        # Build the base statement
+        if pks_str == "__all__":
+            pks = None
+        else:
+            try:
+                pks = [int(pk) for pk in pks_str.split(",")]
+                if not pks:
+                    # Redirect if no pks are provided
+                    referer = request.headers.get("Referer")
+                    return RedirectResponse(
+                        referer or request.url_for("admin:list", identity=self.identity)
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid primary key format."
+                )
+
+        await enqueue_job(
+            "task_recompute_question_embeddings",
+            question_ids=pks,
+        )
+
+        # Redirect back
+        referer = request.headers.get("Referer")
+        return RedirectResponse(
+            referer or request.url_for("admin:list", identity=self.identity)
+        )
+
+    @action(
         name="categorize_minor_tags",
         label="Categorizar minor tags",
         confirmation_message="Tem certeza que quer categorizar minor tags das perguntas selecionadas?",
@@ -761,6 +800,7 @@ class ExamAdmin(CustomModelView, model=Exam):
         Exam.country,
         Exam.education_level,
         Exam.course,
+        Exam.is_privileged,
         Exam.created_at,
     ]
     column_searchable_list = [
@@ -777,6 +817,7 @@ class ExamAdmin(CustomModelView, model=Exam):
         Exam.country,
         Exam.education_level,
         Exam.course,
+        Exam.is_privileged,
         Exam.created_at,
     ]
 
@@ -785,6 +826,7 @@ class ExamAdmin(CustomModelView, model=Exam):
         Exam.country,
         Exam.education_level,
         Exam.course,
+        Exam.is_privileged,
     ]
 
     can_import = True

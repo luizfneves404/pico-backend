@@ -33,6 +33,7 @@ from app.flows.question_utils import (
     task_consolidate_flow_tags,
     task_generate_and_consolidate_tags,
     task_generate_question_answers,
+    task_recompute_question_embeddings,
 )
 from app.flows.tasks import task_mark_question_timed_out
 from app.instrumentation import instrument_worker
@@ -93,6 +94,7 @@ def make_worker_settings(
             task_send_notifications,
             task_generate_transcriptions,
             task_compute_question_embeddings,
+            task_recompute_question_embeddings,
             task_categorize_minor_tags,
             task_categorize_major_tags,
             task_generate_question_answers,
