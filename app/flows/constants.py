@@ -851,14 +851,14 @@ FORMATO DE RESPOSTA OBRIGATÓRIO:
 
 PROMPT_COVER_GENERATION = """
 Crie uma capa marcante para um quiz sobre {flow_title}.
-Escolha o estilo pelo tema:
-•	tecnologia/ciências exatas → cyberpunk (neon, glow, alta-contraste)
-•	história/antiguidade/arte → estilo de pintura predominante no período (óleo, mosaico, mármore)
-•	natureza/biologia → gravura botânica moderna, arte realista baseada em plantas/jardinagem
-•	matemática/engenharia → geometria minimalista/isométrica
-•	literatura/humanas → colagem vintage sem texto legível
-(Se outro tema, adapte criativamente o estilo dominante. Seja criativo e pense em elementos próprios de cada tema que possam dar um caráter especial e único para a capa)
-Composição: símbolo central + 2–3 ícones do tema; área limpa para título; profundidade e dinamismo.
+Escolha o estilo pelo tema, priorizando estilos clássicos, surrealistas ou hiper-realistas:
+•	tecnologia/ciências exatas → estilo hiper-realista moderno com elementos técnicos elegantes, iluminação suave e natural
+•	história/antiguidade/arte → estilo de pintura clássica predominante no período (óleo, renascimento, neoclássico, mármore)
+•	natureza/biologia → estilo botânico clássico detalhado, ilustração científica hiper-realista ou surrealista com elementos naturais
+•	matemática/engenharia → geometria clássica com elementos arquitetônicos renascentistas ou surrealistas
+•	literatura/humanas → estilo pictórico clássico com elementos surrealistas, inspirado em pinturas de museu
+(Se outro tema, adapte criativamente usando estilos clássicos, surrealistas ou hiper-realistas. Evite estilos cyberpunk, neon ou futuristas)
+Composição: símbolo central + 2–3 ícones do tema; área limpa para título; profundidade e dinamismo; paleta de cores elegante e sofisticada.
 Restrições: sem texto, sem logos, sem rostos reconhecíveis.
 Formato: 1:1 (variante 16:9 opcional).
  

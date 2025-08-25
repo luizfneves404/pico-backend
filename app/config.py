@@ -97,6 +97,7 @@ class Settings(BaseSettings):
 
     admin_names: list[str] = Field(default=...)
     admin_emails: list[LowercaseEmailStr] = Field(default=...)
+    enable_error_emails: bool = Field(default=True, description="Enable/disable error notification emails")
 
     default_phone_number_country: str = "BR"
 

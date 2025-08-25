@@ -105,6 +105,13 @@ def make_worker_settings(
         on_startup: StartupShutdown | None = startup
         on_shutdown: StartupShutdown | None = shutdown
         burst: bool = burst_mode
+        # Performance optimizations
+        max_concurrent_jobs: int = 20  # Increase from default 10
+        job_timeout: int = 600  # 10 minutes timeout (increase from 5 min default)
+        max_tries: int = 3  # Reduce retries from default 5 to prevent queue clogging
+        # Additional optimizations
+        poll_delay: float = 0.5  # Check for jobs more frequently (default 1s)
+        queue_read_limit: int = 100  # Read more jobs from queue at once (default 10)
         cron_jobs: Sequence[CronJob] | None = [
             cron(
                 task_score_flows_for_feed,

@@ -59,7 +59,7 @@ from app.flows.schemas import PromptType
 from app.shared import ai_utils, gemini_utils, openai_utils
 
 logger = logging.getLogger(__name__)
-TOKENS_PER_BLOCK = 200
+TOKENS_PER_BLOCK = 300
 
 
 # Constants

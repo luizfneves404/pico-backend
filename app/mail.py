@@ -3,7 +3,7 @@ import json
 import logging
 import re
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 from typing import Any, Protocol, Sequence
 
@@ -226,8 +226,65 @@ async def send_bulk_email(
 
 
 class AdminEmailHandler(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.last_email_time = {}  # Track last email time by error type
+        self.email_cooldown = timedelta(minutes=15)  # 15 minute cooldown between similar errors
+        # Circuit breaker for email failures
+        self.email_failures = 0
+        self.last_failure_time = None
+        self.circuit_breaker_threshold = 5  # After 5 failures
+        self.circuit_breaker_timeout = timedelta(minutes=30)  # Wait 30 minutes
+        
+    def _get_error_key(self, record: logging.LogRecord) -> str:
+        """Generate a key to identify similar errors for rate limiting."""
+        return f"{record.name}:{record.funcName}:{record.getMessage()[:50]}"
+    
+    def _should_send_email(self, error_key: str) -> bool:
+        """Check if we should send an email based on rate limiting."""
+        now = datetime.now()
+        last_time = self.last_email_time.get(error_key)
+        
+        if last_time is None or now - last_time > self.email_cooldown:
+            self.last_email_time[error_key] = now
+            return True
+        return False
+    
+    def _is_circuit_breaker_open(self) -> bool:
+        """Check if circuit breaker is open (too many recent failures)."""
+        if self.email_failures < self.circuit_breaker_threshold:
+            return False
+        
+        if self.last_failure_time is None:
+            return False
+            
+        time_since_failure = datetime.now() - self.last_failure_time
+        if time_since_failure > self.circuit_breaker_timeout:
+            # Reset circuit breaker after timeout
+            self.email_failures = 0
+            self.last_failure_time = None
+            return False
+            
+        return True
+
     def emit(self, record: logging.LogRecord) -> None:
         try:
+            # Check if error emails are enabled
+            if not settings.enable_error_emails:
+                logger.debug("Error emails are disabled, skipping email notification")
+                return
+            
+            # Check circuit breaker
+            if self._is_circuit_breaker_open():
+                logger.debug("Email circuit breaker is open, skipping error email")
+                return
+                
+            # Check rate limiting to avoid quota issues
+            error_key = self._get_error_key(record)
+            if not self._should_send_email(error_key):
+                # Log that we're skipping this email due to rate limiting
+                logger.debug(f"Skipping error email due to rate limiting: {error_key}")
+                return
             # Prepare the plain text version (as fallback)
             text_parts: list[str] = [
                 "ERROR DETAILS",
