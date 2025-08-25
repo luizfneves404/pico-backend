@@ -190,6 +190,18 @@
           }}</span> items
       </p>
       <ul class="pagination m-0 ms-auto">
+        {% if pagination.pages > 1 %}
+        <li class="page-item {% if pagination.page == 1 %}disabled{% endif %}">
+          {% if pagination.page != 1 %}
+          <a class="page-link" href="{{ request.url.include_query_params(page=1) }}" title="Go to first page">
+            {% else %}
+            <a class="page-link" href="#" title="Already on first page">
+              {% endif %}
+              <i class="fa-solid fa-angles-left"></i>
+              first
+            </a>
+        </li>
+        {% endif %}
         <li class="page-item {% if not pagination.has_previous %}disabled{% endif %}">
           {% if pagination.has_previous %}
           <a class="page-link" href="{{ pagination.previous_page.url }}">
@@ -214,6 +226,18 @@
               <i class="fa-solid fa-chevron-right"></i>
             </a>
         </li>
+        {% if pagination.pages > 1 %}
+        <li class="page-item {% if pagination.page == pagination.pages %}disabled{% endif %}">
+          {% if pagination.page != pagination.pages %}
+          <a class="page-link" href="{{ request.url.include_query_params(page=pagination.pages) }}" title="Go to last page">
+            {% else %}
+            <a class="page-link" href="#" title="Already on last page">
+              {% endif %}
+              <i class="fa-solid fa-angles-right"></i>
+              last
+            </a>
+        </li>
+        {% endif %}
       </ul>
       <div class="dropdown text-muted">
         Show

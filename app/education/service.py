@@ -285,11 +285,22 @@ async def list_levels(
     )
 
     if country_code:
+        # First try to get stages for the specific country, then fall back to default stages
         stmt = stmt.options(
             with_loader_criteria(
-                LevelStage, LevelStage.country.has(Country.code == country_code)
+                LevelStage, 
+                (LevelStage.country.has(Country.code == country_code)) | 
+                (LevelStage.is_default == True)
             )
         )
 
     result = await db_session.execute(stmt)
-    return list(result.scalars().unique())
+    levels = list(result.scalars().unique())
+    
+    # Log for debugging
+    logger.info(f"list_levels: country_code='{country_code}', found {len(levels)} levels")
+    for level in levels:
+        stage_count = len([s for s in level.stages if s.country is None or (s.country and s.country.code == country_code) or s.is_default])
+        logger.info(f"Level '{level.name_i18n.get('en', 'Unknown')}': {stage_count} applicable stages")
+    
+    return levels
