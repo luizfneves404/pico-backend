@@ -103,15 +103,17 @@ async def task_determine_institution_display_names(
                     continue
                 
                 try:
+                    logger.info(f"Processing institution {institution.id}: '{institution.full_name}'")
+                    
                     # Generate display name using OpenAI
                     display_name = await _generate_display_name(institution.full_name)
                     
                     # Update the institution
                     institution.name = display_name
-                    logger.info(f"Updated institution {institution.id}: '{institution.full_name}' -> '{display_name}'")
+                    logger.info(f"✅ Successfully updated institution {institution.id}: '{institution.full_name}' -> '{display_name}'")
                     
                 except Exception as e:
-                    logger.error(f"Error generating display name for institution {institution.id} ('{institution.full_name}'): {e}")
+                    logger.error(f"❌ Error generating display name for institution {institution.id} ('{institution.full_name}'): {e}")
                     # Continue processing other institutions
                     continue
 
@@ -170,6 +172,9 @@ AVOID:
 Return ONLY the display name, nothing else."""
 
     try:
+        logger.info(f"🤖 Calling OpenAI GPT-5-mini for display name generation")
+        logger.debug(f"Input full_name: '{full_name}'")
+        
         response = await openai_utils.get_completion(
             model="gpt-5-mini",
             temperature=None,  # Use default for reasoning model
@@ -182,18 +187,27 @@ Return ONLY the display name, nothing else."""
             reasoning_effort="medium",
         )
         
-        display_name = response.strip()
+        logger.info(f"✅ OpenAI response received - Tokens used: {response.tokens_used}")
+        logger.info(f"🎯 Raw OpenAI output: '{response.content}'")
+        
+        display_name = response.content.strip()
+        logger.info(f"📝 After strip(): '{display_name}'")
         
         # Fallback: if OpenAI returns something too long or empty, use a simple truncation
         if not display_name or len(display_name) > 120:
-            logger.warning(f"OpenAI returned invalid display name for '{full_name}': '{display_name}'. Using fallback.")
+            logger.warning(f"⚠️ OpenAI returned invalid display name (empty or too long): '{display_name}' (length: {len(display_name) if display_name else 0}). Using fallback.")
             # Simple fallback: take first 80 chars and try to end at a word boundary
             display_name = full_name[:80].rsplit(' ', 1)[0] if ' ' in full_name[:80] else full_name[:80]
+            logger.info(f"🔄 Fallback display name: '{display_name}'")
+        else:
+            logger.info(f"✨ Valid display name generated: '{display_name}' (length: {len(display_name)})")
         
         return display_name
         
     except Exception as e:
-        logger.error(f"Error calling OpenAI for display name generation: {e}")
+        logger.error(f"❌ Error calling OpenAI for display name generation: {e}")
+        logger.error(f"Exception type: {type(e).__name__}")
         # Fallback: simple truncation
         display_name = full_name[:80].rsplit(' ', 1)[0] if ' ' in full_name[:80] else full_name[:80]
+        logger.info(f"🔄 Exception fallback display name: '{display_name}'")
         return display_name
