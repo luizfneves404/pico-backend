@@ -180,7 +180,7 @@ Return ONLY the display name, nothing else."""
         # Use a concrete temperature value; some OpenAI wrappers require it even for 'nano' models.
         response = await openai_utils.get_completion(
             model="gpt-5-nano",
-            temperature=0.5,
+            temperature=1.0,
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": full_name},
