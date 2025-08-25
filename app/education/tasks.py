@@ -61,11 +61,14 @@ async def _generate_display_name(full_name: str) -> str:
 CORE PRINCIPLE: Preserve the institution's recognizable identity and meaning while shortening very long formal names into a clearly recognizable label when appropriate.
 
 Heuristics to apply (use these as decision rules):
-- If the official name is short (3 words or fewer) or already clearly recognizable, just return it with the right formatting.
+- If the official name is short (3 words or fewer) or already clearly recognizable, just return it with the right formatting, without any changes.
 - If the official name is long (more than 5 words) or contains long generic phrases such as "Escola de Educação Básica e Profissional", "Centro Universitário das Faculdades", or "Instituto Federal de Educação, Ciência e Tecnologia de ...", extract the most distinctive, recognizable entity (often the sponsoring organization or the unique noun phrase). Example: "Escola de Educação Básica e Profissional da Fundação Bradesco" → "Fundação Bradesco". In some cases, those names might compose recognizable acronyms, like "UFRJ" or "UFMG" - in which case you should return the acronym.
 - Preserve personal names and unique identifiers; if the name is primarily a person's name, keep the personal name and shorten surrounding titles (e.g. "Escola Estadual Professor João Silva" → "E.E. Prof. João Silva").
+- Preserve names that indicate the institution's location (e.g. "Colégio Santo Agostinho Leblon -> Santo Agostinho Leblon").
 - Avoid producing ambiguous or lossy abbreviations. Prefer clarity over aggressive shortening.
 - Keep short, distinctive names intact (e.g. "Escola Parque" should remain "Escola Parque", not "Parque").
+- If the name begins with "Escola Estudual" always abbreviate it to "E.E."
+- When the acronym is NOT famous, use the full name. (eg. FASAVIC - FACULDADE SANTO AGOSTINHO DE VITÓRIA DA CONQUISTA (FASAVIC)	-> FASAVIC - Faculdade Santo Agostinho Vitória da Conquista)
 
 Examples:
 - "Universidade de São Paulo" → "USP" (universally known)
