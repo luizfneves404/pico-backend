@@ -154,7 +154,7 @@ async def test_search_institutions_by_education_level(
     # Create institutions of different types
     async with session.begin():
         new_education_level = EducationLevel(
-            name_i18n={"en": "College"},yuyvuiyvuv
+            name_i18n={"en": "College"},
         )
         session.add(new_education_level)
         await session.flush([new_education_level])
