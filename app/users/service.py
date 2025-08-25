@@ -684,18 +684,24 @@ async def authenticate_user_by_apple(
     # Keep original logic - require name, but provide fallback for deleted users
     if name is None:
         # This is the original error case - but let's try to recover for deleted users
-        logger.warning(f"Apple didn't provide name for user {user_info.sub}. Attempting fallback.")
-        
+        logger.warning(
+            f"Apple didn't provide name for user {user_info.sub}. Attempting fallback."
+        )
+
         # Try to generate a name from email if available
         if user_info.email and not user_info.email.startswith("apple.user."):
             # We have a real email, generate name from it
             fallback_name = _generate_name_from_email(user_info.email)
-            logger.info(f"Generated fallback name '{fallback_name}' from Apple email for deleted user")
+            logger.info(
+                f"Generated fallback name '{fallback_name}' from Apple email for deleted user"
+            )
             name = fallback_name
         else:
             # No real email available, use generic name as last resort
             name = "Apple User"
-            logger.info("Using generic 'Apple User' name - no email or name from Apple (likely deleted user)")
+            logger.info(
+                "Using generic 'Apple User' name - no email or name from Apple (likely deleted user)"
+            )
 
     return await _create_social_user(
         db_session,
@@ -709,13 +715,13 @@ async def authenticate_user_by_apple(
 
 def _generate_name_from_email(email: str) -> str:
     """Generate a display name from an email address.
-    
+
     Args:
         email: The email address to generate a name from
-        
+
     Returns:
         A human-readable name based on the email
-        
+
     Examples:
         "john.doe@example.com" -> "John Doe"
         "jane_smith123@gmail.com" -> "Jane Smith"
@@ -723,20 +729,22 @@ def _generate_name_from_email(email: str) -> str:
     """
     # Extract the local part (before @)
     local_part = email.split("@")[0]
-    
+
     # Replace common separators with spaces
     name_parts = local_part.replace(".", " ").replace("_", " ").replace("-", " ")
-    
+
     # Remove numbers and special characters, keep only letters and spaces
-    clean_name = "".join(char for char in name_parts if char.isalpha() or char.isspace())
-    
+    clean_name = "".join(
+        char for char in name_parts if char.isalpha() or char.isspace()
+    )
+
     # Split into words, capitalize each, and join
     words = [word.capitalize() for word in clean_name.split() if word]
-    
+
     if not words:
         # Fallback if no valid words found
         return "User"
-    
+
     return " ".join(words)
 
 

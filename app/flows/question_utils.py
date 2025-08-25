@@ -21,7 +21,14 @@ from app.flows.db_types import (
     TextBlock,
     validate_content_block_list,
 )
-from app.flows.models import ENEM_AREAS, Exam, Flow, OfficialQuestionSource, Question, QuestionSourceType
+from app.flows.models import (
+    ENEM_AREAS,
+    Exam,
+    Flow,
+    OfficialQuestionSource,
+    Question,
+    QuestionSourceType,
+)
 from app.shared import openai_utils
 
 logger = logging.getLogger(__name__)
@@ -62,7 +69,7 @@ Instruções
 •	Escolha de 1 a 3 tags que melhor representem os tópicos centrais (evite temas periféricos).
 •	Seja específico (prefira "Porcentagem", "Citologia", "Leitura de gráfico" a termos muito amplos como "Matemática", "Biologia", "Interpretação").
 •	Evite redundância: não repita tags nem use sinônimos muito próximos na mesma resposta.
-•	Use termos curtos e canônicos (1–3 palavras por tag)
+•	Use termos curtos e canônicos (1-3 palavras por tag)
 •	Idioma das tags: produza-as no mesmo idioma do enunciado da questão.
 •	Se o insumo estiver incompleto, assuma o mínimo necessário e escolha a(s) tag(s) mais geral(is) possível(is) que ainda representem o conteúdo; não invente detalhes.
 
@@ -180,9 +187,7 @@ async def categorize_minor_tags(
         image_urls = await get_question_image_urls(db_session, question)
 
         # Generate minor tags using the full categorization system
-        minor_tags = await _generate_minor_tags(
-            question_text_with_choices, image_urls
-        )
+        minor_tags = await _generate_minor_tags(question_text_with_choices, image_urls)
 
         result = MinorTagsCategorization(minor_tags=minor_tags)
 
@@ -928,41 +933,64 @@ async def task_analyze_question_quantitativeness(
             raise
 
 
-async def task_compute_question_embeddings(
-    ctx: dict[str, Any],
-    question_ids: list[int] | None,
-) -> None:
+def _build_question_embedding_text(question: Question) -> str:
     """
-    Asynchronously computes and stores embeddings for questions in batches.
-    When question_ids is None (admin case), only process active questions.
-    When question_ids is provided (AI questions case), process regardless of is_active status.
+    Builds the single embedding text for a question.
 
     Args:
-        ctx: ARQ worker context
-        question_ids: List of question IDs to process, None means all questions
+        question: Question ORM object with relationships loaded.
+
+    Returns:
+        Combined string containing question text, choices, optional source and tags info.
+    """
+    parts: list[str] = []
+    if question.question_text:
+        parts.append(question.question_text)
+    if question.choices_text:
+        parts.append(question.choices_text)
+    if question.source_info:
+        parts.append(question.source_info)
+    if question.tags_info:
+        parts.append(question.tags_info)
+    return "\n\n".join(parts)
+
+
+async def _fetch_matching_question_ids(
+    ctx: dict[str, Any],
+    condition: Any,
+) -> list[int]:
+    """
+    Fetches all question IDs that match the given condition.
+
+    Args:
+        ctx: ARQ worker context.
+        condition: SQLAlchemy boolean expression to filter questions.
+
+    Returns:
+        List of matching question IDs.
     """
     async with get_db_session_for_worker(ctx) as session:
-        if question_ids is None:
-            # Admin case: only process active questions that are official and have no embedding yet
-            condition = (
-                Question.is_active.is_(True)
-                & (Question.source_type == QuestionSourceType.OFFICIAL)
-                & Question.embedding.is_(None)
-            )
-        else:
-            # Specific questions case (AI): process regardless of is_active status
-            condition = Question.id.in_(question_ids)
-
-        # First: fetch all matching IDs
         result = await session.execute(select(Question.id).where(condition))
-        all_ids: list[int] = list(result.scalars())
+        return list(result.scalars())
 
-    num_questions = len(all_ids)
-    logger.info(f"Computing embeddings for {num_questions} questions")
 
+async def _process_question_embedding_batches(
+    ctx: dict[str, Any],
+    all_ids: list[int],
+) -> int:
+    """
+    Loads questions in batches, computes embeddings and stores them.
+
+    Args:
+        ctx: ARQ worker context.
+        all_ids: Question IDs to process.
+
+    Returns:
+        Total number of questions processed.
+    """
     processed_count = 0
+    num_questions = len(all_ids)
 
-    # Now paginate IDs manually
     for batch_start in range(0, num_questions, QUESTION_EMBEDDING_BATCH_SIZE):
         batch_ids = all_ids[batch_start : batch_start + QUESTION_EMBEDDING_BATCH_SIZE]
 
@@ -971,7 +999,9 @@ async def task_compute_question_embeddings(
                 select(Question)
                 .options(
                     selectinload(Question.choices),
-                    selectinload(Question.official_source).selectinload(OfficialQuestionSource.exam).selectinload(Exam.country)
+                    selectinload(Question.official_source)
+                    .selectinload(OfficialQuestionSource.exam)
+                    .selectinload(Exam.country),
                 )
                 .where(Question.id.in_(batch_ids))
             )
@@ -979,71 +1009,52 @@ async def task_compute_question_embeddings(
             questions: list[Question] = list(result.scalars())
 
             logger.info(
-                f"Processing questions embedding batch {batch_start // QUESTION_EMBEDDING_BATCH_SIZE + 1}. "
-                f"We are at question {batch_start + 1}."
+                f"Processing batch {batch_start // QUESTION_EMBEDDING_BATCH_SIZE + 1}. "
+                f"We are at question {batch_start + 1} of {num_questions} questions."
             )
 
-            # Build texts for embedding
-            texts_for_embedding: list[str] = []
-            for question in questions:
-                # Extract question text
-                text_content = "\n".join(
-                    content.text
-                    for block in question.content_blocks
-                    if hasattr(block, "block_type") and block.block_type == "text"
-                    for content in block.content
-                    if hasattr(content, "text") and content.text
-                )
-                
-                # Extract choices text
-                choices_text = "\n".join(
-                    choice.text
-                    for choice in question.choices
-                    if hasattr(choice, "text") and choice.text
-                )
-                
-                # Extract source information
-                source_info = ""
-                if question.official_source and hasattr(question.official_source, 'exam'):
-                    exam = question.official_source.exam
-                    source_parts = []
-                    if hasattr(exam, 'name') and exam.name:
-                        source_parts.append(f"Exam: {exam.name}")
-                    if hasattr(exam, 'country') and exam.country and hasattr(exam.country, 'name'):
-                        source_parts.append(f"Country: {exam.country.name}")
-                    if hasattr(question.official_source, 'year') and question.official_source.year:
-                        source_parts.append(f"Year: {question.official_source.year}")
-                    if source_parts:
-                        source_info = f"Source: {', '.join(source_parts)}"
-                
-                # Extract tags
-                tags_info = ""
-                if question.major_tags:
-                    tags_info += f"Major tags: {', '.join(question.major_tags)}"
-                if question.minor_tags:
-                    if tags_info:
-                        tags_info += f"; Minor tags: {', '.join(question.minor_tags)}"
-                    else:
-                        tags_info = f"Minor tags: {', '.join(question.minor_tags)}"
-                
-                # Combine all parts
-                embedding_parts = [text_content, choices_text]
-                if source_info:
-                    embedding_parts.append(source_info)
-                if tags_info:
-                    embedding_parts.append(tags_info)
-                
-                texts_for_embedding.append("\n\n".join(embedding_parts))
-
-            # Compute embeddings for this batch
+            texts_for_embedding = [_build_question_embedding_text(q) for q in questions]
             embeddings = await openai_utils.compute_embedding(texts_for_embedding)
 
-            # Update questions with embeddings
             for question, embedding in zip(questions, embeddings):
                 question.embedding = embedding
 
         processed_count += len(questions)
 
+    return processed_count
+
+
+async def task_compute_question_embeddings(
+    ctx: dict[str, Any],
+    question_ids: list[int] | None,
+) -> None:
+    """
+    Asynchronously computes and stores embeddings for questions in batches.
+
+    When question_ids is None, only process active official questions without an embedding.
+    When question_ids is provided, process those IDs regardless of is_active.
+
+    Args:
+        ctx: ARQ worker context
+        question_ids: List of question IDs to process, None means filtered set
+    """
+    if question_ids is None:
+        condition = (
+            Question.is_active.is_(True)
+            & (Question.source_type == QuestionSourceType.OFFICIAL)
+            & Question.embedding.is_(None)
+        )
+    else:
+        condition = Question.id.in_(question_ids)
+
+    all_ids = await _fetch_matching_question_ids(ctx, condition)
+    num_questions = len(all_ids)
+    logger.info(f"Computing embeddings for {num_questions} questions")
+
+    processed_count = await _process_question_embedding_batches(
+        ctx=ctx,
+        all_ids=all_ids,
+    )
     logger.info(f"Computed embeddings for {processed_count} questions")
 
 
@@ -1053,114 +1064,31 @@ async def task_recompute_question_embeddings(
 ) -> None:
     """
     Recompute embeddings for questions, overriding existing ones.
-    Similar to task_compute_question_embeddings but ignores existing embeddings.
-    
+
+    When question_ids is None, process all active official questions.
+    When question_ids is provided, process those IDs regardless of is_active.
+
     Args:
         ctx: ARQ worker context
         question_ids: List of question IDs to process, None means all active official questions
     """
-    async with get_db_session_for_worker(ctx) as session:
-        if question_ids is None:
-            # Admin case: process all active official questions (ignore existing embeddings)
-            condition = (
-                Question.is_active.is_(True)
-                & (Question.source_type == QuestionSourceType.OFFICIAL)
-            )
-        else:
-            # Specific questions case: process regardless of is_active status
-            condition = Question.id.in_(question_ids)
+    if question_ids is None:
+        condition = Question.is_active.is_(True) & (
+            Question.source_type == QuestionSourceType.OFFICIAL
+        )
+    else:
+        condition = Question.id.in_(question_ids)
 
-        # First: fetch all matching IDs
-        result = await session.execute(select(Question.id).where(condition))
-        all_ids: list[int] = list(result.scalars())
-
+    all_ids = await _fetch_matching_question_ids(ctx, condition)
     num_questions = len(all_ids)
-    logger.info(f"Recomputing embeddings for {num_questions} questions (ignoring existing embeddings)")
+    logger.info(
+        f"Recomputing embeddings for {num_questions} questions (ignoring existing embeddings)"
+    )
 
-    processed_count = 0
-
-    # Now paginate IDs manually
-    for batch_start in range(0, num_questions, QUESTION_EMBEDDING_BATCH_SIZE):
-        batch_ids = all_ids[batch_start : batch_start + QUESTION_EMBEDDING_BATCH_SIZE]
-
-        async with get_db_session_for_worker(ctx) as session:
-            stmt = (
-                select(Question)
-                .options(
-                    selectinload(Question.choices),
-                    selectinload(Question.official_source).selectinload(OfficialQuestionSource.exam).selectinload(Exam.country)
-                )
-                .where(Question.id.in_(batch_ids))
-            )
-            result = await session.execute(stmt)
-            questions: list[Question] = list(result.scalars())
-
-            logger.info(
-                f"Recomputing embeddings batch {batch_start // QUESTION_EMBEDDING_BATCH_SIZE + 1}. "
-                f"We are at question {batch_start + 1}."
-            )
-
-            # Build texts for embedding (same logic as regular embedding computation)
-            texts_for_embedding: list[str] = []
-            for question in questions:
-                # Extract question text
-                text_content = "\n".join(
-                    content.text
-                    for block in question.content_blocks
-                    if hasattr(block, "block_type") and block.block_type == "text"
-                    for content in block.content
-                    if hasattr(content, "text") and content.text
-                )
-                
-                # Extract choices text
-                choices_text = "\n".join(
-                    choice.text
-                    for choice in question.choices
-                    if hasattr(choice, "text") and choice.text
-                )
-                
-                # Extract source information
-                source_info = ""
-                if question.official_source and hasattr(question.official_source, 'exam'):
-                    exam = question.official_source.exam
-                    source_parts = []
-                    if hasattr(exam, 'name') and exam.name:
-                        source_parts.append(f"Exam: {exam.name}")
-                    if hasattr(exam, 'country') and exam.country and hasattr(exam.country, 'name'):
-                        source_parts.append(f"Country: {exam.country.name}")
-                    if hasattr(question.official_source, 'year') and question.official_source.year:
-                        source_parts.append(f"Year: {question.official_source.year}")
-                    if source_parts:
-                        source_info = f"Source: {', '.join(source_parts)}"
-                
-                # Extract tags
-                tags_info = ""
-                if question.major_tags:
-                    tags_info += f"Major tags: {', '.join(question.major_tags)}"
-                if question.minor_tags:
-                    if tags_info:
-                        tags_info += f"; Minor tags: {', '.join(question.minor_tags)}"
-                    else:
-                        tags_info = f"Minor tags: {', '.join(question.minor_tags)}"
-                
-                # Combine all parts
-                embedding_parts = [text_content, choices_text]
-                if source_info:
-                    embedding_parts.append(source_info)
-                if tags_info:
-                    embedding_parts.append(tags_info)
-                
-                texts_for_embedding.append("\n\n".join(embedding_parts))
-
-            # Compute embeddings for this batch
-            embeddings = await openai_utils.compute_embedding(texts_for_embedding)
-
-            # Update questions with embeddings
-            for question, embedding in zip(questions, embeddings):
-                question.embedding = embedding
-
-        processed_count += len(questions)
-
+    processed_count = await _process_question_embedding_batches(
+        ctx=ctx,
+        all_ids=all_ids,
+    )
     logger.info(f"Recomputed embeddings for {processed_count} questions")
 
 
