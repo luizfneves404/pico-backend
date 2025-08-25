@@ -978,6 +978,7 @@ async def check_if_topic_involves_math_calculations(topic: str) -> bool:
     try:
         result = await get_completion(
             model="gpt-5-mini",
+            temperature=None,
             messages=[
                 {"role": "system", "content": SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT},
                 {"role": "user", "content": topic},

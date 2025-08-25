@@ -289,6 +289,7 @@ Alternativa correta: {correct_choice_letter}
         # Use gpt-5 model with reasoning effort for better quality
         response = await openai_utils.get_completion(
             model="gpt-5",
+            temperature=None,
             messages=messages,
             timeout=90,
             reasoning_effort="high",

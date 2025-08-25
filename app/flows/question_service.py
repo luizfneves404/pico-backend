@@ -522,6 +522,7 @@ async def check_if_titles_involve_math_calculations(block_titles: list[str]) -> 
     ]
     response = await openai_utils.get_completion(
         model="gpt-5-mini",
+        temperature=None,
         messages=cast(list[ChatCompletionMessageParam], messages),
         json_mode=False,
         timeout=30,
@@ -548,6 +549,7 @@ async def generate_tags_for_topic(topic: str) -> tuple[list[str], list[str]]:
         # Generate minor tags (specific topics)
         minor_tags_response = await openai_utils.get_completion(
             model="gpt-5-mini",
+            temperature=None,
             messages=[
                 {
                     "role": "system",
@@ -589,6 +591,7 @@ async def _classify_topic_subject(topic: str) -> str:
 
         response = await openai_utils.get_completion(
             model="gpt-5-mini",
+            temperature=None,
             messages=messages,
             timeout=30,
             reasoning_effort="medium",
@@ -654,6 +657,7 @@ async def get_topic_user_generated_questions(
         model=model,
         messages=messages,
         response_format=QuestionSet,
+        temperature=None,
         reasoning_effort="medium",
         timeout=90,
     )
@@ -829,6 +833,7 @@ async def get_files_user_generated_questions(
                 model=model,
                 messages=messages,
                 response_format=QuestionSet,
+                temperature=None,
                 reasoning_effort="medium",
                 timeout=90,
             )
@@ -1265,6 +1270,7 @@ async def _generate_block_title(block_text: str) -> str:
     try:
         response = await openai_utils.get_completion(
             model="gpt-5-mini",
+            temperature=None,
             messages=[
                 {"role": "system", "content": SYSTEM_MESSAGE_BLOCK_TITLE},
                 {"role": "user", "content": block_text},
@@ -1296,6 +1302,7 @@ async def generate_flow_title_from_block_titles(
     try:
         result = await openai_utils.get_completion(
             model="gpt-5-mini",
+            temperature=None,
             messages=[
                 {
                     "role": "system",
@@ -1407,6 +1414,7 @@ async def verify_question_pertinence_to_topic(
 
         response = await openai_utils.get_completion(
             model="gpt-5-mini",
+            temperature=None,
             messages=cast(list[ChatCompletionMessageParam], messages),
             json_mode=False,
             timeout=45,  # Increased timeout for vision capabilities
