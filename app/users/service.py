@@ -256,6 +256,7 @@ async def _create_user(
         apple_id=apple_id or "",
         signup_source=signup_source,
         referred_by_id=referred_by_id,
+        instagram_account="",
     )
 
     try:
@@ -540,7 +541,6 @@ async def update_user_fields(
             srid=4326,
         )
         user.location = new_location  # type: ignore # this should work according to geoalchemy2
-        await db_session.flush()
         updated_fields.append("location")
 
     if updates.instagram_account is not UnsetDefault:
