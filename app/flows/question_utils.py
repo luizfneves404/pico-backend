@@ -1164,6 +1164,108 @@ async def task_recompute_question_embeddings(
     logger.info(f"Recomputed embeddings for {processed_count} questions")
 
 
+async def task_fix_question_newlines(
+    ctx: dict[str, Any],
+    question_ids: list[int] | None,
+) -> None:
+    """
+    Replace literal "\\n" sequences with a single space in all RichText.text
+    entries inside Question.content_blocks and Question.answer_content_blocks,
+    preserving all other details.
+
+    When question_ids is None (admin case), only process active questions.
+    When question_ids is provided, process regardless of is_active status.
+    """
+    async with get_db_session_for_worker(ctx) as session:
+        try:
+            if question_ids is None:
+                stmt = select(Question).where(Question.is_active == True)
+            else:
+                stmt = select(Question).where(Question.id.in_(question_ids))
+
+            result = await session.execute(stmt)
+            questions: list[Question] = list(result.scalars())
+
+            updated_count = 0
+
+            for question in questions:
+                changed = False
+
+                # Helper to clean a list of content blocks
+                def clean_blocks(blocks: list[Any] | None) -> list[Any] | None:
+                    if not blocks:
+                        return blocks
+                    new_blocks: list[Any] = []
+                    for block in blocks:
+                        # Handle Pydantic TextBlock
+                        if (
+                            hasattr(block, "block_type")
+                            and getattr(block, "block_type") == "text"
+                        ):
+                            contents = getattr(block, "content", [])
+                            new_contents: list[RichText] = []
+                            for rt in contents:
+                                if hasattr(rt, "text"):
+                                    new_text = rt.text.replace("\\n", " ")
+                                    if new_text != rt.text:
+                                        changed_flag = True
+                                    else:
+                                        changed_flag = False
+                                    # Recreate RichText to avoid mutating in-place
+                                    new_contents.append(
+                                        RichText(
+                                            text=new_text,
+                                            bold=rt.bold,
+                                            italic=rt.italic,
+                                            underline=rt.underline,
+                                            strikethrough=rt.strikethrough,
+                                            link=rt.link,
+                                        )
+                                    )
+                                    if changed_flag:
+                                        nonlocal_changed[0] = True
+                                else:
+                                    # Fallback: keep as is if not the expected model
+                                    new_contents.append(rt)
+                            new_blocks.append(
+                                TextBlock(
+                                    block_type="text",
+                                    style=getattr(block, "style"),
+                                    content=new_contents,
+                                )
+                            )
+                        else:
+                            # Keep non-text blocks (e.g., image) untouched
+                            new_blocks.append(block)
+                    return new_blocks
+
+                # Use a list as a mutable flag for nested scope
+                nonlocal_changed = [False]
+
+                cleaned_cb = clean_blocks(question.content_blocks)
+                cleaned_ans_cb = clean_blocks(question.answer_content_blocks)
+
+                if nonlocal_changed[0]:
+                    # Assign back using validator to ensure correct types
+                    if cleaned_cb is not None:
+                        question.content_blocks = validate_content_block_list(
+                            cleaned_cb
+                        )
+                    if cleaned_ans_cb is not None:
+                        question.answer_content_blocks = validate_content_block_list(
+                            cleaned_ans_cb
+                        )
+                    updated_count += 1
+
+            if updated_count:
+                await session.commit()
+            logger.info(f"Fixed literal \\n in {updated_count} questions")
+
+        except Exception as e:
+            logger.error(f"Error in task_fix_question_newlines: {str(e)}")
+            raise
+
+
 async def task_categorize_questions(
     ctx: dict[str, Any],
     question_ids: list[int] | None,

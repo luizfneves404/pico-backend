@@ -29,3 +29,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Remove the full_name column
     op.drop_column('institution', 'full_name')
+

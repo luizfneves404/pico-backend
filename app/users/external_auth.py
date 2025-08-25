@@ -175,23 +175,11 @@ async def verify_apple_id_token(id_token: str) -> AppleIdToken:
     except jwt.InvalidTokenError:
         raise InvalidTokenError("Invalid Apple ID token")
 
-    # Try to get email, but provide fallback if missing (for deleted users, Hide My Email, etc.)
-    email = decoded_token.get("email")
-    email_verified = decoded_token.get("email_verified", False)
-    
-    # If no email provided, create a unique placeholder based on Apple ID
-    # This handles cases where Apple doesn't provide email (deleted users, phone-only Apple IDs)
-    if not email:
-        apple_sub = decoded_token["sub"]
-        email = f"apple.user.{apple_sub}@privaterelay.appleid.com"
-        email_verified = True  # We trust Apple's sub verification
-        
-    # Keep original validation but with fallback email
-    if not email or not email_verified:
+    if not decoded_token.get("email") or not decoded_token.get("email_verified"):
         raise InvalidTokenError("Missing email in Apple ID token")
 
     return AppleIdToken(
         sub=decoded_token["sub"],
-        email=email,
-        email_verified=email_verified,
+        email=decoded_token["email"],
+        email_verified=decoded_token.get("email_verified", False),
     )
