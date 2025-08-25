@@ -354,6 +354,7 @@ async def is_quantitative(
         # Use gpt-5 with high reasoning effort
         response = await openai_utils.get_completion(
             model="gpt-5",
+            temperature=None,
             messages=messages,
             timeout=30,
             reasoning_effort="high",
@@ -520,6 +521,7 @@ Texto extraído:
 
             response = await openai_utils.get_completion(
                 model="gpt-5-mini",
+                temperature=None,
                 messages=messages,  # type: ignore
                 timeout=20,
                 reasoning_effort="medium",

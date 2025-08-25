@@ -1926,6 +1926,7 @@ async def generate_question_set_from_description(
                 {"role": "user", "content": user_message},
             ],
             response_format=QuestionSet,
+            temperature=None,
             reasoning_effort="high",
             timeout=60,
         )
@@ -1992,6 +1993,7 @@ async def generate_questions_from_topic(
                 {"role": "user", "content": user_message},
             ],
             response_format=QuestionSet,  # Especifica o formato de resposta esperado
+            temperature=None,
             reasoning_effort="high",
             timeout=60,
         )
