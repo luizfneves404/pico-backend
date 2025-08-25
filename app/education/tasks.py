@@ -131,37 +131,55 @@ async def _generate_display_name(full_name: str) -> str:
     Returns:
         A shorter, more user-friendly display name
     """
-    system_message = """You are an expert at creating concise, user-friendly display names for educational institutions.
+    system_message = """You are an expert at creating concise, user-friendly display names for Brazilian educational institutions while preserving their core identity and recognition.
+
+CORE PRINCIPLE: Preserve the institution's recognizable identity and meaning while making it shorter and more user-friendly.
 
 Guidelines:
-1. Keep display names SHORT (ideally under 50 characters)
-2. Keep the most recognizable/important part of the name
-3. Remove location details unless they're part of the institution's identity (e.g., "USP" not "Universidade de São Paulo")
-4. Use common abbreviations when widely recognized (e.g., "UFRJ" instead of "Universidade Federal do Rio de Janeiro")
-5. Maintain proper capitalization
-6. Remove redundant words and legal terms
-7. Focus on what users would commonly call the institution
+1. PRESERVE MEANING: Never sacrifice the institution's core identity for brevity
+2. Keep display names SHORT but MEANINGFUL (ideally under 60 characters, max 80)
+3. Use well-known abbreviations ONLY when they are widely recognized by students/parents
+4. Keep important institutional identifiers (Federal, Estadual, Instituto, etc.) when they matter for recognition
+5. Preserve professor names, founders, or distinctive identifiers that make the institution unique
+6. Remove only truly redundant words like "de Educação", "Ciência e Tecnologia" in long technical names
+7. For schools with person names, keep the name but can abbreviate titles (Prof., Dr.)
+8. Location can be abbreviated but not removed if it's part of the identity
+
+DECISION PROCESS:
+- Ask: "What would students/parents call this institution?"
+- Ask: "What makes this institution unique and recognizable?"
+- Ask: "Will people still know what institution this is?"
 
 Examples:
-- "Universidade Federal do Rio de Janeiro" → "UFRJ"
-- "Instituto Federal de Educação, Ciência e Tecnologia de São Paulo" → "IFSP"
-- "Escola Estadual Professor João Silva" → "E.E. Prof. João Silva"
-- "Centro Universitário das Faculdades Metropolitanas Unidas" → "FMU"
-- "Universidade de São Paulo" → "USP"
-- "Fundação Getúlio Vargas - São Paulo" → "FGV - SP"
+- "Universidade Federal do Rio de Janeiro" → "UFRJ" (widely known abbreviation)
+- "Universidade Federal de Minas Gerais" → "UFMG" (widely known abbreviation)
+- "Instituto Federal de Educação, Ciência e Tecnologia de São Paulo" → "Instituto Federal de SP" (preserve identity, simplify)
+- "Escola Estadual Professor João Silva" → "E.E. Prof. João Silva" (preserve person's name)
+- "Centro Universitário das Faculdades Metropolitanas Unidas" → "FMU" (known by abbreviation)
+- "Universidade de São Paulo" → "USP" (universally known)
+- "Fundação Getúlio Vargas - São Paulo" → "FGV - SP" (preserve founder, location)
+- "Colégio Santo Agostinho" → "Colégio Santo Agostinho" (keep if already short and meaningful)
+- "Universidade Católica de Brasília" → "UCB" (if widely known) OR "Univ. Católica de Brasília" (if abbreviation not common)
+
+AVOID:
+- Creating abbreviations that nobody would recognize
+- Removing distinctive elements that identify the institution
+- Making names so short they become meaningless
+- Changing well-established names that are already user-friendly
 
 Return ONLY the display name, nothing else."""
 
     try:
         response = await openai_utils.get_completion(
-            model="gpt-5-nano",
-            temperature=None,  # Use default for gpt-5-nano
+            model="gpt-5-mini",
+            temperature=None,  # Use default for reasoning model
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": full_name},
             ],
             json_mode=False,
             timeout=30,
+            reasoning_effort="medium",
         )
         
         display_name = response.strip()
@@ -169,13 +187,13 @@ Return ONLY the display name, nothing else."""
         # Fallback: if OpenAI returns something too long or empty, use a simple truncation
         if not display_name or len(display_name) > 120:
             logger.warning(f"OpenAI returned invalid display name for '{full_name}': '{display_name}'. Using fallback.")
-            # Simple fallback: take first 50 chars and try to end at a word boundary
-            display_name = full_name[:50].rsplit(' ', 1)[0] if ' ' in full_name[:50] else full_name[:50]
+            # Simple fallback: take first 80 chars and try to end at a word boundary
+            display_name = full_name[:80].rsplit(' ', 1)[0] if ' ' in full_name[:80] else full_name[:80]
         
         return display_name
         
     except Exception as e:
         logger.error(f"Error calling OpenAI for display name generation: {e}")
         # Fallback: simple truncation
-        display_name = full_name[:50].rsplit(' ', 1)[0] if ' ' in full_name[:50] else full_name[:50]
+        display_name = full_name[:80].rsplit(' ', 1)[0] if ' ' in full_name[:80] else full_name[:80]
         return display_name
