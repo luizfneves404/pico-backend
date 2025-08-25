@@ -113,7 +113,7 @@ def make_worker_settings(
         on_startup: StartupShutdown | None = startup
         on_shutdown: StartupShutdown | None = shutdown
         burst: bool = burst_mode
-        max_jobs: int = 50
+        max_jobs: int = 40
         cron_jobs: Sequence[CronJob] | None = [
             cron(
                 task_score_flows_for_feed,
