@@ -97,27 +97,36 @@ async def task_determine_institution_display_names(
                 f"We are at institution {batch_start + 1}."
             )
 
-            # Process each institution sequentially within the batch (like embeddings task)
-            for institution in institutions:
-                if not institution.full_name or institution.full_name.strip() == "":
-                    logger.warning(f"Institution {institution.id} has empty full_name, skipping")
+            # Process institutions concurrently within the batch to improve throughput.
+            # Limit concurrency so we don't overwhelm OpenAI or the event loop.
+            concurrency = 20
+            semaphore = asyncio.Semaphore(concurrency)
+
+            async def _gen_for_institution(inst: Institution) -> tuple[int, str | None]:
+                if not inst.full_name or inst.full_name.strip() == "":
+                    return (inst.id, None)
+                async with semaphore:
+                    try:
+                        display_name = await _generate_display_name(inst.full_name)
+                    except Exception:
+                        # Safe fallback: simple truncation
+                        fn = inst.full_name
+                        display_name = fn[:80].rsplit(" ", 1)[0] if " " in fn[:80] else fn[:80]
+                    return (inst.id, display_name)
+
+            tasks = [_gen_for_institution(inst) for inst in institutions]
+            results = await asyncio.gather(*tasks)
+
+            # Apply updates for the batch and commit once per batch (every ~100 institutions)
+            for inst_id, display_name in results:
+                if not display_name:
                     continue
-                
-                try:
-                    logger.info(f"Processing institution {institution.id}: '{institution.full_name}'")
-                    
-                    # Generate display name using OpenAI
-                    display_name = await _generate_display_name(institution.full_name)
-                    
-                    # Update the institution
-                    old_name = institution.name
-                    institution.name = display_name
-                    logger.info(f"✅ Updated institution {institution.id}: '{old_name}' -> '{display_name}'")
-                    
-                except Exception as e:
-                    logger.error(f"❌ Error processing institution {institution.id} ('{institution.full_name}'): {e}")
-                    # Continue processing other institutions
-                    continue
+                stmt = (
+                    update(Institution)
+                    .where(Institution.id == inst_id)
+                    .values(name=display_name)
+                )
+                await session.execute(stmt)
 
             await session.commit()
             processed_count += len(institutions)
@@ -135,43 +144,30 @@ async def _generate_display_name(full_name: str) -> str:
     Returns:
         A shorter, more user-friendly display name
     """
-    system_message = """You are an expert at creating concise, user-friendly display names for Brazilian educational institutions while preserving their core identity and recognition.
+    system_message = """You are an expert at producing concise, user-friendly display names for Brazilian educational institutions while preserving their core identity and recognition.
 
-CORE PRINCIPLE: Preserve the institution's recognizable identity and meaning while making it shorter and more user-friendly.
+CORE PRINCIPLE: Preserve the institution's recognizable identity and meaning while shortening very long formal names into a clearly recognizable label when appropriate.
 
-Guidelines:
-1. PRESERVE MEANING: Never sacrifice the institution's core identity for brevity
-2. Keep display names SHORT but MEANINGFUL (ideally under 60 characters, max 80)
-3. Use well-known abbreviations ONLY when they are widely recognized by students/parents
-4. Keep important institutional identifiers (Federal, Estadual, Instituto, etc.) when they matter for recognition
-5. Preserve professor names, founders, or distinctive identifiers that make the institution unique
-6. Remove only truly redundant words like "de Educação", "Ciência e Tecnologia" in long technical names
-7. For schools with person names, keep the name but can abbreviate titles (Prof., Dr.)
-8. Location can be abbreviated but not removed if it's part of the identity
-
-DECISION PROCESS:
-- Ask: "What would students/parents call this institution?"
-- Ask: "What makes this institution unique and recognizable?"
-- Ask: "Will people still know what institution this is?"
+Heuristics to apply (use these as decision rules):
+- If the official name is short (3 words or fewer) or already clearly recognizable, just return it with the right formatting.
+- If the official name is long (more than 5 words) or contains long generic phrases such as "Escola de Educação Básica e Profissional", "Centro Universitário das Faculdades", or "Instituto Federal de Educação, Ciência e Tecnologia de ...", extract the most distinctive, recognizable entity (often the sponsoring organization or the unique noun phrase). Example: "Escola de Educação Básica e Profissional da Fundação Bradesco" → "Fundação Bradesco". In some cases, those names might compose recognizable acronyms, like "UFRJ" or "UFMG" - in which case you should return the acronym.
+- Preserve personal names and unique identifiers; if the name is primarily a person's name, keep the personal name and shorten surrounding titles (e.g. "Escola Estadual Professor João Silva" → "E.E. Prof. João Silva").
+- Avoid producing ambiguous or lossy abbreviations. Prefer clarity over aggressive shortening.
+- Keep short, distinctive names intact (e.g. "Escola Parque" should remain "Escola Parque", not "Parque").
 
 Examples:
-- "Universidade Federal do Rio de Janeiro" → "UFRJ" (widely known abbreviation)
-- "Universidade Federal de Minas Gerais" → "UFMG" (widely known abbreviation)
-- "Instituto Federal de Educação, Ciência e Tecnologia de São Paulo" → "Instituto Federal de SP" (preserve identity, simplify)
-- "Escola Estadual Professor João Silva" → "E.E. Prof. João Silva" (preserve person's name)
-- "Centro Universitário das Faculdades Metropolitanas Unidas" → "FMU" (known by abbreviation)
 - "Universidade de São Paulo" → "USP" (universally known)
-- "Fundação Getúlio Vargas - São Paulo" → "FGV - SP" (preserve founder, location)
+- "Fundação Getúlio Vargas - São Paulo" → "FGV - SP"
+- "Escola de Educação Básica e Profissional da Fundação Bradesco" → "Fundação Bradesco"
+- "Escola Parque" → "Escola Parque"
 - "Colégio Santo Agostinho" → "Colégio Santo Agostinho" (keep if already short and meaningful)
 - "Universidade Católica de Brasília" → "UCB" (if widely known) OR "Univ. Católica de Brasília" (if abbreviation not common)
 
-AVOID:
-- Creating abbreviations that nobody would recognize
-- Removing distinctive elements that identify the institution
-- Making names so short they become meaningless
-- Changing well-established names that are already user-friendly
 
-Return ONLY the display name, nothing else."""
+Formatting:
+- Return ONLY the display name as a single string, no explanation, no punctuation or extra characters.
+- Aim for under 60 characters, up to 80 only if necessary to preserve identity.
+"""
 
     try:
         logger.info(f"🤖 Calling OpenAI GPT-5-nano for display name generation")
