@@ -170,7 +170,11 @@ async def apple_auth(
         return TokenResponse(
             access_token=access_token, refresh_token=refresh_token, token_type="bearer"
         )
-
+    except service.MissingNameError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Name is required when signing up with Apple",
+        )
     except service.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid ID token"
