@@ -135,20 +135,20 @@ async def _generate_display_name(full_name: str) -> str:
 
 Guidelines:
 1. Keep display names SHORT (ideally under 50 characters)
-2. Remove unnecessary words like "Fundação", "Instituto", "Centro de", "Escola de", etc. when they don't add value
-3. Keep the most recognizable/important part of the name
-4. Remove location details unless they're part of the institution's identity (e.g., "USP" not "Universidade de São Paulo")
-5. Use common abbreviations when widely recognized (e.g., "UFRJ" instead of "Universidade Federal do Rio de Janeiro")
-6. Maintain proper capitalization
-7. Remove redundant words and legal terms
-8. Focus on what users would commonly call the institution
+2. Keep the most recognizable/important part of the name
+3. Remove location details unless they're part of the institution's identity (e.g., "USP" not "Universidade de São Paulo")
+4. Use common abbreviations when widely recognized (e.g., "UFRJ" instead of "Universidade Federal do Rio de Janeiro")
+5. Maintain proper capitalization
+6. Remove redundant words and legal terms
+7. Focus on what users would commonly call the institution
 
 Examples:
-- "Fundação Universidade Federal do Rio de Janeiro" → "UFRJ"
+- "Universidade Federal do Rio de Janeiro" → "UFRJ"
 - "Instituto Federal de Educação, Ciência e Tecnologia de São Paulo" → "IFSP"
 - "Escola Estadual Professor João Silva" → "E.E. Prof. João Silva"
 - "Centro Universitário das Faculdades Metropolitanas Unidas" → "FMU"
 - "Universidade de São Paulo" → "USP"
+- "Fundação Getúlio Vargas - São Paulo" → "FGV - SP"
 
 Return ONLY the display name, nothing else."""
 
