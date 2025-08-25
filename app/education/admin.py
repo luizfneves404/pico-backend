@@ -1,8 +1,12 @@
 from typing import Any, ClassVar, Sequence, Union
 
+from fastapi import HTTPException, Request
+from fastapi.responses import RedirectResponse
 from geoalchemy2 import WKTElement
 from pydantic import BaseModel, Field
+from sqlalchemy import select, update
 from sqlalchemy.orm import InstrumentedAttribute
+from sqladmin import action
 
 from app.education.models import (
     AdministrativeCategory,
@@ -13,11 +17,13 @@ from app.education.models import (
     InstitutionType,
     LevelStage,
 )
+from app.arq_client import enqueue_job
 from app.shared.admin import CustomModelView
 
 
 class InstitutionImportSchema(BaseModel):
     name: str
+    full_name: str | None = None
     user_submitted: bool
     institution_type: InstitutionType
     government_issued_code: str | None
@@ -38,6 +44,7 @@ class InstitutionAdmin(CustomModelView, model=Institution):
     ] = [
         Institution.id,
         Institution.name,
+        Institution.full_name,
         Institution.user_submitted,
         Institution.institution_type,
         Institution.country,
@@ -51,7 +58,7 @@ class InstitutionAdmin(CustomModelView, model=Institution):
     ]
     column_searchable_list: ClassVar[
         Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
-    ] = [Institution.name, Institution.address, Institution.city]
+    ] = [Institution.name, Institution.full_name, Institution.address, Institution.city]
     column_sortable_list: ClassVar[
         Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
     ] = [
@@ -64,6 +71,7 @@ class InstitutionAdmin(CustomModelView, model=Institution):
 
     form_columns = [
         Institution.name,
+        Institution.full_name,
         Institution.user_submitted,
         Institution.institution_type,
         Institution.country,
@@ -79,6 +87,7 @@ class InstitutionAdmin(CustomModelView, model=Institution):
     import_schema = InstitutionImportSchema
     import_template_data = {
         "name": "Arlekia University",
+        "full_name": "Universidade Arlekia - Centro de Ensino Superior e Tecnologia",
         "user_submitted": True,
         "institution_type": "college",
         "country_id": 1,
@@ -97,6 +106,7 @@ class InstitutionAdmin(CustomModelView, model=Institution):
         return [
             Institution(
                 name=validated_data.name,
+                full_name=validated_data.full_name or validated_data.name,  # Default to name if not provided
                 user_submitted=validated_data.user_submitted,
                 institution_type=validated_data.institution_type,
                 country_id=validated_data.country_id,
@@ -113,6 +123,78 @@ class InstitutionAdmin(CustomModelView, model=Institution):
             )
             for validated_data in validated_data_list
         ]
+
+    @action(
+        name="migrate_to_full_name",
+        label="Migrar para nome completo",
+        confirmation_message="Tem certeza que quer copiar o campo 'name' para 'full_name' das instituições selecionadas?",
+        add_in_detail=False,
+        add_in_list=True,
+    )
+    async def migrate_to_full_name(self, request: Request) -> RedirectResponse:
+        """Copy current name to full_name for selected institutions."""
+        pks_str = request.query_params.get("pks", "")
+
+        if pks_str == "__all__":
+            pks = None
+        else:
+            try:
+                pks = [int(pk) for pk in pks_str.split(",")]
+                if not pks:
+                    referer = request.headers.get("Referer")
+                    return RedirectResponse(
+                        referer or request.url_for("admin:list", identity=self.identity)
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid primary key format."
+                )
+
+        await enqueue_job(
+            "task_migrate_institutions_to_full_name",
+            institution_ids=pks,
+        )
+
+        referer = request.headers.get("Referer")
+        return RedirectResponse(
+            referer or request.url_for("admin:list", identity=self.identity)
+        )
+
+    @action(
+        name="determine_display_name",
+        label="Determinar nome de exibição",
+        confirmation_message="Tem certeza que quer gerar nomes de exibição usando OpenAI para as instituições selecionadas?",
+        add_in_detail=False,
+        add_in_list=True,
+    )
+    async def determine_display_name(self, request: Request) -> RedirectResponse:
+        """Generate display names using OpenAI for selected institutions."""
+        pks_str = request.query_params.get("pks", "")
+
+        if pks_str == "__all__":
+            pks = None
+        else:
+            try:
+                pks = [int(pk) for pk in pks_str.split(",")]
+                if not pks:
+                    referer = request.headers.get("Referer")
+                    return RedirectResponse(
+                        referer or request.url_for("admin:list", identity=self.identity)
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid primary key format."
+                )
+
+        await enqueue_job(
+            "task_determine_institution_display_names",
+            institution_ids=pks,
+        )
+
+        referer = request.headers.get("Referer")
+        return RedirectResponse(
+            referer or request.url_for("admin:list", identity=self.identity)
+        )
 
 
 class EducationLevelImportSchema(BaseModel):
