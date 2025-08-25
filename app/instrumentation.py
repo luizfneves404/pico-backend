@@ -53,6 +53,9 @@ class ArqPollingSampler(Sampler):
                 statement.startswith("ZRANGEBYSCORE")
                 or statement.startswith("PSETEX")
                 or statement.startswith("ZCARD")
+                or statement.startswith("ZSCORE")
+                or statement.startswith("WATCH")
+                or statement.startswith("EXISTS")
             ):
                 # Tell OpenTelemetry to drop this span and not record it.
                 return SamplingResult(decision=Decision.DROP)
