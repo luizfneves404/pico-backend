@@ -832,6 +832,33 @@ async def compute_embedding(text: str) -> list[float]: ...
 async def compute_embedding(text: list[str]) -> list[list[float]]: ...
 
 
+def parse_topic_for_embedding(text: str) -> str:
+    """Parse topic string to extract just the topic part for embedding.
+    
+    Input: 'locale": "pt", "topic": "machine learning"'
+    Output: 'machine learning'
+    """
+    if not text.strip():
+        return text
+    
+    try:
+        import re
+        # Look for "topic": "..." pattern
+        pattern = r'"topic"\s*:\s*"([^"]*)"'
+        match = re.search(pattern, text)
+        
+        if match:
+            return match.group(1)  # Return the content inside quotes
+        else:
+            # If no pattern found, return original string (backward compatibility)
+            return text
+            
+    except Exception as e:
+        logger.warning(f"Error parsing topic string for embedding '{text}': {e}")
+        # Return original string as fallback
+        return text
+
+
 async def compute_embedding(text: str | list[str]) -> list[float] | list[list[float]]:
     """
     Asynchronously computes and returns embeddings for text input.
@@ -844,14 +871,16 @@ async def compute_embedding(text: str | list[str]) -> list[float] | list[list[fl
         For a list of strings: A list of embedding vectors (list of list of floats)
     """
     if isinstance(text, list):
+        # Parse each text in the list to extract topic if needed
+        parsed_texts = [parse_topic_for_embedding(item) for item in text]
         logger.info(
             "Async computing embeddings for %d texts with model=%s. The first 100 characters of the first text are: %s",
-            len(text),
+            len(parsed_texts),
             EMBEDDING_MODEL,
-            text[0][:100],
+            parsed_texts[0][:100],
         )
         total: list[list[float]] = []
-        for group in group_text_chunks(text):
+        for group in group_text_chunks(parsed_texts):
             for item in group:
                 validate_input(item)
             response = await openai_request(
@@ -865,16 +894,18 @@ async def compute_embedding(text: str | list[str]) -> list[float] | list[list[fl
         logger.debug("Successfully computed embeddings for text list")
         return total
     else:
+        # Parse the single text to extract topic if needed
+        parsed_text = parse_topic_for_embedding(text)
         logger.info(
             "Async computing embedding for single text with model=%s. The first 100 characters of the text are: %s",
             EMBEDDING_MODEL,
-            text[:100],
+            parsed_text[:100],
         )
-        validate_input(text)
+        validate_input(parsed_text)
         result = await openai_request(
             endpoint="embeddings",
             model=EMBEDDING_MODEL,
-            input_text=text,
+            input_text=parsed_text,
             dimensions=NUMBER_OF_EMBEDDING_DIMENSIONS,
             timeout=DEFAULT_TIMEOUT,
         )
