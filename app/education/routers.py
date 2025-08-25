@@ -23,7 +23,19 @@ router = APIRouter(prefix="/education", tags=["education"])
 async def list_levels(
     db_session: DBSessionAnnotated, country_code: str | None = None
 ) -> list[EducationLevelOut]:
+    # Log what the frontend sent
+    logger.info(f"Frontend requested education levels with country_code='{country_code}'")
+    
     levels = await education_service.list_levels(db_session, country_code=country_code)
+    
+    # Log what we're returning
+    logger.info(f"Returning {len(levels)} education levels to frontend")
+    for level in levels:
+        stage_count = len(level.stages) if hasattr(level, 'stages') else 0
+        course_count = len(level.courses) if hasattr(level, 'courses') else 0
+        level_name = level.name_i18n.get('en', 'Unknown') if level.name_i18n else 'Unknown'
+        logger.info(f"Level '{level_name}': {stage_count} stages, {course_count} courses")
+    
     return [EducationLevelOut.from_orm_model(level) for level in levels]
 
 

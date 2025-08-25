@@ -129,7 +129,17 @@ async def search_institutions(
     institutions = list(result.scalars())
     
     # Debug logging
-    logger.info(f"Institution search: name='{name}', level_id={education_level_id}, location={'provided' if latitude and longitude else 'not provided'}, results={len(institutions)}")
+    location_info = f"lat={latitude}, lon={longitude}" if latitude and longitude else "not provided"
+    logger.info(f"Institution search: name='{name}', level_id={education_level_id}, location={location_info}, results={len(institutions)}")
+    
+    if institutions:
+        # Log sample results
+        sample_institutions = institutions[:3]
+        for i, inst in enumerate(sample_institutions):
+            has_location = "YES" if inst.location else "NO"
+            logger.info(f"Sample result {i+1}: '{inst.name}' (has_location: {has_location})")
+    else:
+        logger.warning("No institutions found - this might indicate a filtering issue")
     
     return institutions
 
@@ -285,12 +295,12 @@ async def list_levels(
     )
 
     if country_code:
-        # First try to get stages for the specific country, then fall back to default stages
+        # Show stages for the specific country OR default stages (is_default=True)
         stmt = stmt.options(
             with_loader_criteria(
                 LevelStage, 
                 (LevelStage.country.has(Country.code == country_code)) | 
-                (LevelStage.is_default.is_(True))
+                (LevelStage.is_default == True)
             )
         )
 
@@ -298,6 +308,17 @@ async def list_levels(
     levels = list(result.scalars().unique())
     
     # Log for debugging
-    logger.info(f"list_levels: country_code='{country_code}', found {len(levels)} levels")
+    total_stages = sum(len(level.stages) for level in levels)
+    logger.info(f"list_levels SERVICE: country_code='{country_code}', found {len(levels)} levels with {total_stages} total stages")
+    
+    # Log details about each level and its stages
+    for level in levels:
+        level_name = level.name_i18n.get('en', 'Unknown') if level.name_i18n else 'Unknown'
+        stage_details = []
+        for stage in level.stages:
+            stage_country = stage.country.code if stage.country else "None"
+            stage_info = f"{stage.name}(country:{stage_country},default:{stage.is_default})"
+            stage_details.append(stage_info)
+        logger.info(f"SERVICE Level '{level_name}': stages=[{', '.join(stage_details)}]")
     
     return levels
