@@ -43,7 +43,7 @@ class User(Base, kw_only=True):
     hashed_password: Mapped[str] = mapped_column(String(255), default="")
     google_id: Mapped[str] = mapped_column(String(255), server_default="")
     apple_id: Mapped[str] = mapped_column(String(255), server_default="")
-    instagram_account: Mapped[str] = mapped_column(String(255), server_default="")
+    instagram_account: Mapped[str] = mapped_column(String(255), default="", server_default="")
 
     is_superuser: Mapped[bool] = mapped_column(default=False)
 
