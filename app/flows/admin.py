@@ -753,6 +753,18 @@ class QuestionAdmin(CustomModelView, model=Question):
             selectinload(Question.choices),
         )
 
+    def details_query(self, request: Request) -> Select[tuple[Question]]:
+        """Ensure related objects are eagerly loaded for the details view so answer content is available."""
+        stmt: Select[tuple[Question]] = super().details_query(request)  # type: ignore
+
+        return stmt.options(
+            selectinload(Question.official_source).options(
+                selectinload(OfficialQuestionSource.exam),
+            ),
+            selectinload(Question.source_user),
+            selectinload(Question.choices),
+        )
+
     async def on_model_change(
         self,
         data: dict[str, Any],
