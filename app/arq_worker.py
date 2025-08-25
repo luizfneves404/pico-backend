@@ -18,6 +18,9 @@ import app.arq_client as arq_client
 import app.redis_client as redis_client
 from app.config import settings
 from app.database import SessionFactory, db_manager
+from app.education.tasks import (
+    task_determine_institution_display_names,
+)
 from app.fcm.fcm_service import task_send_notifications
 from app.firebase_config import init_firebase
 from app.flows.flow_feed import task_score_flows_for_feed
@@ -30,17 +33,13 @@ from app.flows.question_utils import (
     task_categorize_major_tags,
     task_categorize_minor_tags,
     task_compute_question_embeddings,
-    task_fix_question_newlines,
     task_consolidate_flow_tags,
+    task_fix_question_newlines,
     task_generate_and_consolidate_tags,
     task_generate_question_answers,
     task_recompute_question_embeddings,
 )
 from app.flows.tasks import task_mark_question_timed_out
-from app.education.tasks import (
-    task_determine_institution_display_names,
-    task_migrate_institutions_to_full_name,
-)
 from app.instrumentation import instrument_worker
 from app.logging_config import get_logging_config
 from app.mail import task_send_email
@@ -108,20 +107,13 @@ def make_worker_settings(
             task_fix_question_newlines,
             task_consolidate_flow_tags,
             task_generate_and_consolidate_tags,
-            task_migrate_institutions_to_full_name,
             task_determine_institution_display_names,
         ]
         redis_settings: RedisSettings = RedisSettings.from_dsn(redis_url)
         on_startup: StartupShutdown | None = startup
         on_shutdown: StartupShutdown | None = shutdown
         burst: bool = burst_mode
-        # Performance optimizations
-        max_concurrent_jobs: int = 20  # Increase from default 10
-        job_timeout: int = 600  # 10 minutes timeout (increase from 5 min default)
-        max_tries: int = 3  # Reduce retries from default 5 to prevent queue clogging
-        # Additional optimizations
-        poll_delay: float = 0.5  # Check for jobs more frequently (default 1s)
-        queue_read_limit: int = 100  # Read more jobs from queue at once (default 10)
+        max_concurrent_jobs: int = 20
         cron_jobs: Sequence[CronJob] | None = [
             cron(
                 task_score_flows_for_feed,
