@@ -52,7 +52,7 @@ from app.users.exceptions import (
     InvalidResetTokenError,
     InvalidStageIdError,
     InvalidTokenError,
-    MissingNameError,
+
     PhoneNumberAlreadyExists,
     ReferredByNotFoundError,
     SocialAuthError,
@@ -82,7 +82,7 @@ __all__ = [
     "AccountExistsError",
     "InvalidCountryCodeError",
     "InvalidResetTokenError",
-    "MissingNameError",
+
     # Constants
     "ACCESS_TOKEN_EXPIRE_MINUTES",
     "DELETED_USERNAME",
@@ -305,7 +305,7 @@ async def _create_social_user(
 
     Args:
         db_session: Database session
-        name: User's name
+        name: User's name (if None, will be generated from email)
         email: User's email
         google_id: Google ID if authenticating with Google
         apple_id: Apple ID if authenticating with Apple
@@ -317,7 +317,8 @@ async def _create_social_user(
         UsernameAlreadyExists: If generated username is taken
         EmailAlreadyExists: If email is taken
     """
-    display_name = name or f"User {random.randint(1000, 9999)}"
+    # Generate a name from email if not provided by social provider
+    display_name = name or _generate_name_from_email(email)
 
     return await _create_user(
         db_session,
@@ -681,10 +682,8 @@ async def authenticate_user_by_apple(
             # you're going to have to do more to convince me that
             # this email on your apple account is yours
             raise AccountExistsError
-    else:
-        if name is None:
-            raise MissingNameError("Name is required when creating a new user")
 
+    # Create new user - name can be None, will be generated from email if needed
     return await _create_social_user(
         db_session,
         name=name,
@@ -693,6 +692,39 @@ async def authenticate_user_by_apple(
         signup_source=signup_source,
         referred_by_username=referred_by_username,
     )
+
+
+def _generate_name_from_email(email: str) -> str:
+    """Generate a display name from an email address.
+    
+    Args:
+        email: The email address to generate a name from
+        
+    Returns:
+        A human-readable name based on the email
+        
+    Examples:
+        "john.doe@example.com" -> "John Doe"
+        "jane_smith123@gmail.com" -> "Jane Smith"
+        "user@domain.co" -> "User"
+    """
+    # Extract the local part (before @)
+    local_part = email.split("@")[0]
+    
+    # Replace common separators with spaces
+    name_parts = local_part.replace(".", " ").replace("_", " ").replace("-", " ")
+    
+    # Remove numbers and special characters, keep only letters and spaces
+    clean_name = "".join(char for char in name_parts if char.isalpha() or char.isspace())
+    
+    # Split into words, capitalize each, and join
+    words = [word.capitalize() for word in clean_name.split() if word]
+    
+    if not words:
+        # Fallback if no valid words found
+        return "User"
+    
+    return " ".join(words)
 
 
 def _normalize_username(raw_name: str) -> str:
