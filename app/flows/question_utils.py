@@ -561,6 +561,7 @@ Texto extraído:
 
         response = await openai_utils.get_completion(
             model="gpt-5-mini",
+            temperature=None,
             messages=fallback_messages,  # type: ignore
             timeout=20,
             reasoning_effort="medium",
@@ -617,6 +618,7 @@ Analise a questão e identifique as tags mais apropriadas.
 
         response = await openai_utils.get_completion(
             model="gpt-5-mini",
+            temperature=None,
             messages=messages,
             timeout=20,
             reasoning_effort="medium",
@@ -1070,7 +1072,7 @@ async def task_categorize_questions(
 
                 # Generate minor tags
                 minor_tags = await _generate_minor_tags(
-                    question_text_with_choices, temperature, image_urls
+                    question_text_with_choices, image_urls
                 )
 
                 # Update question with tags
