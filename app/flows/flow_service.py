@@ -431,6 +431,9 @@ async def create_flow_with_optional_files(
                 raise InvalidFileTypeError(f"Unsupported file type: {content_type}")
 
     flow_input_type = FlowInputType.FILES if files else FlowInputType.TOPIC
+    
+    # Parse the topic string to extract just the topic part (for both files and topic flows)
+    parsed_topic = parse_topic_string(topic) if topic else ""
 
     if files:
         # For now, we'll use a placeholder title since transcription titles aren't available yet
@@ -440,16 +443,16 @@ async def create_flow_with_optional_files(
         )
         logger.info(f"Creating flow with files for user {user.id}")
     else:
-        title = topic
-        requires_math = await check_if_topic_involves_math_calculations(title)
-        logger.info(f"Creating flow with topic for user {user.id}")
+        title = parsed_topic  # Use the parsed topic as the flow title
+        requires_math = await check_if_topic_involves_math_calculations(parsed_topic)
+        logger.info(f"Creating flow with topic for user {user.id}: original='{topic}' -> parsed='{parsed_topic}'")
 
     flow = Flow(
         title=title,
         difficulty=FlowDifficulty.ALL,  # Default difficulty
         question_answer_type=QuestionAnswerType.MULTIPLE_CHOICE,  # Default answer type
         flow_input_type=flow_input_type,
-        input_topic=topic if topic and not files else "",
+        input_topic=parsed_topic if topic and not files else "",
         created_by_id=user.id,
         source_type=FlowSourceType.OFFICIAL,  # Default source type for new flows
         has_quantitative_questions=requires_math,
@@ -968,6 +971,36 @@ async def add_questions_to_flow_full(
     await notify_communities_flow_posted(db_session, actor=flow.created_by, flow=flow)
 
     return flow
+
+
+
+def parse_topic_string(topic_string: str) -> str:
+    """Parse topic string to extract just the topic part.
+    
+    Input: 'locale": "pt", "topic": "machine learning"'
+    Output: 'machine learning'
+    """
+    if not topic_string.strip():
+        return topic_string
+    
+    try:
+        # Look for "topic": "..." pattern
+        import re
+        
+        # Match "topic": "anything" (handling escaped quotes)
+        pattern = r'"topic"\s*:\s*"([^"]*)"'
+        match = re.search(pattern, topic_string)
+        
+        if match:
+            return match.group(1)  # Return the content inside quotes
+        else:
+            # If no pattern found, return original string (backward compatibility)
+            return topic_string
+            
+    except Exception as e:
+        logger.warning(f"Error parsing topic string '{topic_string}': {e}")
+        # Return original string as fallback
+        return topic_string
 
 
 async def check_if_topic_involves_math_calculations(topic: str) -> bool:
