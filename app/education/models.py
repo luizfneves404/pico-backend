@@ -27,7 +27,8 @@ class InstitutionType(StrEnum):
 class Institution(Base, kw_only=True):
     """Represents an institution offering an education level."""
 
-    name: Mapped[str] = mapped_column(String(120))
+    name: Mapped[str] = mapped_column(String(120))  # Display name (shorter, user-friendly)
+    full_name: Mapped[str] = mapped_column(String(500), default="")  # Full official name
     country_id: Mapped[int] = mapped_column(ForeignKey("country.id"), default=None)
     country: Mapped["Country"] = relationship(lazy="raise_on_sql", default=None)
     level_id: Mapped[int] = mapped_column(
