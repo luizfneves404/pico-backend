@@ -2,6 +2,7 @@
 ARQ tasks for education-related operations.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -96,7 +97,7 @@ async def task_determine_institution_display_names(
                 f"We are at institution {batch_start + 1}."
             )
 
-            # Process each institution individually to get better results
+            # Process each institution sequentially within the batch (like embeddings task)
             for institution in institutions:
                 if not institution.full_name or institution.full_name.strip() == "":
                     logger.warning(f"Institution {institution.id} has empty full_name, skipping")
@@ -109,11 +110,12 @@ async def task_determine_institution_display_names(
                     display_name = await _generate_display_name(institution.full_name)
                     
                     # Update the institution
+                    old_name = institution.name
                     institution.name = display_name
-                    logger.info(f"✅ Successfully updated institution {institution.id}: '{institution.full_name}' -> '{display_name}'")
+                    logger.info(f"✅ Updated institution {institution.id}: '{old_name}' -> '{display_name}'")
                     
                 except Exception as e:
-                    logger.error(f"❌ Error generating display name for institution {institution.id} ('{institution.full_name}'): {e}")
+                    logger.error(f"❌ Error processing institution {institution.id} ('{institution.full_name}'): {e}")
                     # Continue processing other institutions
                     continue
 
@@ -172,19 +174,18 @@ AVOID:
 Return ONLY the display name, nothing else."""
 
     try:
-        logger.info(f"🤖 Calling OpenAI GPT-5-mini for display name generation")
+        logger.info(f"🤖 Calling OpenAI GPT-5-nano for display name generation")
         logger.debug(f"Input full_name: '{full_name}'")
         
         response = await openai_utils.get_completion(
-            model="gpt-5-mini",
-            temperature=None,  # Use default for reasoning model
+            model="gpt-5-nano",
+            temperature=None,  # No temperature for nano
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": full_name},
             ],
             json_mode=False,
-            timeout=30,
-            reasoning_effort="medium",
+            timeout=15,  # Shorter timeout for nano
         )
         
         logger.info(f"✅ OpenAI response received - Tokens used: {response.tokens_used}")
