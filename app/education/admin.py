@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any, ClassVar, Sequence, Union
 
 from fastapi import HTTPException, Request
@@ -158,14 +157,10 @@ class InstitutionAdmin(CustomModelView, model=Institution):
                 referer or request.url_for("admin:list", identity=self.identity)
             )
 
-        await asyncio.gather(
-            *(
-                enqueue_job(
-                    "task_determine_institution_display_name", institution_id=inst_id
-                )
-                for inst_id in ids
+        for inst_id in ids:
+            await enqueue_job(
+                "task_determine_institution_display_name", institution_id=inst_id
             )
-        )
 
         referer = request.headers.get("Referer")
         return RedirectResponse(
