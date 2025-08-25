@@ -1,3 +1,4 @@
+import logging
 from geoalchemy2 import WKTElement
 from geoalchemy2.functions import ST_Distance
 from geoalchemy2.types import Geography
@@ -20,6 +21,8 @@ from app.education.models import (
 
 MAX_DISTANCE_INSTITUTION_SEARCH = 10_000
 MAX_INSTITUTIONS_SEARCH_LIMIT = 50
+
+logger = logging.getLogger(__name__)
 
 
 class InstitutionNotFoundError(Exception):
@@ -114,14 +117,21 @@ async def search_institutions(
     else:
         stmt = stmt.order_by(Institution.name)  # or whatever default you prefer
 
+    if filters:
+        stmt = stmt.where(*filters)
+    
     stmt = (
-        stmt.where(*filters)
-        .limit(MAX_INSTITUTIONS_SEARCH_LIMIT)
+        stmt.limit(MAX_INSTITUTIONS_SEARCH_LIMIT)
         .options(selectinload(Institution.country))
     )
 
     result = await db.execute(stmt)
-    return list(result.scalars())
+    institutions = list(result.scalars())
+    
+    # Debug logging
+    logger.info(f"Institution search: name='{name}', level_id={education_level_id}, location={'provided' if latitude and longitude else 'not provided'}, results={len(institutions)}")
+    
+    return institutions
 
 
 async def create_institution(

@@ -2,6 +2,8 @@ import logging
 
 from fastapi import APIRouter, HTTPException, status
 
+logger = logging.getLogger(__name__)
+
 from app.deps import DBSessionAnnotated
 from app.education import service as education_service
 from app.education.schemas import (
@@ -55,6 +57,9 @@ async def create_institution(
 async def search_institutions(
     db_session: DBSessionAnnotated, search_institutions: SearchInstitutionsRequest
 ) -> list[InstitutionOut]:
+    # Log what the frontend sent
+    logger.info(f"Frontend search request: name='{search_institutions.name}', education_level_id={search_institutions.education_level_id}, location={search_institutions.location}")
+    
     institutions = await education_service.search_institutions(
         db_session,
         name=search_institutions.name,
@@ -66,6 +71,12 @@ async def search_institutions(
         if search_institutions.location
         else None,
     )
+    
+    # Log what we're returning
+    logger.info(f"Returning {len(institutions)} institutions to frontend")
+    if institutions:
+        logger.info(f"First institution: {institutions[0].name}")
+    
     return [InstitutionOut.from_orm_model(institution) for institution in institutions]
 
 
