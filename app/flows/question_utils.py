@@ -145,7 +145,7 @@ Estrutura sugerida da resposta:
 
 
 async def categorize_minor_tags(
-    db_session: AsyncSession, question_id: int, temperature: float = 0.1
+    db_session: AsyncSession, question_id: int
 ) -> MinorTagsCategorization:
     """
     Generate minor tags for a question using TAGS approach with gpt-5-mini.
@@ -154,7 +154,6 @@ async def categorize_minor_tags(
     Args:
         db_session: Database session
         question_id: ID of the question to categorize
-        temperature: Temperature for AI model
 
     Returns:
         MinorTagsCategorization: Categorization result with minor tags only
@@ -182,7 +181,7 @@ async def categorize_minor_tags(
 
         # Generate minor tags using the full categorization system
         minor_tags = await _generate_minor_tags(
-            question_text_with_choices, temperature, image_urls
+            question_text_with_choices, image_urls
         )
 
         result = MinorTagsCategorization(minor_tags=minor_tags)
@@ -290,7 +289,6 @@ Alternativa correta: {correct_choice_letter}
         # Use gpt-5 model with reasoning effort for better quality
         response = await openai_utils.get_completion(
             model="gpt-5",
-            temperature=None,  # Temperature is ignored for reasoning models
             messages=messages,
             timeout=90,
             reasoning_effort="high",
@@ -355,7 +353,6 @@ async def is_quantitative(
         # Use gpt-5 with high reasoning effort
         response = await openai_utils.get_completion(
             model="gpt-5",
-            temperature=None,
             messages=messages,
             timeout=30,
             reasoning_effort="high",
@@ -422,7 +419,7 @@ async def get_question_image_urls(
 
 
 async def categorize_major_tag(
-    db_session: AsyncSession, question_id: int, temperature: float = 0.1
+    db_session: AsyncSession, question_id: int
 ) -> MajorTagCategorization:
     """
     Generate major tag (subject) for a question using gpt-5-mini.
@@ -430,7 +427,6 @@ async def categorize_major_tag(
     Args:
         db_session: Database session
         question_id: ID of the question to categorize
-        temperature: Temperature for AI model
 
     Returns:
         MajorTagCategorization: Major tag (subject) categorization result
@@ -523,7 +519,6 @@ Texto extraído:
 
             response = await openai_utils.get_completion(
                 model="gpt-5-mini",
-                temperature=0.1,
                 messages=messages,  # type: ignore
                 timeout=20,
                 reasoning_effort="medium",
@@ -565,7 +560,6 @@ Texto extraído:
 
         response = await openai_utils.get_completion(
             model="gpt-5-mini",
-            temperature=0.1,
             messages=fallback_messages,  # type: ignore
             timeout=20,
             reasoning_effort="medium",
@@ -585,7 +579,6 @@ Texto extraído:
 
 async def _generate_minor_tags(
     question_text_with_choices: str,
-    temperature: float,
     image_urls: list[str] | None = None,
 ) -> list[str]:
     """Generate minor tags for detailed categorization."""
@@ -623,7 +616,6 @@ Analise a questão e identifique as tags mais apropriadas.
 
         response = await openai_utils.get_completion(
             model="gpt-5-mini",
-            temperature=temperature,
             messages=messages,
             timeout=20,
             reasoning_effort="medium",
@@ -1015,7 +1007,6 @@ async def task_compute_question_embeddings(
 async def task_categorize_questions(
     ctx: dict[str, Any],
     question_ids: list[int] | None,
-    temperature: float = 0.3,
 ) -> None:
     """
     Asynchronously categorizes questions using TAGS approach.
@@ -1025,7 +1016,6 @@ async def task_categorize_questions(
     Args:
         ctx: ARQ worker context
         question_ids: List of question IDs to process, None means all questions
-        temperature: Temperature for AI model
     """
     async with get_db_session_for_worker(ctx) as session:
         if question_ids is None:

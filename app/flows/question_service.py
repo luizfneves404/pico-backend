@@ -522,7 +522,6 @@ async def check_if_titles_involve_math_calculations(block_titles: list[str]) -> 
     ]
     response = await openai_utils.get_completion(
         model="gpt-5-mini",
-        temperature=0.2,
         messages=cast(list[ChatCompletionMessageParam], messages),
         json_mode=False,
         timeout=30,
@@ -558,7 +557,6 @@ async def generate_tags_for_topic(topic: str) -> tuple[list[str], list[str]]:
             ],
             json_mode=False,
             timeout=30,
-            temperature=0.3,
             reasoning_effort="medium",
         )
 
@@ -591,7 +589,6 @@ async def _classify_topic_subject(topic: str) -> str:
 
         response = await openai_utils.get_completion(
             model="gpt-5-mini",
-            temperature=0.1,
             messages=messages,
             timeout=30,
             reasoning_effort="medium",
@@ -655,7 +652,6 @@ async def get_topic_user_generated_questions(
     ]
     response = await openai_utils.get_completion_parsed(
         model=model,
-        temperature=0.5,
         messages=messages,
         response_format=QuestionSet,
         reasoning_effort="medium",
@@ -831,7 +827,6 @@ async def get_files_user_generated_questions(
         try:
             response = await openai_utils.get_completion_parsed(
                 model=model,
-                temperature=0.5,
                 messages=messages,
                 response_format=QuestionSet,
                 reasoning_effort="medium",
@@ -1276,7 +1271,6 @@ async def _generate_block_title(block_text: str) -> str:
             ],
             json_mode=False,
             timeout=30,
-            temperature=0.5,
             reasoning_effort="medium",
         )
         return response.content.strip()
@@ -1302,7 +1296,6 @@ async def generate_flow_title_from_block_titles(
     try:
         result = await openai_utils.get_completion(
             model="gpt-5-mini",
-            temperature=0.5,
             messages=[
                 {
                     "role": "system",
@@ -1417,7 +1410,6 @@ async def verify_question_pertinence_to_topic(
             messages=cast(list[ChatCompletionMessageParam], messages),
             json_mode=False,
             timeout=45,  # Increased timeout for vision capabilities
-            temperature=0.5,
             reasoning_effort="medium",
         )
 

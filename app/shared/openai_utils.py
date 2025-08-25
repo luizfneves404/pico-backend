@@ -38,7 +38,7 @@ DEFAULT_TIMEOUT = 60
 MAX_RETRIES = 3
 
 # Models that support reasoning_effort parameter
-REASONING_EFFORT_MODELS = ["o3-mini", "o3", "o4-mini"]
+REASONING_EFFORT_MODELS = ["o3-mini", "o3", "o4-mini", "gpt-5-mini", "gpt-5"]
 
 logger = logging.getLogger(__name__)
 
@@ -788,8 +788,7 @@ async def transcribe_image(image_url: str) -> str:
     logger.info("Transcribing image with model=gpt-4.1-nano")
     response = await openai_request(
         endpoint="chat_completion",
-        model="gpt-4.1-nano",
-        temperature=0.1,
+        model="gpt-5-nano",
         messages=[
             {
                 "role": "system",
