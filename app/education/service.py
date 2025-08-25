@@ -290,7 +290,7 @@ async def list_levels(
             with_loader_criteria(
                 LevelStage, 
                 (LevelStage.country.has(Country.code == country_code)) | 
-                (LevelStage.is_default == True)
+                (LevelStage.is_default.is_(True))
             )
         )
 
@@ -299,8 +299,5 @@ async def list_levels(
     
     # Log for debugging
     logger.info(f"list_levels: country_code='{country_code}', found {len(levels)} levels")
-    for level in levels:
-        stage_count = len([s for s in level.stages if s.country is None or (s.country and s.country.code == country_code) or s.is_default])
-        logger.info(f"Level '{level.name_i18n.get('en', 'Unknown')}': {stage_count} applicable stages")
     
     return levels
