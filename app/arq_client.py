@@ -60,6 +60,12 @@ def _get_redis() -> ArqRedis:
 
 async def enqueue_job(function: str, *args: Any, **kwargs: Any) -> None:
     """Enqueue a job to be processed by the ARQ worker.
+    Don't call this in a for loop if it's a lot of jobs! Use asyncio.gather instead:
+    ```
+    await asyncio.gather(
+        *(enqueue_job("task", item) for item in items)
+    )
+    ```
 
     Args:
         function: The name of the function to execute

@@ -19,7 +19,7 @@ import app.redis_client as redis_client
 from app.config import settings
 from app.database import SessionFactory, db_manager
 from app.education.tasks import (
-    task_determine_institution_display_names,
+    task_determine_institution_display_name,
 )
 from app.fcm.fcm_service import task_send_notifications
 from app.firebase_config import init_firebase
@@ -107,13 +107,13 @@ def make_worker_settings(
             task_fix_question_newlines,
             task_consolidate_flow_tags,
             task_generate_and_consolidate_tags,
-            task_determine_institution_display_names,
+            task_determine_institution_display_name,
         ]
         redis_settings: RedisSettings = RedisSettings.from_dsn(redis_url)
         on_startup: StartupShutdown | None = startup
         on_shutdown: StartupShutdown | None = shutdown
         burst: bool = burst_mode
-        max_concurrent_jobs: int = 20
+        max_jobs: int = 50
         cron_jobs: Sequence[CronJob] | None = [
             cron(
                 task_score_flows_for_feed,

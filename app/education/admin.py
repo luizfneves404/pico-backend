@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, ClassVar, Sequence, Union
 
 from fastapi import HTTPException, Request
@@ -5,6 +6,7 @@ from fastapi.responses import RedirectResponse
 from geoalchemy2 import WKTElement
 from pydantic import BaseModel, Field
 from sqladmin import action
+from sqlalchemy import select
 from sqlalchemy.orm import InstrumentedAttribute
 
 from app.arq_client import enqueue_job
@@ -132,27 +134,37 @@ class InstitutionAdmin(CustomModelView, model=Institution):
         add_in_list=True,
     )
     async def determine_display_name(self, request: Request) -> RedirectResponse:
-        """Generate display names using OpenAI for selected institutions."""
+        """Enqueue per-institution display name generation tasks."""
         pks_str = request.query_params.get("pks", "")
 
+        ids: list[int]
         if pks_str == "__all__":
-            pks = None
+            # Fetch all institution ids matching desired filter (non-empty full_name)
+            results = await self._run_arbitrary_query(
+                select(Institution.id).where(Institution.full_name != "")
+            )
+            ids = [result[0] for result in results]
         else:
             try:
-                pks = [int(pk) for pk in pks_str.split(",")]
-                if not pks:
-                    referer = request.headers.get("Referer")
-                    return RedirectResponse(
-                        referer or request.url_for("admin:list", identity=self.identity)
-                    )
+                ids = [int(pk) for pk in pks_str.split(",") if pk]
             except ValueError:
                 raise HTTPException(
                     status_code=400, detail="Invalid primary key format."
                 )
 
-        await enqueue_job(
-            "task_determine_institution_display_names",
-            institution_ids=pks,
+        if not ids:
+            referer = request.headers.get("Referer")
+            return RedirectResponse(
+                referer or request.url_for("admin:list", identity=self.identity)
+            )
+
+        await asyncio.gather(
+            *(
+                enqueue_job(
+                    "task_determine_institution_display_name", institution_id=inst_id
+                )
+                for inst_id in ids
+            )
         )
 
         referer = request.headers.get("Referer")

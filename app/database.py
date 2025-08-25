@@ -32,6 +32,8 @@ type SessionFactory = Callable[[], AsyncContextManager[AsyncSession]]
 
 
 class DatabaseSessionManager:
+    """Note: Don't use these methods in SQLAdmin actions or views, use self._run_arbitrary_query instead."""
+
     def __init__(self) -> None:
         self._engine: AsyncEngine | None = None
         self._sessionmaker: async_sessionmaker[AsyncSession] | None = None
@@ -124,6 +126,14 @@ class DatabaseSessionManager:
 
     @contextlib.asynccontextmanager
     async def session_with_transaction(self) -> AsyncIterator[AsyncSession]:
+        """
+        This context manager is used to connect to the database.
+        It will begin a transaction and yield the session.
+        The transaction will be committed if the context is exited normally.
+        If an exception is raised, the transaction will be rolled back.
+        If you expect this to be correctly overridden in tests, you *HAVE* to
+        use it as a FastAPI dependency, using DBSessionAnnotated (in deps.py) for example (not just calling it randomly).
+        """
         async with self.session() as session, session.begin():
             yield session
 
