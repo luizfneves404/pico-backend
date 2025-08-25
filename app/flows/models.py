@@ -483,6 +483,10 @@ class Question(Base, kw_only=True):
 
     @property
     def choices_text(self) -> str:
+        return "\n".join(choice.text for choice in self.choices)
+
+    @property
+    def choices_text_with_letters(self) -> str:
         choices_text: list[str] = []
         for j, choice in enumerate(self.choices):
             if choice.text:
@@ -507,24 +511,21 @@ class Question(Base, kw_only=True):
     @property
     def question_text(self) -> str:
         """Extract text content from content_blocks."""
-        question_text_parts: list[str] = []
-        for block in self.content_blocks:
-            if hasattr(block, "block_type") and block.block_type == "text":
-                # Handle TextBlock object
-                if hasattr(block, "content") and block.content:
-                    for rich_text in block.content:
-                        if hasattr(rich_text, "text"):
-                            question_text_parts.append(rich_text.text)
-            elif isinstance(block, dict) and block.get("type") == "text":
-                # Handle dict format
-                question_text_parts.append(block.get("text", ""))
+        # with list comprehension
+        question_text_parts = [
+            rich_text.text
+            for block in self.content_blocks
+            if block.block_type == "text"
+            for rich_text in block.content
+            if rich_text.text
+        ]
         return "\n".join(question_text_parts)
 
     @property
     def question_text_with_choices_text(self) -> str:
         """Combine question text from content_blocks with formatted choices."""
         question_text = self.question_text
-        choices_text = self.choices_text
+        choices_text = self.choices_text_with_letters
 
         if question_text and choices_text:
             return f"{question_text}\n\n{choices_text}"
@@ -538,6 +539,39 @@ class Question(Base, kw_only=True):
     @property
     def question_truncated_text(self) -> str:
         return self.question_text[:100] + "..."
+
+    @property
+    def source_info(self) -> str:
+        """Constructs a formatted string of source information."""
+        official_source = self.official_source
+
+        if not official_source:
+            return ""
+
+        source_parts: dict[str, str | int] = {
+            "Exam": official_source.exam.name,
+            "Country": official_source.exam.country.name,
+            "Year": official_source.year,
+        }
+
+        formatted_parts = [
+            f"{key}: {value}" for key, value in source_parts.items() if value
+        ]
+
+        return f"Source: {', '.join(formatted_parts)}"
+
+    @property
+    def tags_info(self) -> str:
+        """Constructs a formatted string of tags information."""
+        tags_info = ""
+        if self.major_tags:
+            tags_info += f"Major tags: {', '.join(self.major_tags)}"
+        if self.minor_tags:
+            if tags_info:
+                tags_info += f"; Minor tags: {', '.join(self.minor_tags)}"
+            else:
+                tags_info = f"Minor tags: {', '.join(self.minor_tags)}"
+        return tags_info
 
     @hybrid_property
     def answers(self) -> list["FlowQuestionUser"]:
