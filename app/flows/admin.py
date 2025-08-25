@@ -668,6 +668,42 @@ class QuestionAdmin(CustomModelView, model=Question):
             referer or request.url_for("admin:list", identity=self.identity)
         )
 
+    @action(
+        name="fix_question_newlines",
+        label="Corrigir quebras (\\n) no texto",
+        confirmation_message="Tem certeza que quer substituir todos os literal \\n por espaço simples nas perguntas selecionadas?",
+        add_in_detail=False,
+        add_in_list=True,
+    )
+    async def fix_question_newlines(self, request: Request) -> RedirectResponse:
+        """Fix literal "\\n" occurrences in question content blocks."""
+        pks_str = request.query_params.get("pks", "")
+
+        if pks_str == "__all__":
+            pks = None
+        else:
+            try:
+                pks = [int(pk) for pk in pks_str.split(",")]
+                if not pks:
+                    referer = request.headers.get("Referer")
+                    return RedirectResponse(
+                        referer or request.url_for("admin:list", identity=self.identity)
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid primary key format."
+                )
+
+        await enqueue_job(
+            "task_fix_question_newlines",
+            question_ids=pks,
+        )
+
+        referer = request.headers.get("Referer")
+        return RedirectResponse(
+            referer or request.url_for("admin:list", identity=self.identity)
+        )
+
     async def to_orm_model(
         self, validated_data_list: list[QuestionImportSchema]
     ) -> list[Question]:

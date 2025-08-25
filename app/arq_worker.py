@@ -30,6 +30,7 @@ from app.flows.question_utils import (
     task_categorize_major_tags,
     task_categorize_minor_tags,
     task_compute_question_embeddings,
+    task_fix_question_newlines,
     task_consolidate_flow_tags,
     task_generate_and_consolidate_tags,
     task_generate_question_answers,
@@ -100,6 +101,7 @@ def make_worker_settings(
             task_generate_question_answers,
             task_analyze_question_quantitativeness,
             task_generate_flow_cover_image,
+            task_fix_question_newlines,
             task_consolidate_flow_tags,
             task_generate_and_consolidate_tags,
         ]
