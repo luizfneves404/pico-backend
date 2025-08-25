@@ -37,6 +37,10 @@ from app.flows.question_utils import (
     task_recompute_question_embeddings,
 )
 from app.flows.tasks import task_mark_question_timed_out
+from app.education.tasks import (
+    task_determine_institution_display_names,
+    task_migrate_institutions_to_full_name,
+)
 from app.instrumentation import instrument_worker
 from app.logging_config import get_logging_config
 from app.mail import task_send_email
@@ -104,6 +108,8 @@ def make_worker_settings(
             task_fix_question_newlines,
             task_consolidate_flow_tags,
             task_generate_and_consolidate_tags,
+            task_migrate_institutions_to_full_name,
+            task_determine_institution_display_names,
         ]
         redis_settings: RedisSettings = RedisSettings.from_dsn(redis_url)
         on_startup: StartupShutdown | None = startup
