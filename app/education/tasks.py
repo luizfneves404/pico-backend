@@ -177,9 +177,10 @@ Return ONLY the display name, nothing else."""
         logger.info(f"🤖 Calling OpenAI GPT-5-nano for display name generation")
         logger.debug(f"Input full_name: '{full_name}'")
         
+        # Use a concrete temperature value; some OpenAI wrappers require it even for 'nano' models.
         response = await openai_utils.get_completion(
             model="gpt-5-nano",
-            temperature=None,  # No temperature for nano
+            temperature=0.5,
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": full_name},
