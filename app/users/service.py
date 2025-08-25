@@ -543,6 +543,10 @@ async def update_user_fields(
         await db_session.flush()
         updated_fields.append("location")
 
+    if updates.instagram_account is not UnsetDefault:
+        user.instagram_account = updates.instagram_account
+        updated_fields.append("instagram_account")
+
     if updated_fields:
         await db_session.flush()
         logger.info(f"User {user.id} updated fields: {', '.join(updated_fields)}")

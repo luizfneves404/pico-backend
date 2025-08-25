@@ -88,6 +88,7 @@ class OtherUserOut(UserBase):
     id: int
     social_score: int
     xp_score: int
+    instagram_account: str
     current_education: EducationInfoOut | None
     intended_education: EducationInfoOut | None
 
@@ -99,6 +100,7 @@ class OtherUserOut(UserBase):
             username=user.username,
             phone_number=user.phone_number,
             email=user.email,
+            instagram_account=user.instagram_account,
             current_education=EducationInfoOut(
                 level_id=user.current_education.level_id,
                 stage_id=user.current_education.stage_id,
@@ -130,6 +132,7 @@ class UserOut(OtherUserOut):
             username=other_user.username,
             phone_number=other_user.phone_number,
             email=other_user.email,
+            instagram_account=other_user.instagram_account,
             current_education=other_user.current_education,
             intended_education=other_user.intended_education,
             social_score=other_user.social_score,
@@ -182,6 +185,7 @@ class UserUpdate(BaseModel):
     password: PasswordStr | Unset = UnsetDefault
     phone_number: CustomPhoneNumber | Unset = UnsetDefault
     email: LowercaseEmailStr | Unset = UnsetDefault
+    instagram_account: str | Unset = UnsetDefault
     current_education: EducationInfoIn | Unset = UnsetDefault
     intended_education: EducationInfoIn | Unset = UnsetDefault
     country_code: CountryCodeStr | Unset = UnsetDefault

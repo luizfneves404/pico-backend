@@ -1189,6 +1189,23 @@ class TestUserUpdates:
             ).scalar_one()
             assert location_wkt == "POINT(12.3456789 12.3456789)"
 
+    async def test_update_instagram_account(
+        self, user_client: AsyncClient, user: User, session: AsyncSession
+    ):
+        """Test updating user instagram account."""
+        data = {"updates": {"instagram_account": "new_instagram_account"}}
+        response = await user_client.patch("/api/users/me", json=data)
+        assert response.status_code == 200
+        # check if response is correct
+        response_data = response.json()
+        assert "instagram_account" in response_data["updated_fields"]
+        assert response_data["user"]["instagram_account"] == "new_instagram_account"
+
+        # check if it does appear on user me endpoint
+        response = await user_client.get("/api/users/me")
+        assert response.status_code == 200
+        assert response.json()["instagram_account"] == "new_instagram_account"
+
 
 class TestUserDeletion:
     """Test user deletion operations."""

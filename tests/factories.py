@@ -88,6 +88,10 @@ def phone_number_sequence(n: int) -> str:
     return f"tel:+55-11-99999-9{n:03d}"
 
 
+def instagram_account_sequence(n: int) -> str:
+    return f"instagram_account{n}"
+
+
 @functools.lru_cache(maxsize=None)
 def hashed_password_func() -> str:
     return get_password_hash("defaultpassword")
@@ -333,6 +337,7 @@ class UserFactory(AsyncSQLAlchemyFactory[User]):
     apple_id = ""
     email = Sequence(email_sequence)
     phone_number = Sequence(phone_number_sequence)
+    instagram_account = Sequence(instagram_account_sequence)
     is_superuser = False
     is_bot = False
     bot_difficulty = None
