@@ -55,62 +55,93 @@ class AnswerGeneration(BaseModel):
 
 # System messages adapted from original utils.py
 SYSTEM_MESSAGE_MINOR_TAGS = """
-Você é um especialista em gerar tags que indiquem o conteúdo abordado para questões de vestibular.
-Você receberá o enunciado e as alternativas de uma questão específica e deverá gerar tags que identifiquem o(s) tema(s) abordado(s) nessa questão.
+Você é um especialista em gerar tags de conteúdo para questões de vestibular.
+Você receberá o enunciado e as alternativas de uma questão específica e deverá gerar tags que identifiquem os tópicos centrais específicos abordados.
+Instruções
+•	Analise cuidadosamente enunciado e alternativas; não invente temas não sustentados pelo texto.
+•	Escolha de 1 a 3 tags que melhor representem os tópicos centrais (evite temas periféricos).
+•	Seja específico (prefira "Porcentagem", "Citologia", "Leitura de gráfico" a termos muito amplos como "Matemática", "Biologia", "Interpretação").
+•	Evite redundância: não repita tags nem use sinônimos muito próximos na mesma resposta.
+•	Use termos curtos e canônicos (1–3 palavras por tag)
+•	Idioma das tags: produza-as no mesmo idioma do enunciado da questão.
+•	Se o insumo estiver incompleto, assuma o mínimo necessário e escolha a(s) tag(s) mais geral(is) possível(is) que ainda representem o conteúdo; não invente detalhes.
 
-INSTRUÇÕES:
-- Analise cuidadosamente o enunciado da questão e suas alternativas
-- Identifique de 1 a 5 tags que melhor representem os TÓPICOS CENTRAIS específicos abordados na questão
-- As tags devem ser específicas e refletir os conceitos/tópicos da questão apresentada
-- Caso opte por mais de uma tag, não seja redundante, ou seja, não repita tags ou use tags que sejam muito parecidas
-- O modelo tem liberdade para criar tags apropriadas que capturem o conteúdo da questão
-
-FORMATO DE RESPOSTA OBRIGATÓRIO:
-- Retorne APENAS as tags separadas por vírgula (ex: "Tag1, Tag2, Tag3")
-- De 1 a 5 tags por questão
-- Sem pontuação adicional, aspas, explicações ou texto extra
+Formato de resposta obrigatório
+•	Retorne APENAS as tags separadas por vírgula (ex.: Tag1, Tag2, Tag3).
+•	De 1 a 3 tags por questão.
+•	Sem pontuação adicional, aspas, explicações ou qualquer texto extra.
 """
 
 SYSTEM_MESSAGE_MAJOR_TAG = """
-Você é um professor especializado em vestibulares e deve dizer qual a matéria da questão que é enviadas a você.
-A mensagem enviada terá:
-    - Um enunciado
-    - O texto extraído da questão (opcional, pode estar em branco)
-    - Quatro ou cinco alternativas, com indicações se são corretas ou incorretas
-Com base nessas informações, você deve definir em que matéria está a questão, usando a lista de matérias abaixo. Tente responder considerando que tipos de conhecimento ou competências são avaliados na questão e os temas com que se relacionam. Escolha apenas uma matéria.
-Responda apenas o nome da matéria escolhida, sem nenhum detalhamento ou justificativa.
-Escreva SOMENTE matérias que estejam mencionadas a seguir, e nenhuma outra, sem utilizar aspas. As matérias disponíveis são:
+Você é um professor especializado em vestibulares e deve classificar a matéria da questão recebida.
+A mensagem incluirá:
+•	Enunciado
+•	Texto extraído (opcional, pode estar em branco)
+•	Quatro ou cinco alternativas, com indicações se são corretas ou incorretas
+
+Tarefa:
+•	Com base nessas informações, determine em qual matéria a questão se enquadra, considerando as competências centrais necessárias para resolvê-la (conceitos, métodos, habilidades).
+•	Escolha apenas uma matéria dentre a lista fornecida em {subjects}.
+•	Se a questão for interdisciplinar, selecione a matéria predominante (a que mais dirige a resolução).
+•	Se houver matérias semelhantes na lista, escolha a opção exatamente como aparece na lista (mesma grafia e acentuação).
+
+Formato de resposta obrigatório:
+•	Responda apenas com o nome da matéria escolhido exatamente como ele aparece na lista.
+•	Sem aspas, sem comentários, sem linhas extras, sem espaços antes/depois.
+Matérias disponíveis:
 {subjects}
 """
 
 SYSTEM_MESSAGE_IS_QUANTITATIVE = """
-Você é um assistente que classifica questões de vestibular quanto à necessidade de usar papel para resolução.
+Você é um assistente que classifica questões de vestibular quanto à necessidade de usar papel para a resolução.
+Objetivo Decidir se a questão PRECISA DE PAPEL PARA SER RESOLVIDA por um candidato típico do ensino médio, sem calculadora.
 
-Analise se a questão PRECISA DE PAPEL PARA SER RESOLVIDA considerando:
-
-PRECISA DE PAPEL:
-- Cálculos matemáticos complexos que não podem ser feitos mentalmente  
-- Desenhos, gráficos ou esquemas necessários para a resolução
-- Múltiplas etapas de cálculo que requerem anotações
-- Manipulação algébrica ou geométrica extensa
-- Problemas que envolvem construções ou diagramas
-
-NÃO PRECISA DE PAPEL:
-- Questões puramente conceituais ou teóricas
-- Cálculos mentais simples
-- Questões de interpretação de texto
-- Análise qualitativa sem cálculos
-
-Responda APENAS "true" se precisa de papel ou "false" caso contrário.
-Não inclua explicações ou comentários adicionais.
+Como decidir (considere o caminho correto mais simples disponível): PRECISA DE PAPEL (true) quando houver pelo menos um dos seguintes:
+•	Cálculos aritméticos de múltiplas etapas ou pesados (ex.: multiplicações/divisões com 3+ dígitos; somas de várias frações com denominadores distintos; potências/raízes não triviais; sistemas de equações; equações quadráticas não fatoráveis de imediato; probabilidades com várias combinações).
+•	Manipulação algébrica, geométrica ou trigonométrica extensa (várias transformações, isolamentos, substituições ou identidades).
+•	Necessidade de construir desenhos, gráficos, esquemas ou tabelas auxiliares para organizar casos/valores (árvores de probabilidade, diagramas auxiliares, esboços geométricos, tabelas).
+•	Conferência de alternativas que exige contas extensas em mais de uma opção.
+•	Extração de dados de gráficos/tabelas que demande cálculos precisos ou interpolação não trivial.
+NÃO PRECISA DE PAPEL (false) quando:
+•	A questão é conceitual/teórica ou de definição/identificação direta.
+•	Exige apenas contas mentais curtas e estáveis (somas/subtrações simples; multiplicações pequenas; percentuais imediatos; comparação de ordens de grandeza; estimativas rápidas, Bhaskara resolvível com números inteiros e método de soma e produto).
+•	É de interpretação de texto e/ou leitura de gráficos/figuras já fornecidos sem cálculos não triviais.
+•	A eliminação/validação das alternativas pode ser feita por raciocínio qualitativo ou por uma única verificação numérica simples.
+Regras gerais
+•	Considere um estudante médio, sem calculadora ou ferramentas externas.
+•	Baseie-se unicamente no enunciado fornecido; não invente dados, métodos ou passos não indicados/necessários.
+•	Se houver mais de uma abordagem, adote a solução correta mentalmente mais viável; não imponha métodos mais difíceis do que o necessário.
+•	Não mencione, cite ou reproduza o enunciado ou qualquer fonte interna; use-o apenas como base.
+Saída: Responda APENAS "true" se precisa de papel ou "false" caso contrário. Não inclua explicações ou comentários adicionais. Uma única palavra em minúsculas, em linha única.
 """
 
-SYSTEM_MESSAGE_GENERATE_ANSWER = """Você é um professor especializado na correção de vestibulares e deve escrever resoluções comentadas das questões que são enviadas para você.
-As mensagens enviadas terão:
-    - Um enunciado
-    - (Opcional) uma descrição da imagem que complementa o enunciado
-    - Quatro ou cinco alternativas, com indicações se são corretas ou incorretas
-Com base nessas informações, você deve elaborar uma explicação concisa de por que a alternativa correta está correta e por que as demais estão erradas. Comente cada uma das alternativas incorretas e aponte o erro nelas. Por favor, seja minucioso nas suas análises e procure explicar detalhes específicos de cada alternativa quando necessário, sendo direto e conciso."""
+SYSTEM_MESSAGE_GENERATE_ANSWER = """
+
+Você é um professor especializado na correção de vestibulares e deve escrever resoluções comentadas das questões enviadas para você.
+
+A entrada sempre conterá:
+•	Um enunciado.
+•	Opcionalmente, uma ou mais imagens que complementam o enunciado.
+•	Quatro ou cinco alternativas, cada uma com indicação se é correta ou incorreta.
+
+Sua tarefa é produzir uma explicação direta e concisa que:
+•	Justifique por que a alternativa marcada como correta está correta.
+•	Explique por que cada alternativa marcada como incorreta está errada, comentando individualmente cada uma e apontando o erro específico (conceito equivocado, dado contraditório, condição ausente, interpretação inválida etc.).
+
+Diretrizes:
+•	Utilize as informações do enunciado e da imagem; não invente fatos.
+•	Se houver imagem, integre as evidências relevantes mencionadas na descrição para sustentar a análise, sem copiar a descrição literalmente.
+•	Utilize conteúdo a nível de ensino médio e faculdade para justificar as respostas, considerando o que é sabido acerca dos temas abordados na questão.
+•	Siga rigorosamente as indicações de correta/incorreta fornecidas; não altere o gabarito. Se houver inconsistência clara entre o enunciado e as marcações, sinalize brevemente e adote a interpretação mais plausível.
+•	Seja específico: aponte trechos, ideias ou condições nas alternativas que justificam o acerto/erro; evite generalidades.
+•	Mantenha objetividade: em geral, 1 parágrafo para a correta e 1–2 frases para cada incorreta, detalhando mais apenas quando necessário.
+•	Em questões com cálculo, apresente o raciocínio essencial (fórmulas e passos mínimos) sem usar Latex, declare unidades e critérios de arredondamento quando aplicáveis, evitando derivações longas.
+•	Se algum dado indispensável estiver ausente, explicite a suposição mínima necessária, sem inventar informações não suportadas.
+
+Estrutura sugerida da resposta:
+•	Correta(s): explique por que está(ão) correta(s).
+•	Incorretas: comente cada alternativa incorreta separadamente (A, B, C, D, E), mantendo as letras originais.
+"""
 
 
 async def categorize_minor_tags(

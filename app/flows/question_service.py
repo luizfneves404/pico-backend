@@ -28,7 +28,8 @@ from app.flows.constants import (
     PROMPT_COVER_GENERATION,
     SYSTEM_MESSAGE_BLOCK_TITLE,
     SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT,
-    SYSTEM_MESSAGE_GENERATE_TAGS_FOR_QUESTION,
+    SYSTEM_MESSAGE_CLASSIFY_TOPIC_SUBJECT,
+    SYSTEM_MESSAGE_GENERATE_MINOR_TAGS_FOR_TOPIC,
     SYSTEM_MESSAGE_GENERATE_TITLE_FROM_TRANSCRIPTIONS,
     SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION,
     SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH,
@@ -1445,30 +1446,7 @@ async def verify_question_pertinence_to_topic(
         return 0  # Default to 0 if there's an error
 
 
-async def generate_tags_for_question(
-    question_text_and_choices: str,
-) -> list[str]:
-    """Generate tags for a question (based on question text and choices) using gpt-5-mini"""
-    try:
-        response = await openai_utils.get_completion(
-            model="gpt-5-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_MESSAGE_GENERATE_TAGS_FOR_QUESTION,
-                },
-                {"role": "user", "content": question_text_and_choices},
-            ],
-            json_mode=False,
-            timeout=30,
-            temperature=0.1,
-            reasoning_effort="medium",
-        )
-        tags = response.content.strip()
-        return tags.split(",")
-    except Exception as e:
-        logger.error(f"Error generating tags for question: {e}, tags: {tags}")
-        return []
+
 
 
 # async def generate_initial_questions_from_topic(
