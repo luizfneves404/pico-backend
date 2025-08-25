@@ -17,41 +17,6 @@ logger = logging.getLogger(__name__)
 INSTITUTION_BATCH_SIZE = 100
 
 
-async def task_migrate_institutions_to_full_name(
-    ctx: dict[str, Any],
-    institution_ids: list[int] | None,
-) -> None:
-    """
-    Copy current 'name' field to 'full_name' field for institutions.
-    
-    Args:
-        ctx: ARQ worker context
-        institution_ids: List of institution IDs to process, None means all institutions
-    """
-    async with get_db_session_for_worker(ctx) as session:
-        if institution_ids is None:
-            # Admin case: process all institutions
-            condition = Institution.id.isnot(None)
-            logger.info("Migrating all institutions to full_name format")
-        else:
-            # Specific institutions case
-            condition = Institution.id.in_(institution_ids)
-            logger.info(f"Migrating {len(institution_ids)} specific institutions to full_name format")
-
-        # Update full_name = name for all matching institutions where full_name is empty
-        stmt = (
-            update(Institution)
-            .where(condition & (Institution.full_name == ""))
-            .values(full_name=Institution.name)
-        )
-        
-        result = await session.execute(stmt)
-        await session.commit()
-        
-        updated_count = result.rowcount
-        logger.info(f"Successfully migrated {updated_count} institutions to full_name format")
-
-
 async def task_determine_institution_display_names(
     ctx: dict[str, Any],
     institution_ids: list[int] | None,
@@ -66,7 +31,7 @@ async def task_determine_institution_display_names(
     async with get_db_session_for_worker(ctx) as session:
         if institution_ids is None:
             # Admin case: process all institutions with non-empty full_name
-            condition = (Institution.full_name != "") & (Institution.full_name.isnot(None))
+            condition = Institution.full_name != ""
         else:
             # Specific institutions case
             condition = Institution.id.in_(institution_ids)
