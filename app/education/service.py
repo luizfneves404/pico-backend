@@ -1,8 +1,9 @@
 import logging
+
 from geoalchemy2 import WKTElement
 from geoalchemy2.functions import ST_Distance
 from geoalchemy2.types import Geography
-from sqlalchemy import ColumnElement, case, select
+from sqlalchemy import ColumnElement, case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload, with_loader_criteria
@@ -95,7 +96,8 @@ async def search_institutions(
 ) -> list[Institution]:
     filters: list[ColumnElement[bool]] = []
     if name:
-        filters.append(Institution.name.ilike(f"%{name}%"))
+        # Use unaccent and lower for accent/case-insensitive search
+        filters.append(func.unaccent(Institution.name).ilike(f"%{name}%"))
     if education_level_id:
         filters.append(Institution.level_id == education_level_id)
 
@@ -119,28 +121,33 @@ async def search_institutions(
 
     if filters:
         stmt = stmt.where(*filters)
-    
-    stmt = (
-        stmt.limit(MAX_INSTITUTIONS_SEARCH_LIMIT)
-        .options(selectinload(Institution.country))
+
+    stmt = stmt.limit(MAX_INSTITUTIONS_SEARCH_LIMIT).options(
+        selectinload(Institution.country)
     )
 
     result = await db.execute(stmt)
     institutions = list(result.scalars())
-    
+
     # Debug logging
-    location_info = f"lat={latitude}, lon={longitude}" if latitude and longitude else "not provided"
-    logger.info(f"Institution search: name='{name}', level_id={education_level_id}, location={location_info}, results={len(institutions)}")
-    
+    location_info = (
+        f"lat={latitude}, lon={longitude}" if latitude and longitude else "not provided"
+    )
+    logger.info(
+        f"Institution search: name='{name}', level_id={education_level_id}, location={location_info}, results={len(institutions)}"
+    )
+
     if institutions:
         # Log sample results
         sample_institutions = institutions[:3]
         for i, inst in enumerate(sample_institutions):
             has_location = "YES" if inst.location else "NO"
-            logger.info(f"Sample result {i+1}: '{inst.name}' (has_location: {has_location})")
+            logger.info(
+                f"Sample result {i + 1}: '{inst.name}' (has_location: {has_location})"
+            )
     else:
         logger.warning("No institutions found - this might indicate a filtering issue")
-    
+
     return institutions
 
 
@@ -298,27 +305,35 @@ async def list_levels(
         # Show stages for the specific country OR default stages (is_default=True)
         stmt = stmt.options(
             with_loader_criteria(
-                LevelStage, 
-                (LevelStage.country.has(Country.code == country_code)) | 
-                (LevelStage.is_default == True)
+                LevelStage,
+                (LevelStage.country.has(Country.code == country_code))
+                | (LevelStage.is_default.is_(True)),
             )
         )
 
     result = await db_session.execute(stmt)
     levels = list(result.scalars().unique())
-    
+
     # Log for debugging
     total_stages = sum(len(level.stages) for level in levels)
-    logger.info(f"list_levels SERVICE: country_code='{country_code}', found {len(levels)} levels with {total_stages} total stages")
-    
+    logger.info(
+        f"list_levels SERVICE: country_code='{country_code}', found {len(levels)} levels with {total_stages} total stages"
+    )
+
     # Log details about each level and its stages
     for level in levels:
-        level_name = level.name_i18n.get('en', 'Unknown') if level.name_i18n else 'Unknown'
+        level_name = (
+            level.name_i18n.get("en", "Unknown") if level.name_i18n else "Unknown"
+        )
         stage_details = []
         for stage in level.stages:
             stage_country = stage.country.code if stage.country else "None"
-            stage_info = f"{stage.name}(country:{stage_country},default:{stage.is_default})"
+            stage_info = (
+                f"{stage.name}(country:{stage_country},default:{stage.is_default})"
+            )
             stage_details.append(stage_info)
-        logger.info(f"SERVICE Level '{level_name}': stages=[{', '.join(stage_details)}]")
-    
+        logger.info(
+            f"SERVICE Level '{level_name}': stages=[{', '.join(stage_details)}]"
+        )
+
     return levels
