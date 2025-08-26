@@ -47,6 +47,13 @@ Run them from the root directory.
 
 ## Prepare dev environment
 
+Clone the repo and cd into it:
+
+```bash
+git clone https://gitlab.com/your-group/your-project.git
+cd your-project
+```
+
 To install uv, if on linux or mac:
 
 ```bash
@@ -58,7 +65,18 @@ If on windows, see https://docs.astral.sh/uv/getting-started/installation/#__tab
 Either way, run this afterwards:
 
 ```bash
+uv venv
+source .venv/bin/activate # vscode or cursor should detect the venv next time you open the terminal, this is only for the first time
+```
+
+Then:
+
+```bash
+# Install project dependencies from pyproject.toml
 uv sync
+
+# Install the pre-commit hooks
+pre-commit install
 ```
 
 ## Alembic
