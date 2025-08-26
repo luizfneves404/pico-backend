@@ -45,6 +45,22 @@ Remember to add ondelete="CASCADE" *to the child foreign key*, e.g. ForeignKey("
 
 Run them from the root directory.
 
+## Prepare dev environment
+
+To install uv, if on linux or mac:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+If on windows, see https://docs.astral.sh/uv/getting-started/installation/#__tabbed_1_2
+
+Either way, run this afterwards:
+
+```bash
+uv sync
+```
+
 ## Alembic
 
 After changing models, run this to create a new migration:

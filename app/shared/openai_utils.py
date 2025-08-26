@@ -834,25 +834,26 @@ async def compute_embedding(text: list[str]) -> list[list[float]]: ...
 
 def parse_topic_for_embedding(text: str) -> str:
     """Parse topic string to extract just the topic part for embedding.
-    
+
     Input: 'locale": "pt", "topic": "machine learning"'
     Output: 'machine learning'
     """
     if not text.strip():
         return text
-    
+
     try:
         import re
+
         # Look for "topic": "..." pattern
         pattern = r'"topic"\s*:\s*"([^"]*)"'
         match = re.search(pattern, text)
-        
+
         if match:
             return match.group(1)  # Return the content inside quotes
         else:
             # If no pattern found, return original string (backward compatibility)
             return text
-            
+
     except Exception as e:
         logger.warning(f"Error parsing topic string for embedding '{text}': {e}")
         # Return original string as fallback

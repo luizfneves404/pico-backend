@@ -54,6 +54,8 @@ dev = [
     "sqlacodegen[pgvector]>=3.0.0,<4",
     "types-boto3[essential]>=1.37.28,<2",
     "pytest-cov>=6.1.1,<7",
+    "ruff>=0.12.10",
+    "pre-commit>=4.3.0",
 ]
 
 [tool.uv]
@@ -62,6 +64,9 @@ default-groups = [
     "test",
     "dev",
 ]
+
+[tool.ruff]
+line-length = 88 # default for black: https://black.readthedocs.io/en/stable/the_black_code_style/current_style.html
 
 [build-system]
 requires = ["hatchling"]

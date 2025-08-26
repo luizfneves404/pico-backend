@@ -412,7 +412,9 @@ async def generate_flow_cover_image(flow_title: str) -> str:
     """
     logger.info(f"Generating cover image for flow {flow_title}")
     prompt = PROMPT_COVER_GENERATION.format(flow_title=flow_title)
-    image_base64 = await openai_utils.generate_image(prompt, format="jpeg", model="gpt-image-1")
+    image_base64 = await openai_utils.generate_image(
+        prompt, format="jpeg", model="gpt-image-1"
+    )
     if image_base64:
         logger.info(
             f"Successfully generated cover image for flow {flow_title}: {len(image_base64)} chars"
@@ -621,7 +623,7 @@ async def get_topic_user_generated_questions(
     """
     Generate AI questions based on a topic for a flow.
     """
-    model = "gpt-5" 
+    model = "gpt-5"
     reasoning_models = ["gpt-5"]
 
     logger.info(
@@ -771,7 +773,7 @@ async def get_files_user_generated_questions(
     """
     Generate AI questions based on uploaded files for a flow.
     """
-    model = "gpt-5" 
+    model = "gpt-5"
     reasoning_models = ["gpt-5"]
 
     query = (
@@ -1444,9 +1446,6 @@ async def verify_question_pertinence_to_topic(
             f"Error verifying question pertinence for question {question_id}, flow {flow_id}: {e}"
         )
         return 0  # Default to 0 if there's an error
-
-
-
 
 
 # async def generate_initial_questions_from_topic(

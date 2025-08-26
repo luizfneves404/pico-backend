@@ -431,7 +431,7 @@ async def create_flow_with_optional_files(
                 raise InvalidFileTypeError(f"Unsupported file type: {content_type}")
 
     flow_input_type = FlowInputType.FILES if files else FlowInputType.TOPIC
-    
+
     # Parse the topic string to extract just the topic part (for both files and topic flows)
     parsed_topic = parse_topic_string(topic) if topic else ""
 
@@ -445,7 +445,9 @@ async def create_flow_with_optional_files(
     else:
         title = parsed_topic  # Use the parsed topic as the flow title
         requires_math = await check_if_topic_involves_math_calculations(parsed_topic)
-        logger.info(f"Creating flow with topic for user {user.id}: original='{topic}' -> parsed='{parsed_topic}'")
+        logger.info(
+            f"Creating flow with topic for user {user.id}: original='{topic}' -> parsed='{parsed_topic}'"
+        )
 
     flow = Flow(
         title=title,
@@ -973,30 +975,29 @@ async def add_questions_to_flow_full(
     return flow
 
 
-
 def parse_topic_string(topic_string: str) -> str:
     """Parse topic string to extract just the topic part.
-    
+
     Input: 'locale": "pt", "topic": "machine learning"'
     Output: 'machine learning'
     """
     if not topic_string.strip():
         return topic_string
-    
+
     try:
         # Look for "topic": "..." pattern
         import re
-        
+
         # Match "topic": "anything" (handling escaped quotes)
         pattern = r'"topic"\s*:\s*"([^"]*)"'
         match = re.search(pattern, topic_string)
-        
+
         if match:
             return match.group(1)  # Return the content inside quotes
         else:
             # If no pattern found, return original string (backward compatibility)
             return topic_string
-            
+
     except Exception as e:
         logger.warning(f"Error parsing topic string '{topic_string}': {e}")
         # Return original string as fallback
