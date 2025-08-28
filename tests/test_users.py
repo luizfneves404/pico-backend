@@ -1,4 +1,5 @@
 import re
+import uuid
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -33,13 +34,14 @@ class TestUserCreation:
 
     async def test_create_user_password_auth_full_flow(self, client: AsyncClient):
         """Test complete user creation flow with password auth, JWT generation, and user retrieval."""
-        user: User = UserFactory.build()
+        name = f"Test User {uuid.uuid4().hex[:8]}"
+        email = f"{uuid.uuid4().hex[:8]}@example.com"
         response = await client.post(
             "/api/users",
             json={
-                "name": user.name,
+                "name": name,
                 "password": "defaultpassword",
-                "email": user.email,
+                "email": email,
                 "referred_by_username": "",
                 "signup_source": "social",
             },
@@ -49,17 +51,17 @@ class TestUserCreation:
         user_id = response_data["id"]
 
         # Verify response data
-        assert response_data["name"] == user.name
+        assert response_data["name"] == name
         # Username should be normalized: lowercase name with spaces replaced by underscores + 4 digits
-        expected_username_pattern = rf"^{user.name.lower().replace(' ', '_')}\d{{4}}$"
+        expected_username_pattern = rf"^{name.lower().replace(' ', '_')}\d{{4}}$"
         assert re.match(expected_username_pattern, response_data["username"])
-        assert response_data["email"] == user.email
+        assert response_data["email"] == email
 
         # Test JWT token generation
         token_response = await client.post(
             "/api/token/pair",
             data={
-                "username": user.email,
+                "username": email,
                 "password": "defaultpassword",
             },
         )
@@ -72,19 +74,20 @@ class TestUserCreation:
         me_data = me_response.json()
 
         assert me_data["id"] == user_id
-        assert me_data["name"] == user.name
+        assert me_data["name"] == name
         assert me_data["username"] == response_data["username"]
-        assert me_data["email"] == user.email
+        assert me_data["email"] == email
 
     async def test_create_user_with_whitespace_normalization(self, client: AsyncClient):
         """Test that user creation properly handles whitespace in names."""
-        user: User = UserFactory.build()
+        name = f"Another User {uuid.uuid4().hex[:8]}"
+        email = f"{uuid.uuid4().hex[:8]}@example.com"
         response = await client.post(
             "/api/users",
             json={
-                "name": f"  {user.name}  ",
+                "name": f"  {name}  ",
                 "password": "defaultpassword",
-                "email": user.email,
+                "email": email,
                 "referred_by_username": "",
             },
         )
@@ -94,7 +97,7 @@ class TestUserCreation:
         token_response = await client.post(
             "/api/token/pair",
             data={
-                "username": user.email,
+                "username": email,
                 "password": "defaultpassword",
             },
         )
@@ -115,11 +118,11 @@ class TestUserCreation:
         assert response.status_code == 422
 
         # Email conflict (case insensitive and whitespace handling)
-        user2_data: User = UserFactory.build()
+        name2 = f"Second User {uuid.uuid4().hex[:6]}"
         response = await client.post(
             "/api/users",
             json={
-                "name": f"  {user2_data.name.upper()}  ",
+                "name": f"  {name2.upper()}  ",
                 "password": "defaultpassword",
                 "email": f"  {user.email.upper()}  ",
                 "referred_by_username": "",
@@ -886,6 +889,283 @@ class TestSocialAuthentication:
         headers = {"Authorization": "Bearer invalid_jwt_token"}
         response = await client.get("/api/users/me", headers=headers)
         assert response.status_code == 401
+
+    @patch("app.users.external_auth.verify_google_id_token")
+    async def test_password_user_links_google_then_password_login_fails(
+        self, mock_verify_google: AsyncMock, client: AsyncClient, session: AsyncSession
+    ):
+        """Password user links Google: provider set, other creds cleared, password login blocked."""
+
+        # Create password user
+        create_resp = await client.post(
+            "/api/users",
+            json={
+                "name": "Alice Example",
+                "password": "defaultpassword",
+                "email": "alice@example.com",
+                "referred_by_username": "",
+                "signup_source": "internet",
+            },
+        )
+        assert create_resp.status_code == 201
+        user_id = create_resp.json()["id"]
+
+        # Link Google
+        mock_verify_google.return_value = GoogleIdToken(
+            sub="google_abc",
+            email="alice@example.com",
+            email_verified=True,
+            name="Alice Example",
+            picture=None,
+        )
+        resp = await client.post(
+            "/api/token/social/google",
+            json={
+                "id_token": "fake_google_token",
+                "signup_source": "social",
+                "referred_by_username": "",
+            },
+        )
+        assert resp.status_code == 200
+
+        # Verify DB state
+        async with session.begin():
+            refreshed = await session.get(User, user_id)
+            assert refreshed is not None
+            assert refreshed.google_id == "google_abc"
+            assert refreshed.hashed_password == ""
+            assert refreshed.apple_id == ""
+
+        # Password login should now fail
+        login_resp = await client.post(
+            "/api/token/pair",
+            data={"username": "alice@example.com", "password": "defaultpassword"},
+        )
+        assert login_resp.status_code == 401
+
+    @patch("app.users.external_auth.verify_apple_id_token")
+    async def test_password_user_links_apple_then_password_login_fails(
+        self, mock_verify_apple: AsyncMock, client: AsyncClient, session: AsyncSession
+    ):
+        """Password user links Apple: provider set, other creds cleared, password login blocked."""
+
+        # Create password user
+        create_resp = await client.post(
+            "/api/users",
+            json={
+                "name": "Bob Example",
+                "password": "defaultpassword",
+                "email": "bob@example.com",
+                "referred_by_username": "",
+                "signup_source": "internet",
+            },
+        )
+        assert create_resp.status_code == 201
+        user_id = create_resp.json()["id"]
+
+        # Link Apple
+        mock_verify_apple.return_value = AppleIdToken(
+            sub="apple_abc",
+            email="bob@example.com",
+            email_verified=True,
+        )
+        resp = await client.post(
+            "/api/token/social/apple",
+            json={
+                "id_token": "fake_apple_token",
+                "signup_source": "social",
+                "referred_by_username": "",
+                "name": "Bob Example",
+            },
+        )
+        assert resp.status_code == 200
+
+        # Verify DB state
+        async with session.begin():
+            refreshed = await session.get(User, user_id)
+            assert refreshed is not None
+            assert refreshed.apple_id == "apple_abc"
+            assert refreshed.hashed_password == ""
+            assert refreshed.google_id == ""
+
+        # Password login should now fail
+        login_resp = await client.post(
+            "/api/token/pair",
+            data={"username": "bob@example.com", "password": "defaultpassword"},
+        )
+        assert login_resp.status_code == 401
+
+    @patch("app.users.external_auth.verify_google_id_token")
+    @patch("app.users.external_auth.verify_apple_id_token")
+    async def test_switch_from_google_to_apple_clears_google(
+        self,
+        mock_verify_apple: AsyncMock,
+        mock_verify_google: AsyncMock,
+        client: AsyncClient,
+        session: AsyncSession,
+    ):
+        """User created with Google then signs in with Apple: apple_id set, google_id cleared."""
+
+        # Create via Google first
+        mock_verify_google.return_value = GoogleIdToken(
+            sub="google_xyz",
+            email="swapper@example.com",
+            email_verified=True,
+            name="Swapper",
+            picture=None,
+        )
+        g_resp = await client.post(
+            "/api/token/social/google",
+            json={
+                "id_token": "fake_google",
+                "signup_source": "social",
+                "referred_by_username": "",
+            },
+        )
+        assert g_resp.status_code == 200
+        # Get user id from token
+        decoded = jwt.decode(
+            g_resp.json()["access_token"], settings.secret_key, algorithms=["HS256"]
+        )  # type: ignore[arg-type]
+        user_id = decoded["user_id"]
+
+        # Now sign in with Apple with same verified email
+        mock_verify_apple.return_value = AppleIdToken(
+            sub="apple_new",
+            email="swapper@example.com",
+            email_verified=True,
+        )
+        a_resp = await client.post(
+            "/api/token/social/apple",
+            json={
+                "id_token": "fake_apple",
+                "signup_source": "social",
+                "referred_by_username": "",
+                "name": "Swapper",
+            },
+        )
+        assert a_resp.status_code == 200
+
+        async with session.begin():
+            refreshed = await session.get(User, user_id)
+            assert refreshed is not None
+            assert refreshed.apple_id == "apple_new"
+            assert refreshed.google_id == ""
+            assert refreshed.hashed_password == ""
+
+    @patch("app.users.external_auth.verify_google_id_token")
+    @patch("app.users.external_auth.verify_apple_id_token")
+    async def test_switch_from_apple_to_google_clears_apple(
+        self,
+        mock_verify_apple: AsyncMock,
+        mock_verify_google: AsyncMock,
+        client: AsyncClient,
+        session: AsyncSession,
+    ):
+        """User created with Apple then signs in with Google: google_id set, apple_id cleared."""
+
+        # Create via Apple first
+        mock_verify_apple.return_value = AppleIdToken(
+            sub="apple_xyz",
+            email="swapper2@example.com",
+            email_verified=True,
+        )
+        a_resp = await client.post(
+            "/api/token/social/apple",
+            json={
+                "id_token": "fake_apple",
+                "signup_source": "social",
+                "referred_by_username": "",
+                "name": "Swapper2",
+            },
+        )
+        assert a_resp.status_code == 200
+        decoded = jwt.decode(
+            a_resp.json()["access_token"], settings.secret_key, algorithms=["HS256"]
+        )  # type: ignore[arg-type]
+        user_id = decoded["user_id"]
+
+        # Now sign in with Google with same verified email
+        mock_verify_google.return_value = GoogleIdToken(
+            sub="google_new",
+            email="swapper2@example.com",
+            email_verified=True,
+            name="Swapper2",
+            picture=None,
+        )
+        g_resp = await client.post(
+            "/api/token/social/google",
+            json={
+                "id_token": "fake_google",
+                "signup_source": "social",
+                "referred_by_username": "",
+            },
+        )
+        assert g_resp.status_code == 200
+
+        async with session.begin():
+            refreshed = await session.get(User, user_id)
+            assert refreshed is not None
+            assert refreshed.google_id == "google_new"
+            assert refreshed.apple_id == ""
+            assert refreshed.hashed_password == ""
+
+    @patch("app.users.external_auth.verify_google_id_token")
+    async def test_google_user_cannot_login_with_password(
+        self, mock_verify_google: AsyncMock, client: AsyncClient
+    ):
+        """User created via Google cannot authenticate with password endpoint."""
+
+        mock_verify_google.return_value = GoogleIdToken(
+            sub="google_only",
+            email="nogpwd@example.com",
+            email_verified=True,
+            name="NoPwd",
+            picture=None,
+        )
+        g_resp = await client.post(
+            "/api/token/social/google",
+            json={
+                "id_token": "fake_google",
+                "signup_source": "social",
+                "referred_by_username": "",
+            },
+        )
+        assert g_resp.status_code == 200
+
+        login_resp = await client.post(
+            "/api/token/pair",
+            data={"username": "nogpwd@example.com", "password": "anything"},
+        )
+        assert login_resp.status_code == 401
+
+    @patch("app.users.external_auth.verify_apple_id_token")
+    async def test_apple_user_cannot_login_with_password(
+        self, mock_verify_apple: AsyncMock, client: AsyncClient
+    ):
+        """User created via Apple cannot authenticate with password endpoint."""
+
+        mock_verify_apple.return_value = AppleIdToken(
+            sub="apple_only",
+            email="nopwd2@example.com",
+            email_verified=True,
+        )
+        a_resp = await client.post(
+            "/api/token/social/apple",
+            json={
+                "id_token": "fake_apple",
+                "signup_source": "social",
+                "referred_by_username": "",
+                "name": "NoPwd2",
+            },
+        )
+        assert a_resp.status_code == 200
+
+        login_resp = await client.post(
+            "/api/token/pair",
+            data={"username": "nopwd2@example.com", "password": "anything"},
+        )
+        assert login_resp.status_code == 401
 
         # Test with missing Bearer prefix
         headers = {"Authorization": "invalid_jwt_token"}

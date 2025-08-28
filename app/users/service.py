@@ -571,6 +571,11 @@ async def authenticate_user_by_password(
     if not user:
         logger.info(f"User with email {email} not found when authenticating")
         return False
+    if not user.hashed_password:
+        logger.warning(
+            f"User with email {email} should not be authenticating with password"
+        )
+        return False
     if not verify_password(password, user.hashed_password):
         logger.info(
             f"User with email {email} password is incorrect when authenticating"
