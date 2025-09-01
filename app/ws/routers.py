@@ -10,6 +10,7 @@ from fastapi import (
     WebSocketException,
     status,
 )
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.users.jwt_token as jwt_token
@@ -84,6 +85,11 @@ async def websocket_endpoint(
     except WebSocketDisconnect:
         logger.info(
             f"WebSocket disconnected normally for user {current_user.id} ({current_user.username})"
+        )
+    except ValidationError:
+        await websocket.close(
+            code=status.WS_1007_INVALID_FRAME_PAYLOAD_DATA,
+            reason="Invalid message format",
         )
 
     except Exception:

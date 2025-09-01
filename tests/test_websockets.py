@@ -1,12 +1,16 @@
+import logging
 from unittest.mock import patch
 
 import pytest
+from fastapi import status
 from httpx import AsyncClient
-from httpx_ws import aconnect_ws
+from httpx_ws import WebSocketDisconnect, aconnect_ws
 
 import app.users.jwt_token as jwt_token
 from app.ws.schemas import MessageType, WebsocketMessage
 from tests.conftest import BASE_URL
+
+logger = logging.getLogger(__name__)
 
 
 class TestWebSocketAuthentication:
@@ -14,28 +18,31 @@ class TestWebSocketAuthentication:
 
     async def test_websocket_missing_token(self, ws_client: AsyncClient):
         """Test WebSocket connection fails when no token is provided."""
-        with pytest.raises(Exception):
+        with pytest.raises(WebSocketDisconnect) as e:
             async with aconnect_ws(f"{BASE_URL}/api/ws", client=ws_client) as ws:
                 await ws.receive_json()
+        assert e.value.code == status.WS_1008_POLICY_VIOLATION
 
     async def test_websocket_invalid_token(self, ws_client: AsyncClient):
         """Test WebSocket connection fails with invalid token."""
-        with pytest.raises(Exception):
+        with pytest.raises(WebSocketDisconnect) as e:
             async with aconnect_ws(
                 f"{BASE_URL}/api/ws?token=invalid_token", client=ws_client
             ) as ws:
                 await ws.receive_json()
+        assert e.value.code == status.WS_1008_POLICY_VIOLATION
 
     async def test_websocket_expired_token(self, ws_client: AsyncClient):
         """Test WebSocket connection fails with expired token."""
         with patch.object(jwt_token, "process_token") as mock_process_token:
             mock_process_token.side_effect = jwt_token.TokenError("Token expired")
 
-            with pytest.raises(Exception):
+            with pytest.raises(WebSocketDisconnect) as e:
                 async with aconnect_ws(
                     f"{BASE_URL}/api/ws?token=expired_token", client=ws_client
                 ) as ws:
                     await ws.receive_json()
+            assert e.value.code == status.WS_1008_POLICY_VIOLATION
 
 
 class TestWebSocketMessaging:
@@ -63,8 +70,9 @@ class TestWebSocketMessaging:
             await websocket.send_json({"invalid": "format"})
 
             # Connection should be closed due to validation error
-            with pytest.raises(Exception):
+            with pytest.raises(WebSocketDisconnect) as e:
                 await websocket.receive_json()
+            assert e.value.code == status.WS_1007_INVALID_FRAME_PAYLOAD_DATA
 
     async def test_unsupported_message_type(
         self, ws_client: AsyncClient, websocket_access_token: str
@@ -76,9 +84,10 @@ class TestWebSocketMessaging:
             # Send message with unsupported type
             invalid_msg = {"message_type": "unsupported_type", "message": "test"}
 
-            with pytest.raises(Exception):
+            with pytest.raises(WebSocketDisconnect) as e:
                 await websocket.send_json(invalid_msg)
                 await websocket.receive_json()
+            assert e.value.code == status.WS_1007_INVALID_FRAME_PAYLOAD_DATA
 
     async def test_multiple_messages(
         self, ws_client: AsyncClient, websocket_access_token: str
