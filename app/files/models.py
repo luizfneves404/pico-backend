@@ -1,5 +1,6 @@
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import IO, AsyncGenerator
+from typing import IO
 
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import String

@@ -152,7 +152,8 @@ async def notify_communities_flow_posted(
     actor: User,
     flow: Flow,
 ):
-    """Notifies all users in communities that a flow was posted by a user in that community."""
+    """Notifies all users in communities that a flow was posted by
+    a user in that community."""
 
     community_query = (
         select(Community)
@@ -184,7 +185,8 @@ async def notify_communities_flow_posted(
                 fcm_service.NotificationData(
                     user_id=user.id,
                     title=f"{actor.name} postou em {community.name}!",
-                    body=f"O usuário {actor.name} postou o flow {flow.title} em {community.name}",
+                    body=f"O usuário {actor.name} postou o flow {flow.title} "
+                    f"em {community.name}",
                 )
             )
 
@@ -218,7 +220,8 @@ async def notify_user_flow_question_done(
             fcm_service.NotificationData(
                 user_id=flow.created_by_id,
                 title=f"{actor.name} respondeu questão num flow seu!",
-                body=f"O usuário {actor.name} respondeu uma questão no seu flow {flow.title}",
+                body=f"O usuário {actor.name} respondeu uma "
+                f"questão no seu flow {flow.title}",
             )
         ],
     )
@@ -240,7 +243,8 @@ async def notify_community_user_joined(
             fcm_service.NotificationData(
                 user_id=community_user.id,
                 title=f"{user.name} entrou em {community.name}!",
-                body=f"O usuário {user.name} agora faz parte de {community.name} também!",
+                body=f"O usuário {user.name} agora "
+                f"faz parte de {community.name} também!",
             )
         )
     await fcm_service.send_notifications(

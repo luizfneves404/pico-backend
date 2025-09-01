@@ -3,9 +3,11 @@ import json
 import logging
 import re
 import traceback
+from asyncio import Task
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from io import BytesIO
-from typing import Any, Protocol, Sequence
+from typing import Any, Protocol
 
 import boto3
 from fastapi import Request
@@ -19,8 +21,9 @@ from app.files.storage import storage
 from app.shared.validation import LowercaseEmailStr
 from app.users.models import User
 
-logger = logging.getLogger(__name__)
+email_tasks: list[Task[None]] = []
 
+logger = logging.getLogger(__name__)
 ERROR_EMAIL_HTML_TEMPLATE = Template("""
     <!DOCTYPE html>
     <html>
@@ -334,7 +337,9 @@ class AdminEmailHandler(logging.Handler):
             # Schedule the email directly using the task function to avoid asyncio issues
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                loop.create_task(enqueue_email(email_message))
+                task = loop.create_task(enqueue_email(email_message))
+                task.add_done_callback(lambda t: email_tasks.remove(t))
+                email_tasks.append(task)
             else:
                 asyncio.run(enqueue_email(email_message))
         except Exception as e:

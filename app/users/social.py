@@ -1,3 +1,4 @@
+import contextlib
 import logging
 from dataclasses import dataclass
 from typing import Literal
@@ -33,10 +34,8 @@ async def check_contacts(
     """
     phone_numbers: list[str] = []
     for phone_number in raw_phone_numbers:
-        try:
+        with contextlib.suppress(ValidationError):
             phone_numbers.append(phone_number_adapter.validate_python(phone_number))
-        except ValidationError:
-            pass
     logger.debug(
         f"Contacts checked! There were {len(phone_numbers)} valid phone numbers"
     )

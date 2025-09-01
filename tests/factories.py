@@ -92,7 +92,7 @@ def instagram_account_sequence(n: int) -> str:
     return f"instagram_account{n}"
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def hashed_password_func() -> str:
     return get_password_hash("defaultpassword")
 
@@ -149,7 +149,10 @@ def create_file_data() -> dict[str, Any]:
     """Create a real file in storage and return the file metadata."""
     # Generate unique content and filename
     unique_id = uuid.uuid4().hex[:8]
-    content = f"Test file content {unique_id}\nThis is a test file created by FileFactory.\nLine 3 with more content."
+    content = (
+        f"Test file content {unique_id}\nThis is a test file created by FileFactory."
+        "\nLine 3 with more content."
+    )
     original_name = f"test_file_{unique_id}.txt"
 
     # Create temporary file with the content

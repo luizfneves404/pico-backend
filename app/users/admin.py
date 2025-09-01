@@ -1,21 +1,23 @@
-from typing import Any, ClassVar, Sequence, Union
+from collections.abc import Sequence
+from typing import Any, ClassVar
 
 from fastapi import Request
 from pydantic import BaseModel
 from sqlalchemy import Select
 from sqlalchemy.orm import InstrumentedAttribute, selectinload
-from wtforms import PasswordField
+from wtforms import Field, PasswordField
 
 from app.config import LowercaseEmailStr
 from app.education.models import EducationInfo
-from app.shared.admin import CustomModelView
+from app.shared.admin import MODEL_ATTR, CustomModelView
 from app.shared.validation import CustomPhoneNumber, PasswordStr, UsernameStr
 from app.users import service as user_service
 from app.users.models import SignupSource, User
 
 
 def format_string(value: Any) -> Any:
-    """Format string values for admin display, showing a special indicator for empty values."""
+    """Format string values for admin display, showing a special
+    indicator for empty values."""
     return value if value else "[EMPTY STRING]"
 
 
@@ -37,9 +39,7 @@ class UserImportSchema(BaseModel):
 class UserAdmin(CustomModelView, model=User):
     icon = "fa-solid fa-users"
 
-    column_list: ClassVar[
-        Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
-    ] = [
+    column_list: ClassVar[str | Sequence[str | InstrumentedAttribute[Any]]] = (
         User.id,
         User.name,
         User.username,
@@ -52,15 +52,15 @@ class UserAdmin(CustomModelView, model=User):
         User.social_score,
         User.xp_score,
         "referral_count",
-    ]
-    column_searchable_list = [
+    )
+    column_searchable_list = (
         User.id,
         User.username,
         User.email,
         User.phone_number,
         User.name,
-    ]
-    column_sortable_list = [
+    )
+    column_sortable_list = (
         User.id,
         User.name,
         User.username,
@@ -73,10 +73,8 @@ class UserAdmin(CustomModelView, model=User):
         User.intended_education,
         User.social_score,
         User.xp_score,
-    ]
-    column_details_list: ClassVar[
-        Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
-    ] = [
+    )
+    column_details_list = (
         User.id,
         User.created_at,
         User.name,
@@ -93,8 +91,8 @@ class UserAdmin(CustomModelView, model=User):
         User.social_score,
         User.xp_score,
         "referral_count",
-    ]
-    column_labels: ClassVar[dict[str | InstrumentedAttribute[Any], str]] = {
+    )
+    column_labels: ClassVar[dict[MODEL_ATTR, str]] = {
         "created_at": "Created At",
         "hashed_password": "Password",
         "is_superuser": "Admin?",
@@ -108,11 +106,11 @@ class UserAdmin(CustomModelView, model=User):
         },
     }
 
-    form_overrides = {
+    form_overrides: ClassVar[dict[str, type[Field]]] = {
         "hashed_password": PasswordField,
     }
 
-    form_columns = [
+    form_columns: ClassVar[Sequence[MODEL_ATTR]] = [
         "name",
         "username",
         "email",
@@ -175,7 +173,7 @@ class UserAdmin(CustomModelView, model=User):
     async def on_model_change(
         self, data: dict[str, Any], model: User, is_created: bool, request: Request
     ) -> None:
-        if "hashed_password" in data and data["hashed_password"]:
+        if data.get("hashed_password"):
             if is_created or (
                 not data["hashed_password"].startswith(user_service.HASH_PREFIX)
                 and data["hashed_password"] != model.hashed_password
@@ -214,6 +212,7 @@ class UserAdmin(CustomModelView, model=User):
                 referred_by_id=validated_data.referred_by,
                 google_id="",
                 apple_id="",
+                instagram_account="",
             )
             for validated_data in validated_data_list
         ]

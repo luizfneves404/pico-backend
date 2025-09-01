@@ -1,8 +1,9 @@
 import logging
 import logging.config
 import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Awaitable, Callable
+from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from fastapi.openapi.docs import (
@@ -44,38 +45,40 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logging.config.dictConfig(get_logging_config())
     init_firebase()
 
-    async with db_manager.use_db():
-        async with use_redis(settings.redis_url):
-            async with arq_client.arq_redis(settings.redis_url):
-                admin = AdminWithImport(
-                    app,
-                    engine=db_manager.engine,
-                    authentication_backend=authentication_backend,
-                    base_url="/" + settings.admin_url,
-                    debug=settings.environment in [Environment.DEV, Environment.TEST],
-                )
-                import_routes: list[Route] = [
-                    Route(
-                        "/{identity}/import",
-                        endpoint=admin.import_csv,
-                        name="import_csv",
-                        methods=["GET", "POST"],
-                    ),
-                    Route(
-                        "/{identity}/import/template",
-                        endpoint=admin.import_template,
-                        name="import_template",
-                        methods=["GET"],
-                    ),
-                ]
+    async with (
+        db_manager.use_db(),
+        use_redis(settings.redis_url),
+        arq_client.arq_redis(settings.redis_url),
+    ):
+        admin = AdminWithImport(
+            app,
+            engine=db_manager.engine,
+            authentication_backend=authentication_backend,
+            base_url="/" + settings.admin_url,
+            debug=settings.environment in [Environment.DEV, Environment.TEST],
+        )
+        import_routes: list[Route] = [
+            Route(
+                "/{identity}/import",
+                endpoint=admin.import_csv,
+                name="import_csv",
+                methods=["GET", "POST"],
+            ),
+            Route(
+                "/{identity}/import/template",
+                endpoint=admin.import_template,
+                name="import_template",
+                methods=["GET"],
+            ),
+        ]
 
-                # Insert import routes before the existing routes
-                admin.admin.router.routes = import_routes + admin.admin.router.routes
+        # Insert import routes before the existing routes
+        admin.admin.router.routes = import_routes + admin.admin.router.routes
 
-                for view in admin_views:
-                    admin.add_view(view)
+        for view in admin_views:
+            admin.add_view(view)
 
-                yield
+        yield
 
 
 fastapi_app = FastAPI(
@@ -163,7 +166,8 @@ async def openapi(request: Request) -> dict[str, Any]:
     return get_openapi(title="FastAPI", version="0.1.0", routes=fastapi_app.routes)
 
 
-# have to do this weird thing instead of using /api as base_url of FastAPI() because sqladmin hardcoded admin urls without /api
+# have to do this weird thing instead of using /api as base_url of FastAPI()
+# because sqladmin hardcoded admin urls without /api
 base_api_router = APIRouter(prefix="/api")
 
 # not authenticated (unless some authentication is required inside the router)

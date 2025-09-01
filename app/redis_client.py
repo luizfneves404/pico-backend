@@ -1,5 +1,5 @@
 import contextlib
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import redis.asyncio as redis
 
@@ -49,5 +49,5 @@ def get_redis() -> redis.Redis:
         IOError: If the Redis connection is not initialized
     """
     if _redis is None:
-        raise IOError("Redis connection is not initialized")
+        raise OSError("Redis connection is not initialized")
     return _redis

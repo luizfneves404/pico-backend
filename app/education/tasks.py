@@ -89,24 +89,23 @@ Formatting:
     response = await openai_utils.get_completion(
         model="gpt-5-nano",
         temperature=1.0,
-        messages=[
+        input=[
             {"role": "system", "content": system_message},
             {"role": "user", "content": full_name},
         ],
-        json_mode=False,
-        timeout=15,  # Shorter timeout for nano
     )
 
-    logger.info(f"✅ OpenAI response received - Tokens used: {response.tokens_used}")
-    logger.info(f"🎯 Raw OpenAI output: '{response.content}'")
+    logger.info(f"🎯 Raw OpenAI output: '{response}'")
 
-    display_name = response.content.strip()
+    display_name = response.strip()
     logger.info(f"📝 After strip(): '{display_name}'")
 
     # Fallback: if OpenAI returns something too long or empty, use a simple truncation
     if not display_name or len(display_name) > 120:
         logger.warning(
-            f"⚠️ OpenAI returned invalid display name (empty or too long): '{display_name}' (length: {len(display_name) if display_name else 0}). Using fallback."
+            "⚠️ OpenAI returned invalid display name (empty or too long): "
+            f"{display_name}' (length: {len(display_name) if display_name else 0}). "
+            "Using fallback."
         )
         # Simple fallback: take first 80 chars and try to end at a word boundary
         display_name = (
@@ -117,7 +116,8 @@ Formatting:
         logger.info(f"🔄 Fallback display name: '{display_name}'")
     else:
         logger.info(
-            f"✨ Valid display name generated: '{display_name}' (length: {len(display_name)})"
+            f"✨ Valid display name generated: '{display_name}' "
+            f"(length: {len(display_name)})"
         )
 
     return display_name

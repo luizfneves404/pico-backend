@@ -1,4 +1,4 @@
-from typing import Sequence
+from collections.abc import Sequence
 
 from arq.connections import RedisSettings
 from arq.cron import CronJob

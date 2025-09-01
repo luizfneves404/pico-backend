@@ -2,7 +2,8 @@ import datetime
 import enum
 import logging
 import re
-from typing import Annotated, Any, Callable, cast
+from collections.abc import Callable
+from typing import Annotated, Any, cast
 
 import sqlalchemy
 from sqlalchemy import TIMESTAMP, MetaData, event, func, inspect, text

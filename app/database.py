@@ -1,8 +1,9 @@
 import contextlib
 import logging
 import ssl
-from contextlib import asynccontextmanager
-from typing import Any, AsyncContextManager, AsyncGenerator, AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from typing import Any
 
 import logfire
 from sqlalchemy.ext.asyncio import (
@@ -15,20 +16,20 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 # all of these are needed so that the Base subclasses are registered
-import app.community.models  # noqa: F401
-import app.countries.models  # noqa: F401
-import app.education.models  # noqa: F401
-import app.fcm.models  # noqa: F401
-import app.files.models  # noqa: F401
-import app.flows.models  # noqa: F401
-import app.notifications.models  # noqa: F401
-import app.users.models  # noqa: F401
+import app.community.models  # pyright: ignore[reportUnusedImport]
+import app.countries.models
+import app.education.models
+import app.fcm.models
+import app.files.models
+import app.flows.models
+import app.notifications.models
+import app.users.models
 import app.ws.models  # noqa: F401
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-type SessionFactory = Callable[[], AsyncContextManager[AsyncSession]]
+type SessionFactory = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
 
 class DatabaseSessionManager:
@@ -84,7 +85,7 @@ class DatabaseSessionManager:
             IOError: If DatabaseSessionManager is not initialized.
         """
         if self._engine is None:
-            raise IOError("DatabaseSessionManager is not initialized")
+            raise OSError("DatabaseSessionManager is not initialized")
         return self._engine
 
     async def close(self) -> None:
@@ -119,7 +120,7 @@ class DatabaseSessionManager:
         Use session.begin() to start a transaction.
         """
         if self._sessionmaker is None:
-            raise IOError("DatabaseSessionManager is not initialized")
+            raise OSError("DatabaseSessionManager is not initialized")
 
         async with self._sessionmaker() as session:
             yield session
@@ -146,7 +147,7 @@ class DatabaseSessionManager:
         If an exception is raised, the transaction will be rolled back.
         """
         if self._engine is None:
-            raise IOError("DatabaseSessionManager is not initialized")
+            raise OSError("DatabaseSessionManager is not initialized")
         async with self._engine.begin() as connection:
             yield connection
 
@@ -173,7 +174,7 @@ class DatabaseSessionManager:
             @contextlib.asynccontextmanager
             async def get_session() -> AsyncIterator[AsyncSession]:
                 if self._sessionmaker is None:
-                    raise IOError("DatabaseSessionManager is not initialized")
+                    raise OSError("DatabaseSessionManager is not initialized")
                 async with self._sessionmaker(
                     bind=connection, join_transaction_mode="create_savepoint"
                 ) as session:
@@ -191,7 +192,7 @@ db_manager = DatabaseSessionManager()
 async def get_db_session_for_worker(
     ctx: dict[str, Any],
 ) -> AsyncGenerator[AsyncSession, None]:
-    session_cm: AsyncContextManager[AsyncSession]
+    session_cm: AbstractAsyncContextManager[AsyncSession]
     if ctx["session_factory"]:
         # Use the same connection / outer transaction as the test
         session_cm = ctx["session_factory"]()

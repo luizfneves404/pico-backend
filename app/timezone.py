@@ -10,7 +10,8 @@ def localtime(dt: datetime.datetime | None = None) -> datetime.datetime:
     """Convert a datetime to the local timezone.
 
     Args:
-        dt (datetime.datetime, optional): The datetime to convert. Must be timezone-aware if provided.
+        dt (datetime.datetime, optional): The datetime to convert. Must be
+        timezone-aware if provided.
             Defaults to None, in which case returns current time.
 
     Raises:
@@ -30,7 +31,8 @@ def localdate(dt: datetime.datetime | None = None) -> datetime.date:
     """Convert a datetime to the local timezone and return the date.
 
     Args:
-        dt (datetime.datetime, optional): The datetime to convert. Must be timezone-aware if provided.
+        dt (datetime.datetime, optional): The datetime to convert. Must be
+        timezone-aware if provided.
             Defaults to None, in which case returns current date.
 
     Returns:

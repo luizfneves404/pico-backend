@@ -2,8 +2,6 @@ import logging
 
 from fastapi import APIRouter, HTTPException, status
 
-logger = logging.getLogger(__name__)
-
 from app.deps import DBSessionAnnotated
 from app.education import service as education_service
 from app.education.schemas import (

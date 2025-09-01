@@ -36,7 +36,10 @@ class TestFileImport:
     async def test_csv_manifest_validation(self):
         """Test CSV manifest validation."""
         # Valid CSV
-        csv_content = "filename,original_name\ndocument.pdf,My Document.pdf\nimage.jpg,Profile.jpg"
+        csv_content = (
+            "filename,original_name\ndocument.pdf,"
+            "My Document.pdf\nimage.jpg,Profile.jpg"
+        )
         schema = FileImportSchema(csv_manifest=csv_content)
         records = schema.parse_csv_manifest()
         assert len(records) == 2
@@ -104,9 +107,11 @@ class TestFileImport:
             zip_file.writestr("../evil.txt", "malicious content")
 
         zip_buffer.seek(0)
-        with zipfile.ZipFile(zip_buffer, "r") as test_zip:
-            with pytest.raises(ValueError, match="Unsafe file path"):
-                admin.validate_zip_file(test_zip)
+        with (
+            zipfile.ZipFile(zip_buffer, "r") as test_zip,
+            pytest.raises(ValueError, match="Unsafe file path"),
+        ):
+            admin.validate_zip_file(test_zip)
 
     async def test_process_direct_import(self):
         """Test direct file import processing."""

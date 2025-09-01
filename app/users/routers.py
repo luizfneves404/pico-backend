@@ -89,11 +89,13 @@ async def refresh_token(
             access_token=access_token, refresh_token=refresh_token, token_type="bearer"
         )
     except TokenError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=e.message)
-    except service.UserNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=e.message
+        ) from e
+    except service.UserNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found"
-        )
+        ) from e
 
 
 @token_router.post("/verify")
@@ -103,7 +105,9 @@ async def verify_token(
     try:
         await jwt_token.process_token(db_session, verify_request.token)
     except TokenError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=e.message)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=e.message
+        ) from e
 
 
 @token_router.post("/social/google", response_model=TokenResponse)
@@ -113,7 +117,8 @@ async def google_auth(
     """
     Authenticate with Google ID token
 
-    Verifies the Google ID token and either logs in existing user or creates new account.
+    Verifies the Google ID token and either logs in existing user or creates new
+    account.
     """
     try:
         user = await service.authenticate_user_by_google(
@@ -128,23 +133,23 @@ async def google_auth(
         return TokenResponse(
             access_token=access_token, refresh_token=refresh_token, token_type="bearer"
         )
-    except service.InvalidTokenError:
+    except service.InvalidTokenError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid ID token"
-        )
-    except service.AccountExistsError:
+        ) from e
+    except service.AccountExistsError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Account already exists. Please log in using email and password.",
-        )
-    except service.UsernameAlreadyExists:
+        ) from e
+    except service.UsernameAlreadyExists as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Username already exists"
-        )
-    except service.EmailAlreadyExists:
+        ) from e
+    except service.EmailAlreadyExists as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already exists"
-        )
+        ) from e
 
 
 @token_router.post("/social/apple", response_model=TokenResponse)
@@ -170,28 +175,28 @@ async def apple_auth(
         return TokenResponse(
             access_token=access_token, refresh_token=refresh_token, token_type="bearer"
         )
-    except service.MissingNameError:
+    except service.MissingNameError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Name is required when signing up with Apple",
-        )
-    except service.InvalidTokenError:
+        ) from e
+    except service.InvalidTokenError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid ID token"
-        )
-    except service.AccountExistsError:
+        ) from e
+    except service.AccountExistsError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Account already exists. Please log in using email and password.",
-        )
-    except service.UsernameAlreadyExists:
+        ) from e
+    except service.UsernameAlreadyExists as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Username already exists"
-        )
-    except service.EmailAlreadyExists:
+        ) from e
+    except service.EmailAlreadyExists as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already exists"
-        )
+        ) from e
 
 
 @token_router.post("/password-reset/request", response_model=PasswordResetResponse)
@@ -211,7 +216,8 @@ async def request_password_reset(
     )
 
     return PasswordResetResponse(
-        message="If an account with that email exists, a password reset link has been sent."
+        message="If an account with that email exists, a password reset link has"
+        "been sent."
     )
 
 
@@ -315,25 +321,25 @@ async def create_user(
             db_user,
             ["current_education", "intended_education"],
         )
-    except service.UsernameAlreadyExists:
+    except service.UsernameAlreadyExists as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Username already exists"
-        )
-    except service.PhoneNumberAlreadyExists:
+        ) from e
+    except service.PhoneNumberAlreadyExists as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Phone number already exists",
-        )
-    except service.EmailAlreadyExists:
+        ) from e
+    except service.EmailAlreadyExists as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already exists",
-        )
-    except service.ReferredByNotFoundError:
+        ) from e
+    except service.ReferredByNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Referred by not found",
-        )
+        ) from e
     logger.info(f"User with username {db_user.username} created successfully")
     return UserOut.from_orm_model(db_user)
 
@@ -379,7 +385,8 @@ async def update_user(
     """Update multiple user fields in a single request.
 
     This endpoint allows updating multiple user fields atomically.
-    Sensitive fields (username, password, phone_number, email) require password verification.
+    Sensitive fields (username, password, phone_number, email) require password
+    verification.
     Non-sensitive fields can be updated without password.
 
     Only fields included in the request will be updated.
@@ -429,47 +436,47 @@ async def update_user(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Password is required for sensitive field updates",
-            )
+            ) from e
         else:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect password",
-            )
-    except service.UsernameAlreadyExists:
+            ) from e
+    except service.UsernameAlreadyExists as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Username already exists",
-        )
-    except service.EmailAlreadyExists:
+        ) from e
+    except service.EmailAlreadyExists as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already exists",
-        )
-    except service.InvalidLevelIdError:
+        ) from e
+    except service.InvalidLevelIdError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid level id",
-        )
-    except service.InvalidStageIdError:
+        ) from e
+    except service.InvalidStageIdError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid stage id",
-        )
-    except service.InvalidInstitutionIdError:
+        ) from e
+    except service.InvalidInstitutionIdError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid institution id",
-        )
-    except service.InvalidCourseIdError:
+        ) from e
+    except service.InvalidCourseIdError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid course id",
-        )
-    except service.InvalidCountryCodeError:
+        ) from e
+    except service.InvalidCountryCodeError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid country code",
-        )
+        ) from e
 
 
 @user_authenticated_router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
@@ -484,11 +491,11 @@ async def delete_user(
             current_user,
             request.current_password.get_secret_value(),
         )
-    except service.InvalidCredentialsError:
+    except service.InvalidCredentialsError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect password",
-        )
+        ) from e
 
 
 @user_authenticated_router.post(
@@ -554,7 +561,8 @@ async def user_ranking(
     education_level_id: int | None = None,
     stage_id: int | None = None,
 ) -> list[UserInRanking]:
-    """Get user ranking based on various filters. If you pass null, it is not filtered by that criteria."""
+    """Get user ranking based on various filters. If you pass null, it is not filtered
+    by that criteria."""
     users = await service.get_ranking(
         db_session,
         asking_user_id=current_user.id,

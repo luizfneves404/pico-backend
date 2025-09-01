@@ -1,4 +1,4 @@
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 from fastapi import Query
 from pydantic import BaseModel, Field
@@ -25,13 +25,13 @@ class PaginationParams(BaseModel):
     )
 
 
-class PaginatedResponse(BaseModel, Generic[T]):
+class PaginatedResponse[T](BaseModel):
     items: list[T]
     page: int
     size: int
 
 
-def paginate(
+def paginate[T](
     items: list[T],
     pagination: PaginationParams,
 ) -> PaginatedResponse[T]:
@@ -51,7 +51,7 @@ def paginate(
     )
 
 
-def paginate_memory(
+def paginate_memory[T](
     items: list[T],
     pagination: PaginationParams,
 ) -> PaginatedResponse[T]:
@@ -61,7 +61,7 @@ def paginate_memory(
     return PaginatedResponse(items=items, page=pagination.page, size=pagination.size)
 
 
-def paginate_query(
+def paginate_query[T](
     query: Select[tuple[T]],
     pagination: PaginationParams,
 ) -> Select[tuple[T]]:

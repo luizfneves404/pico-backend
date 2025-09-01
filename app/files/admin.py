@@ -1,14 +1,14 @@
 import csv
 import io
 import zipfile
-from typing import Any
+from typing import Any, ClassVar
 
 from fastapi import Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, field_validator
 from sqladmin import action
-from wtforms import FileField, IntegerField, StringField
+from wtforms import Field, FileField, IntegerField, StringField
 from wtforms.validators import Optional
 
 from app.files.models import File
@@ -71,10 +71,10 @@ class FileImportSchema(BaseModel):
                 try:
                     FileImportRecord(**row)
                 except Exception as e:
-                    raise ValueError(f"Invalid CSV row {i + 1}: {e}")
+                    raise ValueError(f"Invalid CSV row {i + 1}: {e}") from e
 
         except Exception as e:
-            raise ValueError(f"Invalid CSV format: {e}")
+            raise ValueError(f"Invalid CSV format: {e}") from e
 
         return v
 
@@ -89,31 +89,31 @@ class FileImportSchema(BaseModel):
 
 class FileAdmin(CustomModelView, model=File):
     icon = "fa-solid fa-file"
-    column_list = [
+    column_list = (
         File.id,
         File.file_id,
         File.original_name,
         File.created_at,
         File.updated_at,
         File.size,
-    ]
-    column_searchable_list = [File.id, File.file_id]
-    column_sortable_list = [File.id, File.updated_at, File.size]
-    column_details_list = [
+    )
+    column_searchable_list = (File.id, File.file_id)
+    column_sortable_list = (File.id, File.updated_at, File.size)
+    column_details_list = (
         File.id,
         File.file_id,
         File.original_name,
         File.created_at,
         File.updated_at,
         File.size,
-    ]
+    )
 
-    form_overrides = {
+    form_overrides: ClassVar[dict[str, type[Field]]] = {
         "file_id": FileField,
         "original_name": StringField,
         "size": IntegerField,
     }
-    form_args = {
+    form_args: ClassVar[dict[str, dict[str, Any]]] = {
         "file_id": {
             "label": "File",
             "validators": [Optional()],
@@ -125,7 +125,7 @@ class FileAdmin(CustomModelView, model=File):
             "validators": [Optional()],
         },
     }
-    form_widget_args = {
+    form_widget_args: ClassVar[dict[str, dict[str, Any]]] = {
         "file_id": {
             "required": False,
         },
@@ -140,7 +140,7 @@ class FileAdmin(CustomModelView, model=File):
     # Import functionality
     can_import = True
     import_schema = FileImportSchema
-    import_template_data = {
+    import_template_data: ClassVar[dict[str, Any]] = {
         "zip_file": "Upload a ZIP file containing files to import",
         "csv_manifest": "filename,original_name\ndocument1.pdf,My Document.pdf\nimage.jpg,Profile Image.jpg",
         "direct_files": "Or upload files directly (for small batches)",
@@ -155,7 +155,7 @@ class FileAdmin(CustomModelView, model=File):
             await run_in_threadpool(storage.delete, model.file_id)
 
         # Handle new file upload
-        if "file_id" in data and data["file_id"]:
+        if data.get("file_id"):
             file = data["file_id"]
             file_id = await run_in_threadpool(
                 storage.upload,
@@ -328,7 +328,7 @@ class FileAdmin(CustomModelView, model=File):
         # For now, we'll just handle the first file
         # In the future, we could zip multiple files together
         pk = pks[0]
-        file: File = await self.get_object_for_details(pk)
+        file: File = await self._get_object_by_pk(self._stmt_by_identifier(pk))  # pyright: ignore[reportUnknownMemberType]
         if not file:
             raise ValueError(f"File with id {pk} not found")
 

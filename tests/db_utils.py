@@ -2,8 +2,9 @@ import contextlib
 import os
 import uuid
 from argparse import Namespace
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator, Optional, Union
+from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 import sqlalchemy as sa
@@ -19,7 +20,7 @@ from app.config import settings
 
 
 def make_alembic_config(
-    cmd_opts: Namespace, base_path: Union[str, Path] = settings.app_root.parent
+    cmd_opts: Namespace, base_path: str | Path = settings.app_root.parent
 ) -> AlembicConfig:
     # Replace path to alembic.ini file to absolute
     base_path = Path(base_path)
@@ -41,7 +42,7 @@ def make_alembic_config(
     return config
 
 
-def alembic_config_from_url(pg_url: Optional[str] = None) -> AlembicConfig:
+def alembic_config_from_url(pg_url: str | None = None) -> AlembicConfig:
     """Provides python object, representing alembic.ini file."""
     cmd_options = Namespace(
         config="alembic.ini",  # Config file name
@@ -70,57 +71,58 @@ async def tmp_database(
 # Next functions are copied from `sqlalchemy_utils` and slightly
 # modified to support async. Maybe
 async def create_database_async(
-    url: str, encoding: str = "utf8", template: Optional[str] = None
+    url: str, encoding: str = "utf8", template: str | None = None
 ) -> None:
     url_obj = make_url(url)
     database = url_obj.database
-    dialect_name = url_obj.get_dialect().name
-    dialect_driver = url_obj.get_dialect().driver
+    dialect = url_obj.get_dialect()
+    dialect_name, dialect_driver = dialect.name, dialect.driver
 
-    if dialect_name == "postgresql":
-        url_obj = _set_url_database(url_obj, database="postgres")
-    elif dialect_name == "mssql":
-        url_obj = _set_url_database(url_obj, database="master")
-    elif dialect_name == "cockroachdb":
-        url_obj = _set_url_database(url_obj, database="defaultdb")
-    elif not dialect_name == "sqlite":
-        url_obj = _set_url_database(url_obj, database=None)
+    # Map dialect to its "system" database
+    system_databases = {
+        "postgresql": "postgres",
+        "mssql": "master",
+        "cockroachdb": "defaultdb",
+    }
+    if dialect_name in system_databases:
+        url_obj = _set_url_database(url_obj, system_databases[dialect_name])
+    elif dialect_name != "sqlite":
+        url_obj = _set_url_database(url_obj, None)
 
-    if (dialect_name == "mssql" and dialect_driver in {"pymssql", "pyodbc"}) or (
-        dialect_name == "postgresql"
-        and dialect_driver in {"asyncpg", "pg8000", "psycopg2", "psycopg2cffi"}
-    ):
+    # Choose engine with special case for autocommit dialects
+    autocommit_dialects = {
+        "mssql": {"pymssql", "pyodbc"},
+        "postgresql": {"asyncpg", "pg8000", "psycopg2", "psycopg2cffi"},
+    }
+    if dialect_driver in autocommit_dialects.get(dialect_name, set()):
         engine = create_async_engine(url_obj, isolation_level="AUTOCOMMIT")
     else:
         engine = create_async_engine(url_obj)
 
-    if dialect_name == "postgresql":
-        if not template:
-            template = "template1"
-
-        async with engine.begin() as conn:
-            text = "CREATE DATABASE {} ENCODING '{}' TEMPLATE {}".format(
-                quote(conn, database), encoding, quote(conn, template)
+    async with engine.begin() as conn:
+        if dialect_name == "postgresql":
+            tmpl = template or "template1"
+            stmt = (
+                f"CREATE DATABASE {quote(conn, database)} "
+                f"ENCODING '{encoding}' TEMPLATE {quote(conn, tmpl)}"
             )
-            await conn.execute(sa.text(text))
 
-    elif dialect_name == "mysql":
-        async with engine.begin() as conn:
-            text = "CREATE DATABASE {} CHARACTER SET = '{}'".format(
-                quote(conn, database), encoding
+        elif dialect_name == "mysql":
+            stmt = (
+                f"CREATE DATABASE {quote(conn, database)} CHARACTER SET = '{encoding}'"
             )
-            await conn.execute(sa.text(text))
 
-    elif dialect_name == "sqlite" and database != ":memory:":
-        if database:
-            async with engine.begin() as conn:
-                await conn.execute(sa.text("CREATE TABLE DB(id int)"))
-                await conn.execute(sa.text("DROP TABLE DB"))
+        elif dialect_name == "sqlite" and database != ":memory:" and database:
+            # SQLite doesn't support CREATE DATABASE, emulate by creating a file
+            await conn.execute(sa.text("CREATE TABLE DB(id int)"))
+            await conn.execute(sa.text("DROP TABLE DB"))
+            stmt = None
 
-    else:
-        async with engine.begin() as conn:
-            text = f"CREATE DATABASE {quote(conn, database)}"
-            await conn.execute(sa.text(text))
+        else:
+            stmt = f"CREATE DATABASE {quote(conn, database)}"
+
+        if stmt:
+            await conn.execute(sa.text(stmt))
 
     await engine.dispose()
 
@@ -137,7 +139,7 @@ async def drop_database_async(url: str) -> None:
         url_obj = _set_url_database(url_obj, database="master")
     elif dialect_name == "cockroachdb":
         url_obj = _set_url_database(url_obj, database="defaultdb")
-    elif not dialect_name == "sqlite":
+    elif dialect_name != "sqlite":
         url_obj = _set_url_database(url_obj, database=None)
 
     if dialect_name == "mssql" and dialect_driver in {"pymssql", "pyodbc"}:
@@ -160,12 +162,12 @@ async def drop_database_async(url: str) -> None:
             # Disconnect all users from the database we are dropping.
             version = conn.dialect.server_version_info
             pid_column = "pid" if (version and version >= (9, 2)) else "procpid"
-            text = """
+            text = f"""
             SELECT pg_terminate_backend(pg_stat_activity.{pid_column})
             FROM pg_stat_activity
             WHERE pg_stat_activity.datname = '{database}'
             AND {pid_column} <> pg_backend_pid();
-            """.format(pid_column=pid_column, database=database)
+            """
             await conn.execute(sa.text(text))
 
             # Drop the database.

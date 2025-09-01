@@ -1,5 +1,6 @@
 import json
-from typing import Any, ClassVar, Sequence, Union
+from collections.abc import Sequence
+from typing import Any, ClassVar
 
 from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -64,7 +65,7 @@ class ContentBlocksField(JSONField):
             try:
                 self.data = validate_content_block_list(json.loads(value))
             except ValueError as e:
-                raise ValueError(self.gettext(f"Invalid JSON: {e}"))
+                raise ValueError(self.gettext(f"Invalid JSON: {e}")) from e
 
 
 class TagsTextAreaField(Field):
@@ -87,7 +88,7 @@ class TagsTextAreaField(Field):
 class FlowAdmin(CustomModelView, model=Flow):
     icon = "fa-solid fa-stream"
 
-    column_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
+    column_list: ClassVar[str | Sequence[MODEL_ATTR]] = [
         Flow.id,
         Flow.code,
         Flow.title,
@@ -115,7 +116,7 @@ class FlowAdmin(CustomModelView, model=Flow):
         Flow.flow_input_type,
         Flow.source_type,
     ]
-    column_details_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
+    column_details_list: ClassVar[str | Sequence[MODEL_ATTR]] = [
         Flow.id,
         Flow.code,
         Flow.title,
@@ -147,7 +148,7 @@ class FlowAdmin(CustomModelView, model=Flow):
         Flow.cover_image: "Cover Image",
     }
 
-    form_columns: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
+    form_columns: ClassVar[str | Sequence[MODEL_ATTR]] = [
         Flow.title,
         Flow.created_by,
         Flow.cover_image,
@@ -210,78 +211,78 @@ class FlowAdmin(CustomModelView, model=Flow):
 class FlowTranscriptionBlockAdmin(CustomModelView, model=FlowTranscriptionBlock):
     icon = "fa-solid fa-file-text"
 
-    column_list = [
+    column_list = (
         FlowTranscriptionBlock.id,
         FlowTranscriptionBlock.flow_id,
         FlowTranscriptionBlock.block_number,
         FlowTranscriptionBlock.title,
         FlowTranscriptionBlock.created_at,
-    ]
-    column_searchable_list = [
+    )
+    column_searchable_list = (
         FlowTranscriptionBlock.flow_id,
-        FlowTranscriptionBlock.title,
-        FlowTranscriptionBlock.block_text,
-    ]
-    column_sortable_list = [
-        FlowTranscriptionBlock.id,
-        FlowTranscriptionBlock.flow_id,
-        FlowTranscriptionBlock.block_number,
-        FlowTranscriptionBlock.created_at,
-    ]
-    column_details_list = [
-        FlowTranscriptionBlock.id,
-        FlowTranscriptionBlock.flow_id,
-        FlowTranscriptionBlock.block_number,
         FlowTranscriptionBlock.title,
         FlowTranscriptionBlock.block_text,
+    )
+    column_sortable_list = (
+        FlowTranscriptionBlock.id,
+        FlowTranscriptionBlock.flow_id,
+        FlowTranscriptionBlock.block_number,
         FlowTranscriptionBlock.created_at,
-    ]
+    )
+    column_details_list = (
+        FlowTranscriptionBlock.id,
+        FlowTranscriptionBlock.flow_id,
+        FlowTranscriptionBlock.block_number,
+        FlowTranscriptionBlock.title,
+        FlowTranscriptionBlock.block_text,
+        FlowTranscriptionBlock.created_at,
+    )
 
-    form_columns = [
+    form_columns = (
         FlowTranscriptionBlock.flow_id,
         FlowTranscriptionBlock.block_number,
         FlowTranscriptionBlock.title,
         FlowTranscriptionBlock.block_text,
-    ]
+    )
 
 
 class FlowElementAdmin(CustomModelView, model=FlowElement):
     icon = "fa-solid fa-list"
 
-    column_list = [
+    column_list = (
         FlowElement.id,
         FlowElement.flow_id,
         FlowElement.element_type,
         FlowElement.order,
         FlowElement.question_id,
         FlowElement.created_at,
-    ]
-    column_searchable_list = [
+    )
+    column_searchable_list = (
         FlowElement.flow_id,
         FlowElement.question_id,
         FlowElement.element_type,
-    ]
-    column_sortable_list = [
+    )
+    column_sortable_list = (
         FlowElement.id,
         FlowElement.flow_id,
         FlowElement.order,
         FlowElement.created_at,
-    ]
-    column_details_list = [
+    )
+    column_details_list = (
         FlowElement.id,
         FlowElement.flow_id,
         FlowElement.element_type,
         FlowElement.order,
         FlowElement.question_id,
         FlowElement.created_at,
-    ]
+    )
 
-    form_columns = [
+    form_columns = (
         FlowElement.flow,
         FlowElement.order,
         FlowElement.element_type,
         FlowElement.question_id,
-    ]
+    )
 
 
 class QuestionImportSchema(BaseModel):
@@ -305,7 +306,7 @@ class QuestionImportSchema(BaseModel):
 class QuestionAdmin(CustomModelView, model=Question):
     icon = "fa-solid fa-question-circle"
 
-    column_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
+    column_list: ClassVar[str | Sequence[MODEL_ATTR]] = (
         Question.id,
         Question.created_at,
         "question_truncated_text",
@@ -317,13 +318,13 @@ class QuestionAdmin(CustomModelView, model=Question):
         Question.is_quantitative,
         Question.is_active,
         "has_embedding",
-    ]
-    column_searchable_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
+    )
+    column_searchable_list: ClassVar[str | Sequence[MODEL_ATTR]] = (
         Question.content_blocks,
         Question.major_tags,
         Question.minor_tags,
-    ]
-    column_sortable_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
+    )
+    column_sortable_list: ClassVar[str | Sequence[MODEL_ATTR]] = (
         Question.id,
         Question.created_at,
         Question.is_quantitative,
@@ -331,8 +332,8 @@ class QuestionAdmin(CustomModelView, model=Question):
         Question.source_type,
         Question.is_active,
         "has_embedding",
-    ]
-    column_details_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
+    )
+    column_details_list: ClassVar[str | Sequence[MODEL_ATTR]] = (
         Question.id,
         Question.content_blocks,
         Question.is_active,
@@ -349,7 +350,7 @@ class QuestionAdmin(CustomModelView, model=Question):
         Question.source_user,
         Question.answer_type,
         Question.created_at,
-    ]
+    )
 
     column_labels: ClassVar[dict[MODEL_ATTR, str]] = {
         Question.is_quantitative: "Quantitative?",
@@ -361,21 +362,21 @@ class QuestionAdmin(CustomModelView, model=Question):
         "has_embedding": "Has Embedding?",
     }
 
-    form_excluded_columns = [
+    form_excluded_columns = (
         "created_at",
         "embedding",
         "flows",
         "flow_questions",
-    ]
+    )
 
-    form_overrides = {
+    form_overrides: ClassVar[dict[str, type[Field]]] = {
         "content_blocks": ContentBlocksField,
         "answer_content_blocks": ContentBlocksField,
         "major_tags": TagsTextAreaField,
         "minor_tags": TagsTextAreaField,
     }
 
-    form_widget_args = {
+    form_widget_args: ClassVar[dict[str, dict[str, Any]]] = {
         "content_blocks": {
             "rows": 30,
         },
@@ -388,7 +389,7 @@ class QuestionAdmin(CustomModelView, model=Question):
 
     import_schema = QuestionImportSchema
 
-    import_template_data = {
+    import_template_data: ClassVar[dict[str, Any]] = {
         "id": 99999,
         "content_blocks": [
             {
@@ -467,10 +468,10 @@ class QuestionAdmin(CustomModelView, model=Question):
                     return RedirectResponse(
                         referer or request.url_for("admin:list", identity=self.identity)
                     )
-            except ValueError:
+            except ValueError as e:
                 raise HTTPException(
                     status_code=400, detail="Invalid primary key format."
-                )
+                ) from e
 
         await enqueue_job(
             "task_compute_question_embeddings",
@@ -506,10 +507,10 @@ class QuestionAdmin(CustomModelView, model=Question):
                     return RedirectResponse(
                         referer or request.url_for("admin:list", identity=self.identity)
                     )
-            except ValueError:
+            except ValueError as e:
                 raise HTTPException(
                     status_code=400, detail="Invalid primary key format."
-                )
+                ) from e
 
         await enqueue_job(
             "task_recompute_question_embeddings",
@@ -543,10 +544,10 @@ class QuestionAdmin(CustomModelView, model=Question):
                     return RedirectResponse(
                         referer or request.url_for("admin:list", identity=self.identity)
                     )
-            except ValueError:
+            except ValueError as e:
                 raise HTTPException(
                     status_code=400, detail="Invalid primary key format."
-                )
+                ) from e
 
         await enqueue_job(
             "task_categorize_minor_tags",
@@ -579,10 +580,10 @@ class QuestionAdmin(CustomModelView, model=Question):
                     return RedirectResponse(
                         referer or request.url_for("admin:list", identity=self.identity)
                     )
-            except ValueError:
+            except ValueError as e:
                 raise HTTPException(
                     status_code=400, detail="Invalid primary key format."
-                )
+                ) from e
 
         await enqueue_job(
             "task_categorize_major_tags",
@@ -615,10 +616,10 @@ class QuestionAdmin(CustomModelView, model=Question):
                     return RedirectResponse(
                         referer or request.url_for("admin:list", identity=self.identity)
                     )
-            except ValueError:
+            except ValueError as e:
                 raise HTTPException(
                     status_code=400, detail="Invalid primary key format."
-                )
+                ) from e
 
         await enqueue_job(
             "task_generate_question_answers",
@@ -653,10 +654,10 @@ class QuestionAdmin(CustomModelView, model=Question):
                     return RedirectResponse(
                         referer or request.url_for("admin:list", identity=self.identity)
                     )
-            except ValueError:
+            except ValueError as e:
                 raise HTTPException(
                     status_code=400, detail="Invalid primary key format."
-                )
+                ) from e
 
         await enqueue_job(
             "task_analyze_question_quantitativeness",
@@ -689,10 +690,10 @@ class QuestionAdmin(CustomModelView, model=Question):
                     return RedirectResponse(
                         referer or request.url_for("admin:list", identity=self.identity)
                     )
-            except ValueError:
+            except ValueError as e:
                 raise HTTPException(
                     status_code=400, detail="Invalid primary key format."
-                )
+                ) from e
 
         await enqueue_job(
             "task_fix_question_newlines",
@@ -728,7 +729,9 @@ class QuestionAdmin(CustomModelView, model=Question):
             )
             for validated_data in validated_data_list
         ]
-        for question, validated_data in zip(questions, validated_data_list):
+        for question, validated_data in zip(
+            questions, validated_data_list, strict=False
+        ):
             if validated_data.id is not None:
                 question.id = validated_data.id
         return questions
@@ -788,24 +791,24 @@ class QuestionAdmin(CustomModelView, model=Question):
 class QuestionAreaAdmin(CustomModelView, model=QuestionArea):
     icon = "fa-solid fa-map"
 
-    column_list = [
+    column_list = (
         QuestionArea.id,
         QuestionArea.name,
         QuestionArea.education_level,
         QuestionArea.country,
         QuestionArea.course,
         QuestionArea.created_at,
-    ]
-    column_searchable_list = [
+    )
+    column_searchable_list = (
         QuestionArea.name,
         QuestionArea.tags,
-    ]
-    column_sortable_list = [
+    )
+    column_sortable_list = (
         QuestionArea.id,
         QuestionArea.name,
         QuestionArea.created_at,
-    ]
-    column_details_list = [
+    )
+    column_details_list = (
         QuestionArea.id,
         QuestionArea.name,
         QuestionArea.tags,
@@ -813,15 +816,15 @@ class QuestionAreaAdmin(CustomModelView, model=QuestionArea):
         QuestionArea.country,
         QuestionArea.course,
         QuestionArea.created_at,
-    ]
+    )
 
-    form_columns = [
+    form_columns = (
         QuestionArea.name,
         QuestionArea.tags,
         QuestionArea.education_level,
         QuestionArea.country,
         QuestionArea.course,
-    ]
+    )
 
     form_args = {
         "tags": {
@@ -842,7 +845,7 @@ class ExamImportSchema(BaseModel):
 class ExamAdmin(CustomModelView, model=Exam):
     icon = "fa-solid fa-clipboard-check"
 
-    column_list = [
+    column_list = (
         Exam.id,
         Exam.name,
         Exam.country,
@@ -850,16 +853,14 @@ class ExamAdmin(CustomModelView, model=Exam):
         Exam.course,
         Exam.is_privileged,
         Exam.created_at,
-    ]
-    column_searchable_list = [
-        Exam.name,
-    ]
-    column_sortable_list = [
+    )
+    column_searchable_list = (Exam.name,)
+    column_sortable_list = (
         Exam.id,
         Exam.name,
         Exam.created_at,
-    ]
-    column_details_list = [
+    )
+    column_details_list = (
         Exam.id,
         Exam.name,
         Exam.country,
@@ -867,19 +868,19 @@ class ExamAdmin(CustomModelView, model=Exam):
         Exam.course,
         Exam.is_privileged,
         Exam.created_at,
-    ]
+    )
 
-    form_columns = [
+    form_columns = (
         Exam.name,
         Exam.country,
         Exam.education_level,
         Exam.course,
         Exam.is_privileged,
-    ]
+    )
 
     can_import = True
     import_schema = ExamImportSchema
-    import_template_data = {
+    import_template_data: ClassVar[dict[str, Any]] = {
         "name": "Exame Nacional do Ensino Médio",
         "country_id": 1,
         "education_level_id": 1,
@@ -910,35 +911,33 @@ class OfficialQuestionSourceImportSchema(BaseModel):
 class OfficialQuestionSourceAdmin(CustomModelView, model=OfficialQuestionSource):
     icon = "fa-solid fa-certificate"
 
-    column_list = [
+    column_list = (
         OfficialQuestionSource.id,
         OfficialQuestionSource.exam,
         OfficialQuestionSource.year,
         OfficialQuestionSource.created_at,
-    ]
-    column_searchable_list = [
-        OfficialQuestionSource.year,
-    ]
-    column_sortable_list = [
+    )
+    column_searchable_list = (OfficialQuestionSource.year,)
+    column_sortable_list = (
         OfficialQuestionSource.id,
         OfficialQuestionSource.year,
         OfficialQuestionSource.created_at,
-    ]
-    column_details_list = [
+    )
+    column_details_list = (
         OfficialQuestionSource.id,
         OfficialQuestionSource.exam,
         OfficialQuestionSource.year,
         OfficialQuestionSource.created_at,
-    ]
+    )
 
-    form_columns = [
+    form_columns = (
         OfficialQuestionSource.exam,
         OfficialQuestionSource.year,
-    ]
+    )
 
     can_import = True
     import_schema = OfficialQuestionSourceImportSchema
-    import_template_data = {
+    import_template_data: ClassVar[dict[str, Any]] = {
         "exam_id": 1,
         "year": 2024,
     }
@@ -957,58 +956,58 @@ class OfficialQuestionSourceAdmin(CustomModelView, model=OfficialQuestionSource)
 class FlowUserFeedAdmin(CustomModelView, model=FlowUserFeed):
     icon = "fa-solid fa-rss"
 
-    column_list = [
+    column_list = (
         FlowUserFeed.id,
         FlowUserFeed.user_id,
         FlowUserFeed.flow_id,
         FlowUserFeed.created_at,
-    ]
-    column_searchable_list = [
+    )
+    column_searchable_list = (
         FlowUserFeed.user_id,
         FlowUserFeed.flow_id,
-    ]
-    column_sortable_list = [
+    )
+    column_sortable_list = (
         FlowUserFeed.id,
         FlowUserFeed.user_id,
         FlowUserFeed.flow_id,
         FlowUserFeed.created_at,
-    ]
-    column_details_list = [
+    )
+    column_details_list = (
         FlowUserFeed.id,
         FlowUserFeed.user_id,
         FlowUserFeed.flow_id,
         FlowUserFeed.created_at,
-    ]
+    )
 
-    form_columns = [
+    form_columns = (
         FlowUserFeed.user,
         FlowUserFeed.flow,
-    ]
+    )
 
 
 class CampaignAdmin(CustomModelView, model=Campaign):
     icon = "fa-solid fa-bullhorn"
 
-    column_list = [
+    column_list = (
         Campaign.id,
         Campaign.name,
         Campaign.campaign_type,
         Campaign.probability,
         Campaign.created_at,
-    ]
-    column_searchable_list = [
+    )
+    column_searchable_list = (
         Campaign.name,
         Campaign.text,
         Campaign.campaign_type,
-    ]
-    column_sortable_list = [
+    )
+    column_sortable_list = (
         Campaign.id,
         Campaign.name,
         Campaign.campaign_type,
         Campaign.probability,
         Campaign.created_at,
-    ]
-    column_details_list = [
+    )
+    column_details_list = (
         Campaign.id,
         Campaign.name,
         Campaign.text,
@@ -1019,7 +1018,7 @@ class CampaignAdmin(CustomModelView, model=Campaign):
         Campaign.probability,
         Campaign.campaign_type,
         Campaign.created_at,
-    ]
+    )
 
     column_labels: ClassVar[dict[MODEL_ATTR, str]] = {
         Campaign.campaign_type: "Type",
@@ -1029,7 +1028,7 @@ class CampaignAdmin(CustomModelView, model=Campaign):
         Campaign.image2: "Image 2",
     }
 
-    form_columns = [
+    form_columns = (
         Campaign.name,
         Campaign.text,
         Campaign.external_link,
@@ -1038,7 +1037,7 @@ class CampaignAdmin(CustomModelView, model=Campaign):
         Campaign.image2,
         Campaign.probability,
         Campaign.campaign_type,
-    ]
+    )
 
 
 class ChoiceImportSchema(BaseModel):
@@ -1052,26 +1051,26 @@ class ChoiceImportSchema(BaseModel):
 class ChoiceAdmin(CustomModelView, model=Choice):
     icon = "fa-solid fa-check-circle"
 
-    column_list = [
+    column_list = (
         Choice.id,
         Choice.question_id,
         Choice.text,
         Choice.is_correct,
         Choice.order,
         Choice.created_at,
-    ]
-    column_searchable_list = [
+    )
+    column_searchable_list = (
         Choice.text,
         Choice.question_id,
-    ]
-    column_sortable_list = [
+    )
+    column_sortable_list = (
         Choice.id,
         Choice.question_id,
         Choice.is_correct,
         Choice.order,
         Choice.created_at,
-    ]
-    column_details_list = [
+    )
+    column_details_list = (
         Choice.id,
         Choice.question_id,
         Choice.text,
@@ -1079,24 +1078,24 @@ class ChoiceAdmin(CustomModelView, model=Choice):
         Choice.is_correct,
         Choice.order,
         Choice.created_at,
-    ]
+    )
 
     column_labels: ClassVar[dict[MODEL_ATTR, str]] = {
         "is_correct": "Correct?",
         "question_id": "Question",
     }
 
-    form_columns = [
+    form_columns = (
         Choice.question,
         Choice.text,
         Choice.image,
         Choice.is_correct,
         Choice.order,
-    ]
+    )
 
     can_import = True
     import_schema = ChoiceImportSchema
-    import_template_data = {
+    import_template_data: ClassVar[dict[str, Any]] = {
         "question_id": 1,
         "text": "Digite o texto da opção aqui",
         "is_correct": True,
@@ -1122,32 +1121,32 @@ class ChoiceAdmin(CustomModelView, model=Choice):
 class FlowQuestionAdmin(CustomModelView, model=FlowQuestion):
     icon = "fa-solid fa-question"
 
-    column_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
+    column_list: ClassVar[str | Sequence[MODEL_ATTR]] = (
         FlowQuestion.id,
         FlowQuestion.flow,
         FlowQuestion.question,
         FlowQuestion.order,
         "num_total_answers",
         FlowQuestion.created_at,
-    ]
-    column_searchable_list = [
+    )
+    column_searchable_list = (
         FlowQuestion.flow,
         FlowQuestion.question,
-    ]
-    column_sortable_list = [
+    )
+    column_sortable_list = (
         FlowQuestion.id,
         FlowQuestion.flow,
         FlowQuestion.order,
         FlowQuestion.created_at,
-    ]
-    column_details_list: ClassVar[Union[str, Sequence[MODEL_ATTR]]] = [
+    )
+    column_details_list: ClassVar[Sequence[MODEL_ATTR]] = (
         FlowQuestion.id,
         FlowQuestion.flow,
         FlowQuestion.question,
         FlowQuestion.order,
         "num_total_answers",
         FlowQuestion.created_at,
-    ]
+    )
 
     column_labels: ClassVar[dict[MODEL_ATTR, str]] = {
         "num_total_answers": "Total Answers",
@@ -1162,11 +1161,11 @@ class FlowQuestionAdmin(CustomModelView, model=FlowQuestion):
         }
     }
 
-    form_columns = [
+    form_columns = (
         FlowQuestion.flow,
         FlowQuestion.question,
         FlowQuestion.order,
-    ]
+    )
 
     def list_query(self, request: Request) -> Select[tuple[FlowQuestion]]:
         stmt: Select[tuple[FlowQuestion]] = super().list_query(request)  # type: ignore
@@ -1190,26 +1189,26 @@ class FlowQuestionAdmin(CustomModelView, model=FlowQuestion):
 class FlowQuestionUserAdmin(CustomModelView, model=FlowQuestionUser):
     icon = "fa-solid fa-user-check"
 
-    column_list = [
+    column_list = (
         FlowQuestionUser.id,
         FlowQuestionUser.flow_element_id,
         FlowQuestionUser.user_id,
         FlowQuestionUser.choice_id,
         FlowQuestionUser.grade,
         FlowQuestionUser.created_at,
-    ]
-    column_searchable_list = [
+    )
+    column_searchable_list = (
         FlowQuestionUser.flow_element_id,
         FlowQuestionUser.user_id,
         FlowQuestionUser.submitted_text,
         FlowQuestionUser.feedback,
-    ]
-    column_sortable_list = [
+    )
+    column_sortable_list = (
         FlowQuestionUser.id,
         FlowQuestionUser.created_at,
         FlowQuestionUser.grade,
-    ]
-    column_details_list = [
+    )
+    column_details_list = (
         FlowQuestionUser.id,
         FlowQuestionUser.flow_element_id,
         FlowQuestionUser.user_id,
@@ -1218,7 +1217,7 @@ class FlowQuestionUserAdmin(CustomModelView, model=FlowQuestionUser):
         FlowQuestionUser.feedback,
         FlowQuestionUser.grade,
         FlowQuestionUser.created_at,
-    ]
+    )
 
     column_labels: ClassVar[dict[MODEL_ATTR, str]] = {
         "flow_element_id": "Flow Element",
@@ -1227,49 +1226,49 @@ class FlowQuestionUserAdmin(CustomModelView, model=FlowQuestionUser):
         "submitted_text": "Submitted Text",
     }
 
-    form_columns = [
+    form_columns = (
         FlowQuestionUser.flow_element_id,
         FlowQuestionUser.user_id,
         FlowQuestionUser.choice_id,
         FlowQuestionUser.submitted_text,
         FlowQuestionUser.feedback,
         FlowQuestionUser.grade,
-    ]
+    )
 
 
 class FlowFeedScoreAdmin(CustomModelView, model=FlowFeedScore):
     icon = "fa-solid fa-star"
 
-    column_list = [
+    column_list = (
         FlowFeedScore.id,
         FlowFeedScore.group_type,
         FlowFeedScore.group_key,
         FlowFeedScore.flow,
         FlowFeedScore.score,
         FlowFeedScore.created_at,
-    ]
+    )
 
-    form_columns = [
+    form_columns = (
         FlowFeedScore.group_type,
         FlowFeedScore.group_key,
         FlowFeedScore.flow,
         FlowFeedScore.score,
-    ]
+    )
 
 
 class FlowFeedScoreGroupTypeAdmin(CustomModelView, model=FlowFeedScoreGroupType):
     icon = "fa-solid fa-star"
 
-    column_list = [
+    column_list = (
         FlowFeedScoreGroupType.id,
         FlowFeedScoreGroupType.group_type,
         FlowFeedScoreGroupType.created_at,
         FlowFeedScoreGroupType.enabled,
         FlowFeedScoreGroupType.weight,
-    ]
+    )
 
-    form_columns = [
+    form_columns = (
         FlowFeedScoreGroupType.group_type,
         FlowFeedScoreGroupType.enabled,
         FlowFeedScoreGroupType.weight,
-    ]
+    )

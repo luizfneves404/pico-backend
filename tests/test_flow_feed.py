@@ -41,7 +41,8 @@ class TestFlowFeedScoring:
         session: AsyncSession,
         session_factory: SessionFactory,
     ):
-        """Test the IntendedEducationGroupScoreCalculator calculates scores correctly."""
+        """Test the IntendedEducationGroupScoreCalculator calculates scores
+        correctly."""
         async with session.begin():
             # Create education components
             level = await EducationLevelFactory.create(session=session)
@@ -129,7 +130,8 @@ class TestFlowFeedScoring:
             )
             score_records = list(scores.scalars())
 
-            # Should have 2 score records (one for each education group that had answers)
+            # Should have 2 score records (one for each education group that had
+            # answers)
             assert len(score_records) == 2
 
             # Find the score for the main education group
@@ -596,7 +598,8 @@ class TestFlowFeedScoring:
         session: AsyncSession,
         session_factory: SessionFactory,
     ):
-        """Test that the score calculator clears old scores before calculating new ones."""
+        """Test that the score calculator clears old scores before calculating new
+        ones."""
         async with session.begin():
             # Create education and group type
             level = await EducationLevelFactory.create(session=session)

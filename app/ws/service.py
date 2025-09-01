@@ -89,7 +89,8 @@ async def get_online_info(
 
     Returns:
         Dictionary mapping user_id to OnlineInfo.
-        For users not found in the DB (never logged in), is_online is False and last_online is None.
+        For users not found in the DB (never logged in), is_online is False and
+        last_online is None.
     """
     # Fetch existing user online info
     result = await db_session.execute(

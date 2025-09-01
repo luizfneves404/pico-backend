@@ -2,7 +2,7 @@
 import logging
 from typing import IO, Any, Final
 
-# third‑party
+# third-party
 from google import genai
 from google.genai import errors, types
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 # ---------- constantes de negócio ----------
 _GEMINI_MODEL: Final[str] = "gemini-2.5-flash-preview-05-20"
-PDF_SIZE_LIMIT: Final[int] = 20 * 1024 * 1024  # 20 MB hard‑limit
+PDF_SIZE_LIMIT: Final[int] = 20 * 1024 * 1024  # 20 MB hard-limit
 
 
 class MockGeminiResponse:

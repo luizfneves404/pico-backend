@@ -6,21 +6,22 @@ Create Date: 2025-06-11 16:51:56.538853
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import geoalchemy2.types
-import pgvector.sqlalchemy
+import pgvector.sqlalchemy  # pyright: ignore[reportMissingTypeStubs]
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 import app.base
+import app.flows.db_types
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "283b2bc70b03"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -159,7 +160,7 @@ def upgrade() -> None:
         sa.Column("institution_type", sa.String(length=50), nullable=False),
         sa.Column("government_issued_code", sa.String(length=50), nullable=False),
         sa.Column("country_code", sa.String(length=2), nullable=False),
-        sa.Column(
+        sa.Column(  # pyright: ignore[reportUnknownArgumentType]
             "location",
             geoalchemy2.types.Geography(
                 geometry_type="POINT",
@@ -374,7 +375,7 @@ def upgrade() -> None:
         sa.Column("current_education_id", sa.Integer(), nullable=True),
         sa.Column("intended_education_id", sa.Integer(), nullable=True),
         sa.Column("country_code", sa.String(length=2), nullable=True),
-        sa.Column(
+        sa.Column(  # pyright: ignore[reportUnknownArgumentType]
             "location",
             geoalchemy2.types.Geography(
                 geometry_type="POINT",
@@ -625,7 +626,7 @@ def upgrade() -> None:
             app.flows.db_types.ContentBlockListType(),
             nullable=False,
         ),
-        sa.Column(
+        sa.Column(  # pyright: ignore[reportUnknownArgumentType]
             "embedding", pgvector.sqlalchemy.vector.VECTOR(dim=1024), nullable=True
         ),
         sa.Column(

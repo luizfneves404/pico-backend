@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -114,28 +114,30 @@ class SetLoggerLevelView(BaseView):
             # Log the change
             root_logger = logging.getLogger()
             root_logger.info(
-                f"Logger '{display_name}' level changed from {old_level} to {level_name} via admin interface"
+                f"Logger '{display_name}' level changed from {old_level}"
+                f"to {level_name} via admin interface"
             )
 
             return JSONResponse(
                 content={
                     "success": True,
-                    "message": f"Logger '{display_name}' level changed from {old_level} to {level_name}",
+                    "message": f"Logger '{display_name}' level changed "
+                    f"from {old_level} to {level_name}",
                 }
             )
 
-        except AttributeError:
+        except AttributeError as e:
             root_logger = logging.getLogger()
-            root_logger.error(f"Invalid logging level: {level_name}")
+            root_logger.error(f"Invalid logging level: {level_name} - {e!s}")
             raise HTTPException(
                 status_code=400, detail=f"Invalid logging level: {level_name}"
-            )
+            ) from e
         except Exception as e:
             root_logger = logging.getLogger()
-            root_logger.error(f"Error setting logger level: {str(e)}")
+            root_logger.error(f"Error setting logger level: {e!s}")
             raise HTTPException(
-                status_code=500, detail=f"Error setting logger level: {str(e)}"
-            )
+                status_code=500, detail=f"Error setting logger level: {e!s}"
+            ) from e
 
 
 class GetAllLoggersView(BaseView):
@@ -158,7 +160,7 @@ class GetAllLoggersView(BaseView):
 
     @expose("/logging/get-all-loggers", methods=["GET"])
     async def get_all_loggers(self, request: Request) -> JSONResponse:
-        loggers_info: Dict[str, Any] = {}
+        loggers_info: dict[str, Any] = {}
 
         # Get all loggers from the logging manager
         logger_dict = logging.Logger.manager.loggerDict
@@ -172,7 +174,8 @@ class GetAllLoggersView(BaseView):
             if isinstance(logger_obj, logging.Logger):
                 loggers_info[name] = self._get_logger_info(logger_obj, name)
             else:
-                # PlaceHolder objects - loggers that have been referenced but not created
+                # PlaceHolder objects - loggers that have been referenced but not
+                # created
                 loggers_info[name] = {
                     "level": "NOTSET",
                     "effective_level": "NOTSET",
@@ -185,7 +188,7 @@ class GetAllLoggersView(BaseView):
 
         return JSONResponse(content=loggers_info)
 
-    def _get_logger_info(self, logger: logging.Logger, name: str) -> Dict[str, Any]:
+    def _get_logger_info(self, logger: logging.Logger, name: str) -> dict[str, Any]:
         """Get detailed information about a logger."""
         parent_name = None
         if logger.parent and logger.parent.name:
@@ -234,10 +237,10 @@ class PreviewBulkOperationView(BaseView):
         # Validate level
         try:
             getattr(logging, level.upper())
-        except AttributeError:
+        except AttributeError as e:
             raise HTTPException(
                 status_code=400, detail=f"Invalid logging level: {level}"
-            )
+            ) from e
 
         affected_loggers = self.get_matching_loggers(pattern)
 
@@ -249,7 +252,7 @@ class PreviewBulkOperationView(BaseView):
             }
         )
 
-    def get_matching_loggers(self, pattern: str) -> List[str]:
+    def get_matching_loggers(self, pattern: str) -> list[str]:
         """Get list of logger names matching the given pattern."""
         if not pattern:
             # Empty pattern matches all loggers
@@ -267,7 +270,7 @@ class PreviewBulkOperationView(BaseView):
             matching_loggers.append("")
 
         # Check all other loggers
-        for name in logger_dict.keys():
+        for name in logger_dict:
             if regex.match(name):
                 matching_loggers.append(name)
 
@@ -304,10 +307,10 @@ class ExecuteBulkOperationView(BaseView):
         # Validate level
         try:
             numeric_level = getattr(logging, level.upper())
-        except AttributeError:
+        except AttributeError as e:
             raise HTTPException(
                 status_code=400, detail=f"Invalid logging level: {level}"
-            )
+            ) from e
 
         # Get matching loggers
         preview_view = PreviewBulkOperationView()
@@ -329,7 +332,8 @@ class ExecuteBulkOperationView(BaseView):
             updated_count += 1
 
             root_logger.info(
-                f"Bulk operation: Logger '{display_name}' level changed from {old_level} to {level}"
+                f"Bulk operation: Logger '{display_name}' level changed "
+                f"from {old_level} to {level}"
             )
 
         root_logger.info(
@@ -399,7 +403,8 @@ class ApplyLoggingPresetView(BaseView):
                 updated_count += 1
 
                 root_logger.info(
-                    f"Preset '{preset}': Logger '{display_name}' level changed from {old_level} to {level}"
+                    f"Preset '{preset}': Logger '{display_name}' level changed "
+                    f"from {old_level} to {level}"
                 )
 
         root_logger.info(
@@ -414,7 +419,7 @@ class ApplyLoggingPresetView(BaseView):
             }
         )
 
-    def _get_preset_configuration(self, preset: str) -> Dict[str, str]:
+    def _get_preset_configuration(self, preset: str) -> dict[str, str]:
         """Get the configuration for a specific preset."""
         presets = {
             "development": {

@@ -1,5 +1,5 @@
 import logging
-from typing import IO, Protocol
+from typing import IO, ClassVar, Protocol
 
 import httpx
 from textractor import Textractor
@@ -34,7 +34,7 @@ class PenToPrintError(Exception):
 
 class DummyTextractor:
     # Class-level shared memory to store job results
-    _job_results: dict[str, dict[str, str]] = {}
+    _job_results: ClassVar[dict[str, dict[str, str]]] = {}
 
     def _build_document(self, file_source: str) -> Document:
         document = Document(num_pages=1)
@@ -121,7 +121,8 @@ def call_amazon_textract_api(filepath: str) -> str:
     response = textractor.detect_document_text(filepath)
     extracted_text = response.text
     logger.debug(
-        f"From amazon textract api call for file {filepath}, received: '{extracted_text}'"
+        f"From amazon textract api call for file {filepath}, "
+        f"received: '{extracted_text}'"
     )
     return extracted_text
 
@@ -141,7 +142,8 @@ def call_amazon_textract_api_start_detection_s3(pdf_s3_path: str) -> str:
         s3_upload_path="",  # Já está no S3, então não precisamos de upload
         client_request_token="",  # Ex: use algo se quiser reusar a mesma JobId
         job_tag="MeuJobDeTexto",  # Tag customizada
-        save_image=False,  # Em PDFs de múltiplas páginas, normalmente não precisamos das imagens
+        save_image=False,  # Em PDFs de múltiplas páginas, normalmente
+        # não precisamos das imagens
     )
 
     job_id = response.job_id
@@ -191,7 +193,7 @@ async def call_pen_to_print_api(file_like: IO[bytes]) -> str:
     files = {"srcImg": file_like}
     data = {"Session": PEN_TO_PRINT_RAPIDAPI_SESSION}
     headers = {
-        "X-RapidAPI-Key": settings.pen_to_print_rapidapi_key,  # Reusing existing API key for now
+        "X-RapidAPI-Key": settings.pen_to_print_rapidapi_key,
         "X-RapidAPI-Host": PEN_TO_PRINT_RAPIDAPI_HOST,
     }
 
@@ -290,7 +292,8 @@ async def extract_text_openai(essay: Essay):
         fcm_service.send_notification(
             essay.author.id,
             "Desculpe! Não conseguimos extrair o texto da redação!",
-            f"Desculpe, tente usar uma nova imagem para a redação {essay.essay_topic.name}",
+            f"Desculpe, tente usar uma nova imagem para a redação
+            {essay.essay_topic.name}",
         )
         raise
 """

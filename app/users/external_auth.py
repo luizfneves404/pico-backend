@@ -1,3 +1,4 @@
+import contextlib
 import json
 import logging
 import time
@@ -64,10 +65,8 @@ async def _get_jwks() -> dict[str, Any]:
         for part in cache_control.split(","):
             part = part.strip()
             if part.startswith("max-age="):
-                try:
+                with contextlib.suppress(ValueError):
                     max_age = int(part.split("=")[1])
-                except ValueError:
-                    pass
         _google_jwks_cache["keys"] = jwks
         _google_jwks_cache["expires_at"] = now + max_age
         return jwks
@@ -112,7 +111,7 @@ async def verify_google_id_token(id_token: str) -> GoogleIdToken:
         )
 
     except (jwt.InvalidTokenError, httpx.HTTPError) as e:
-        raise InvalidTokenError(f"Invalid Google ID token: {e}")
+        raise InvalidTokenError(f"Invalid Google ID token: {e}") from e
 
     sub = decoded.get("sub")
     email = decoded.get("email")
@@ -172,15 +171,17 @@ async def verify_apple_id_token(id_token: str) -> AppleIdToken:
             audience=settings.apple_app_id,
             issuer=APPLE_ISSUER,
         )
-    except jwt.InvalidTokenError:
-        raise InvalidTokenError("Invalid Apple ID token")
+    except jwt.InvalidTokenError as e:
+        raise InvalidTokenError("Invalid Apple ID token") from e
 
-    # Try to get email, but provide fallback if missing (for deleted users, Hide My Email, etc.)
+    # Try to get email, but provide fallback if missing
+    # (for deleted users, Hide My Email, etc.)
     email = decoded_token.get("email")
     email_verified = decoded_token.get("email_verified", False)
 
     # If no email provided, create a unique placeholder based on Apple ID
-    # This handles cases where Apple doesn't provide email (deleted users, phone-only Apple IDs)
+    # This handles cases where Apple doesn't provide email
+    # (deleted users, phone-only Apple IDs)
     if not email:
         apple_sub = decoded_token["sub"]
         email = f"apple.user.{apple_sub}@privaterelay.appleid.com"

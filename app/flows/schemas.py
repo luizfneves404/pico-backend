@@ -291,7 +291,8 @@ class FlowInSearch(FlowBase):
 
 class QuestionDensity(
     StrEnum
-):  # number of questions per block if input type is files, or total number if input type is topic
+):  # number of questions per block if input type is files, or total number if
+    # input type is topic
     NOT_APPLICABLE = "not_applicable"
     LOW = "low"
     MEDIUM = "medium"

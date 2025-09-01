@@ -1,7 +1,8 @@
 import asyncio
+from collections.abc import Callable
 from contextvars import ContextVar
 from logging.config import fileConfig
-from typing import Any, Callable, Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection

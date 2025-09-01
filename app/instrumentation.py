@@ -1,4 +1,5 @@
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import logfire
 from fastapi import FastAPI, Request, WebSocket
@@ -33,7 +34,10 @@ class ArqPollingSampler(Sampler):
         self._fallback_sampler = ParentBased(TraceIdRatioBased(1.0))
 
     def get_description(self) -> str:
-        return "A custom sampler that drops traces for arq's redis polling but keeps all other traces."
+        return (
+            "A custom sampler that drops traces for arq's redis polling "
+            "but keeps all other traces."
+        )
 
     def should_sample(
         self,
@@ -66,8 +70,18 @@ class ArqPollingSampler(Sampler):
         )
 
 
+class ServerSampler(Sampler):
+    """
+    A custom sampler that drops traces for unnecessary redis operations on the server
+    """
+
+    def __init__(self):
+        self._fallback_sampler = ParentBased(TraceIdRatioBased(1.0))
+
+
 def instrument_base() -> None:
-    # logfire.instrument_sqlalchemy() # this should work, but I think there's a bug in logfire's sqlalchemy instrumentation
+    # logfire.instrument_sqlalchemy() # this should work, but I think there's a
+    # bug in logfire's sqlalchemy instrumentation
     # instead, we are instrumenting the engine in database.py
     logfire.instrument_redis()
     logfire.instrument_openai()
@@ -78,7 +92,8 @@ def request_attributes_mapper(
 ) -> dict[str, Any]:
     """
     As per logfire docs:
-    The request_attributes_mapper function mustn't mutate the contents of values or errors, but it can safely replace them with new values.
+    The request_attributes_mapper function mustn't mutate the contents of values or
+    errors, but it can safely replace them with new values.
     """
     if attributes["errors"]:
         # Only log validation errors, not valid arguments

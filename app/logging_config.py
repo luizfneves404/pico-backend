@@ -8,9 +8,7 @@ class SuppressSensitiveWebSocketLogs(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         msg = str(record.getMessage())
         # Customize pattern to your needs
-        if "token=" in msg:
-            return False  # suppress
-        return True  # allow everything else
+        return "token=" not in msg
 
 
 def get_logging_config() -> dict[str, Any]:
@@ -49,7 +47,7 @@ def get_logging_config() -> dict[str, Any]:
             "tests": {"level": "DEBUG", "propagate": True},
             "alembic": {"level": "DEBUG", "propagate": True},
             "sqlalchemy.engine": {
-                "level": "WARNING",
+                "level": "INFO",
                 "propagate": True,
             },
             "botocore": {"level": "INFO", "propagate": True},

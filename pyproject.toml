@@ -67,6 +67,32 @@ default-groups = [
 
 [tool.ruff]
 line-length = 88 # default for black: https://black.readthedocs.io/en/stable/the_black_code_style/current_style.html
+lint.select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+    "A", # Builtin shadowing
+    "RUF", # Ruff specific rules
+    "PERF", # Performance rules
+    "FURB", # Refurbish the codebase
+    "PT", # pytest
+]
+lint.ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends", "fastapi.Query", "fastapi.params.Query", "fastapi.Form"]
+
+
+
 
 [build-system]
 requires = ["hatchling"]

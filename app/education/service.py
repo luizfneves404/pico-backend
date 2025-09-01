@@ -173,8 +173,8 @@ async def create_institution(
     """
     try:
         country = await get_country(db_session, country_code)
-    except CountryNotFound:
-        raise CountryNotFoundError(f"Country with code {country_code} not found")
+    except CountryNotFound as e:
+        raise CountryNotFoundError(f"Country with code {country_code} not found") from e
     institution = Institution(
         name=name,
         institution_type=InstitutionType(institution_type),
@@ -188,9 +188,9 @@ async def create_institution(
         await db_session.flush()
     except IntegrityError as e:
         if "level_id" in str(e):
-            raise LevelNotFoundError(e)
+            raise LevelNotFoundError(e) from e
         elif "institution_type" in str(e):
-            raise InvalidInstitutionTypeError(e)
+            raise InvalidInstitutionTypeError(e) from e
         raise e
     await db_session.refresh(institution, ["country"])
     return institution
@@ -325,7 +325,7 @@ async def list_levels(
         level_name = (
             level.name_i18n.get("en", "Unknown") if level.name_i18n else "Unknown"
         )
-        stage_details = []
+        stage_details: list[str] = []
         for stage in level.stages:
             stage_country = stage.country.code if stage.country else "None"
             stage_info = (

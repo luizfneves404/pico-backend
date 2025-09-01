@@ -1,12 +1,9 @@
-from typing import Any, ClassVar, Sequence, Union
-
 from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
 from geoalchemy2 import WKTElement
 from pydantic import BaseModel, Field
 from sqladmin import action
 from sqlalchemy import select
-from sqlalchemy.orm import InstrumentedAttribute
 
 from app.arq_client import enqueue_job
 from app.education.models import (
@@ -39,9 +36,7 @@ class InstitutionImportSchema(BaseModel):
 class InstitutionAdmin(CustomModelView, model=Institution):
     icon = "fa-solid fa-university"
 
-    column_list: ClassVar[
-        Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
-    ] = [
+    column_list = (
         Institution.id,
         Institution.name,
         Institution.full_name,
@@ -55,21 +50,22 @@ class InstitutionAdmin(CustomModelView, model=Institution):
         Institution.created_at,
         Institution.address,
         Institution.city,
-    ]
-    column_searchable_list: ClassVar[
-        Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
-    ] = [Institution.name, Institution.full_name, Institution.address, Institution.city]
-    column_sortable_list: ClassVar[
-        Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
-    ] = [
+    )
+    column_searchable_list = (
+        Institution.name,
+        Institution.full_name,
+        Institution.address,
+        Institution.city,
+    )
+    column_sortable_list = (
         Institution.id,
         Institution.name,
         Institution.user_submitted,
         Institution.address,
         Institution.city,
-    ]
+    )
 
-    form_columns = [
+    form_columns = (
         Institution.name,
         Institution.full_name,
         Institution.user_submitted,
@@ -81,7 +77,7 @@ class InstitutionAdmin(CustomModelView, model=Institution):
         Institution.location,
         Institution.address,
         Institution.city,
-    ]
+    )
 
     can_import = True
     import_schema = InstitutionImportSchema
@@ -181,27 +177,28 @@ class EducationLevelImportSchema(BaseModel):
 class EducationLevelAdmin(CustomModelView, model=EducationLevel):
     icon = "fa-solid fa-layer-group"
 
-    column_list = [
+    column_list = (
         EducationLevel.id,
         EducationLevel.name_i18n,
         EducationLevel.created_at,
-    ]
-    column_searchable_list = [
-        EducationLevel.name_i18n,
-    ]
-    column_sortable_list = [
+    )
+    column_searchable_list = (EducationLevel.name_i18n,)
+    column_sortable_list = (
         EducationLevel.id,
         EducationLevel.name_i18n,
         EducationLevel.created_at,
-    ]
-    column_details_list = [
+    )
+    column_details_list = (
         EducationLevel.id,
         EducationLevel.name_i18n,
         EducationLevel.created_at,
         EducationLevel.stages,
-    ]
+    )
 
-    form_columns = ["name_i18n", "stages"]
+    form_columns = (
+        "name_i18n",
+        "stages",
+    )
 
 
 class LevelStageImportSchema(BaseModel):
@@ -214,38 +211,36 @@ class LevelStageImportSchema(BaseModel):
 class LevelStageAdmin(CustomModelView, model=LevelStage):
     icon = "fa-solid fa-stairs"
 
-    column_list = [
+    column_list = (
         LevelStage.id,
         LevelStage.name,
         LevelStage.level,
         LevelStage.country,
         LevelStage.is_default,
         LevelStage.created_at,
-    ]
-    column_searchable_list = [
-        LevelStage.name,
-    ]
-    column_sortable_list = [
+    )
+    column_searchable_list = (LevelStage.name,)
+    column_sortable_list = (
         LevelStage.id,
         LevelStage.name,
         LevelStage.is_default,
         LevelStage.created_at,
-    ]
-    column_details_list = [
+    )
+    column_details_list = (
         LevelStage.id,
         LevelStage.name,
         LevelStage.level,
         LevelStage.country,
         LevelStage.is_default,
         LevelStage.created_at,
-    ]
+    )
 
-    form_columns = [
+    form_columns = (
         "name",
         "level",
         "country",
         "is_default",
-    ]
+    )
 
 
 class CourseImportSchema(BaseModel):
@@ -263,35 +258,33 @@ class CourseImportSchema(BaseModel):
 class CourseAdmin(CustomModelView, model=Course):
     icon = "fa-solid fa-book-open"
 
-    column_list = [
+    column_list = (
         Course.id,
         Course.name_i18n,
         Course.level,
         Course.user_submitted,
         Course.created_at,
-    ]
-    column_searchable_list = [
-        Course.name_i18n,
-    ]
-    column_sortable_list = [
+    )
+    column_searchable_list = (Course.name_i18n,)
+    column_sortable_list = (
         Course.id,
         Course.name_i18n,
         Course.user_submitted,
         Course.created_at,
-    ]
-    column_details_list = [
+    )
+    column_details_list = (
         Course.id,
         Course.name_i18n,
         Course.level,
         Course.user_submitted,
         Course.created_at,
-    ]
+    )
 
-    form_columns = [
+    form_columns = (
         "name_i18n",
         "level",
         "user_submitted",
-    ]
+    )
 
 
 class EducationInfoImportSchema(BaseModel):
@@ -304,35 +297,29 @@ class EducationInfoImportSchema(BaseModel):
 class EducationInfoAdmin(CustomModelView, model=EducationInfo):
     icon = "fa-solid fa-graduation-cap"
 
-    column_list: ClassVar[
-        Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
-    ] = [
+    column_list = (
         EducationInfo.id,
         EducationInfo.course,
         EducationInfo.institution,
         EducationInfo.stage,
         EducationInfo.level,
-    ]
-    column_searchable_list: ClassVar[
-        Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
-    ] = [
+    )
+    column_searchable_list = (
         EducationInfo.course,
         EducationInfo.institution,
         EducationInfo.stage,
         EducationInfo.level,
-    ]
-    column_sortable_list: ClassVar[
-        Union[str, Sequence[Union[str, InstrumentedAttribute[Any]]]]
-    ] = [
+    )
+    column_sortable_list = (
         EducationInfo.id,
         EducationInfo.course,
         EducationInfo.institution,
         EducationInfo.stage,
-    ]
+    )
 
-    form_columns = [
+    form_columns = (
         EducationInfo.level,
         EducationInfo.course,
         EducationInfo.institution,
         EducationInfo.stage,
-    ]
+    )

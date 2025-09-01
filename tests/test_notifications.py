@@ -387,7 +387,8 @@ async def test_notify_user_flow_question_done_via_flow_submission(
     session: AsyncSession,
     arq_worker: Worker,
 ):
-    """Test notify_user_flow_question_done by submitting an answer to a flow question."""
+    """Test notify_user_flow_question_done by submitting an answer to a flow
+    question."""
     users, clients = await user_client_factory(2)
     # Setup: Create flow with question by another user
     async with session.begin():
@@ -513,7 +514,8 @@ async def test_notify_communities_flow_posted_via_add_questions_official(
     # Process notification queue
     await arq_worker.async_run()
 
-    # Verify in-app notifications were created for community members (excluding flow creator)
+    # Verify in-app notifications were created for community members (excluding flow
+    # creator)
     async with session.begin():
         notifications = await session.execute(
             select(InAppNotification).where(
@@ -543,115 +545,6 @@ async def test_notify_communities_flow_posted_via_add_questions_official(
         fcm_message.notification.body
         == f"O usuário {users[0].name} postou o flow {flow.title} em {community.name}"
     )
-
-
-# async def test_notify_communities_flow_posted_via_add_questions_ai(
-#     user_client_factory: UserClientFactory,
-#     session: AsyncSession,
-#     arq_worker: Worker,
-# ):
-#     """Test notify_communities_flow_posted by adding AI questions to a flow."""
-#     users, clients = await user_client_factory(2)
-#     # Setup: Create flow and community with users
-#     async with session.begin():
-#         from app.community.models import CommunityUser
-
-#         # Create community with user
-#         community = await CommunityFactory.create(session=session)
-
-#         # Add users to community
-#         session.add(CommunityUser(community_id=community.id, user_id=users[0].id))
-#         session.add(CommunityUser(community_id=community.id, user_id=users[1].id))
-
-#         # Create a flow by the current user
-#         flow = await FlowFactory.create(created_by=users[0], session=session)
-
-#     # Act: Add AI questions to trigger community notification
-#     add_questions_data = {
-#         "question_density": "low",
-#         "prompt_type": "default",
-#         "extra_instructions": "Make questions about basic concepts",
-#     }
-
-#     response = await clients[0].post(
-#         f"/api/flows/{flow.id}/add-questions-ai", json=add_questions_data
-#     )
-#     assert response.status_code == 200
-
-#     # Process notification queue
-#     await arq_worker.async_run()
-
-#     # Verify in-app notification was created for community member (excluding flow creator)
-#     async with session.begin():
-#         notifications = await session.execute(
-#             select(InAppNotification).where(InAppNotification.user_id == users[1].id)
-#         )
-#         user_notifications = list(notifications.scalars())
-#         assert len(user_notifications) == 1
-
-#         notification = user_notifications[0]
-#         assert isinstance(notification, FlowInAppNotification)
-#         assert community.name in notification.text
-#         assert flow.title in notification.text
-#         assert users[0].name in notification.text
-#         assert notification.flow_id == flow.id
-
-#     # Verify FCM notification was sent
-#     fcm_messages = fcm_service.get_last_sent_messages()
-#     assert len(fcm_messages) >= 1
-
-
-# async def test_notify_communities_flow_posted_via_add_questions_full(
-#     user_client_factory: UserClientFactory,
-#     session: AsyncSession,
-#     arq_worker: Worker,
-# ):
-#     """Test notify_communities_flow_posted by adding full (AI + official) questions to a flow."""
-#     users, clients = await user_client_factory(2)
-#     # Setup: Create flow and community with users
-#     async with session.begin():
-#         from app.community.models import CommunityUser
-
-#         # Create community with user
-#         community = await CommunityFactory.create(session=session)
-
-#         # Add users to community
-#         session.add(CommunityUser(community_id=community.id, user_id=users[0].id))
-#         session.add(CommunityUser(community_id=community.id, user_id=users[1].id))
-
-#         # Create a flow by the current user
-#         flow = await FlowFactory.create(created_by=users[0], session=session)
-
-#     # Act: Add full questions to trigger community notification
-#     add_questions_data = {
-#         "question_density": "low",
-#         "prompt_type": "default",
-#         "extra_instructions": "Make questions about basic concepts",
-#         "exam_id": None,
-#         "exam_country_code": "BR",
-#         "exam_education_level_id": 1,
-#         "source_year": None,
-#     }
-
-#     response = await clients[0].post(
-#         f"/api/flows/{flow.id}/add-questions-full", json=add_questions_data
-#     )
-#     assert response.status_code == 200
-
-#     # Process notification queue
-#     await arq_worker.async_run()
-
-#     # Verify in-app notification was created for community member
-#     async with session.begin():
-#         notifications = await session.execute(
-#             select(InAppNotification).where(InAppNotification.user_id == users[1].id)
-#         )
-#         user_notifications = list(notifications.scalars())
-#         assert len(user_notifications) == 1
-
-#     # Verify FCM notification was sent
-#     fcm_messages = fcm_service.get_last_sent_messages()
-#     assert len(fcm_messages) >= 1
 
 
 async def test_notify_community_user_joined_via_user_education_update(
@@ -739,7 +632,8 @@ async def test_notify_flow_question_done_only_when_different_user(
     session: AsyncSession,
     arq_worker: Worker,
 ):
-    """Test that notify_user_flow_question_done is NOT triggered when user answers their own flow."""
+    """Test that notify_user_flow_question_done is NOT triggered when user answers their
+    own flow."""
     # Setup: Create flow by the current user
     async with session.begin():
         flow = await FlowFactory.create(created_by=user, session=session)
@@ -777,7 +671,8 @@ async def test_notify_communities_flow_posted_only_notifies_community_members(
     session: AsyncSession,
     arq_worker: Worker,
 ):
-    """Test that notify_communities_flow_posted only notifies users in the same communities as the flow creator."""
+    """Test that notify_communities_flow_posted only notifies users in the same
+    communities as the flow creator."""
     users, clients = await user_client_factory(3)
 
     # Setup: Create communities and users

@@ -2,6 +2,7 @@ import itertools
 import logging
 import os
 import random
+import re
 from operator import attrgetter
 
 from fastapi import UploadFile
@@ -389,10 +390,13 @@ async def create_flow_with_optional_files(
     *,
     user: User,
     topic: str = "",
-    files: list[UploadFile] = [],
+    files: list[UploadFile] | None = None,
 ) -> Flow:
-    """Create a new flow from a topic with optional files - matches Django create_quiz_with_files logic"""
+    """Create a new flow from a topic with optional files - matches Django
+    create_quiz_with_files logic"""
     # Validate inputs - at least one of topic or files must be provided
+    if files is None:
+        files = []
     if not topic and not files:
         raise FlowValidationError("Either topic or files must be provided")
 
@@ -407,7 +411,7 @@ async def create_flow_with_optional_files(
                 file.file.seek(0, os.SEEK_END)
                 size_bytes = file.file.tell()
                 file.file.seek(current_pos)
-            except Exception as e:  # pragma: no cover – defensive logging only
+            except Exception as e:  # pragma: no cover - defensive logging only
                 size_bytes = "unknown"
                 logger.warning(
                     "Could not determine size of file '%s': %s", file.filename, e
@@ -475,15 +479,11 @@ async def create_flow_with_optional_files(
     # Start background tasks for question generation
     if files:
         # Persist files to storage first to prevent file closure issues and memory problems
-        try:
-            logger.info(f"Flow {flow.id}: persisting {len(files)} files to storage")
-            file_db_objects = await create_files(db_session, files)
-            await db_session.flush()
-            file_db_objects_ids = [file.id for file in file_db_objects]
-            logger.info(f"Flow {flow.id}: successfully persisted files to storage")
-        except Exception as e:
-            logger.error(f"Failed to persist files for flow {flow.id}: {e}")
-            raise
+        logger.info(f"Flow {flow.id}: persisting {len(files)} files to storage")
+        file_db_objects = await create_files(db_session, files)
+        await db_session.flush()
+        file_db_objects_ids = [file.id for file in file_db_objects]
+        logger.info(f"Flow {flow.id}: successfully persisted files to storage")
 
         await enqueue_job(
             "task_generate_transcriptions",
@@ -985,9 +985,6 @@ def parse_topic_string(topic_string: str) -> str:
         return topic_string
 
     try:
-        # Look for "topic": "..." pattern
-        import re
-
         # Match "topic": "anything" (handling escaped quotes)
         pattern = r'"topic"\s*:\s*"([^"]*)"'
         match = re.search(pattern, topic_string)
@@ -1013,16 +1010,14 @@ async def check_if_topic_involves_math_calculations(topic: str) -> bool:
         result = await get_completion(
             model="gpt-5-mini",
             temperature=None,
-            messages=[
+            input=[
                 {"role": "system", "content": SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT},
                 {"role": "user", "content": topic},
             ],
-            json_mode=False,
-            timeout=15,
-            reasoning_effort="medium",
+            reasoning={"effort": "medium"},
         )
 
-        response = result.content.strip().upper()
+        response = result.strip().upper()
         return response == "SIM"
 
     except Exception as e:

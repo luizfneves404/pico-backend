@@ -3,7 +3,7 @@ import random
 import re
 import secrets
 import unicodedata
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from argon2 import PasswordHasher
@@ -70,48 +70,48 @@ from app.users.utils import get_streak_info
 
 logger = logging.getLogger(__name__)
 __all__ = [
+    # Constants
+    "ACCESS_TOKEN_EXPIRE_MINUTES",
+    "DELETED_EMAIL",
+    "DELETED_PHONE_NUMBER",
+    "DELETED_USERNAME",
+    "NUM_RANKED_USERS",
+    "SENTINEL_USERNAMES",
+    "WELCOME_EMAIL_MESSAGE",
+    "WELCOME_EMAIL_SUBJECT",
+    "AccountExistsError",
+    "EmailAlreadyExists",
+    "InvalidCountryCodeError",
+    "InvalidCredentialsError",
+    "InvalidResetTokenError",
+    "InvalidTokenError",
+    "MissingNameError",
+    "PhoneNumberAlreadyExists",
+    "ReferredByNotFoundError",
+    "SocialAuthError",
     # Exceptions
     "UserNotFoundError",
     "UsernameAlreadyExists",
-    "PhoneNumberAlreadyExists",
-    "EmailAlreadyExists",
-    "ReferredByNotFoundError",
-    "InvalidCredentialsError",
-    "SocialAuthError",
-    "InvalidTokenError",
-    "AccountExistsError",
-    "InvalidCountryCodeError",
-    "InvalidResetTokenError",
-    "MissingNameError",
-    # Constants
-    "ACCESS_TOKEN_EXPIRE_MINUTES",
-    "DELETED_USERNAME",
-    "DELETED_PHONE_NUMBER",
-    "DELETED_EMAIL",
-    "SENTINEL_USERNAMES",
-    "NUM_RANKED_USERS",
-    "WELCOME_EMAIL_SUBJECT",
-    "WELCOME_EMAIL_MESSAGE",
     # Authentication
     "authenticate_user_by_apple",
     "authenticate_user_by_google",
     "authenticate_user_by_password",
-    "get_password_hash",
-    "verify_password",
+    # Social
+    "check_contacts",
     # CRUD
     "create_user_by_password",
     "delete_user",
+    "get_password_hash",
+    "get_ranking",
     "get_sentinel_users",
+    # Utils
+    "get_streak_info",
     "get_user",
+    "search_username",
     "to_other_user_out",
     # Profile management
     "update_user_fields",
-    # Social
-    "check_contacts",
-    "get_ranking",
-    "search_username",
-    # Utils
-    "get_streak_info",
+    "verify_password",
 ]
 
 PASSWORD_REQUIRED_FIELDS = {"username", "phone_number", "email", "password"}
@@ -152,13 +152,13 @@ async def _set_education_field(
             await db_session.flush()
         except IntegrityError as e:
             if "level_id" in str(e.orig):
-                raise InvalidLevelIdError
+                raise InvalidLevelIdError from e
             elif "stage_id" in str(e.orig):
-                raise InvalidStageIdError
+                raise InvalidStageIdError from e
             elif "institution_id" in str(e.orig):
-                raise InvalidInstitutionIdError
+                raise InvalidInstitutionIdError from e
             elif "course_id" in str(e.orig):
-                raise InvalidCourseIdError
+                raise InvalidCourseIdError from e
         await db_session.refresh(education_info)
     else:
         # Create new education
@@ -170,13 +170,13 @@ async def _set_education_field(
             await db_session.flush()
         except IntegrityError as e:
             if "level_id" in str(e.orig):
-                raise InvalidLevelIdError
+                raise InvalidLevelIdError from e
             elif "stage_id" in str(e.orig):
-                raise InvalidStageIdError
+                raise InvalidStageIdError from e
             elif "institution_id" in str(e.orig):
-                raise InvalidInstitutionIdError
+                raise InvalidInstitutionIdError from e
             elif "course_id" in str(e.orig):
-                raise InvalidCourseIdError
+                raise InvalidCourseIdError from e
 
     logger.info(f"User {user.id} updated their {field_name}")
 
@@ -198,11 +198,15 @@ async def _set_education_field(
             )
             if joined_community:
                 logger.info(
-                    f"User {user.id} automatically joined the community {joined_community.name} with subtitle {joined_community.subtitle} because of their education, leaving the previous community"
+                    f"User {user.id} automatically joined the community"
+                    f"{joined_community.name} with subtitle"
+                    f"{joined_community.subtitle} because of their education,"
+                    "leaving the previous community"
                 )
             else:
                 logger.info(
-                    f"User {user.id} was already in the community when changing education"
+                    f"User {user.id} was already in the community"
+                    "when changing education"
                 )
 
 
@@ -265,9 +269,9 @@ async def _create_user(
     except IntegrityError as e:
         error_msg = str(e.orig)
         if "username" in error_msg:
-            raise UsernameAlreadyExists
+            raise UsernameAlreadyExists from e
         elif "email" in error_msg:
-            raise EmailAlreadyExists
+            raise EmailAlreadyExists from e
         else:
             raise
 
@@ -310,7 +314,8 @@ async def _create_social_user(
         email: User's email
         google_id: Google ID if authenticating with Google
         apple_id: Apple ID if authenticating with Apple
-        signup_source: How the user came to know the app. Defaults to SignupSource.UNKNOWN.
+        signup_source: How the user came to know the app. Defaults to
+        SignupSource.UNKNOWN.
     Returns:
         Created user
 
@@ -474,23 +479,24 @@ async def update_user_fields(
         updated_fields.append("intended_education")
 
     # Handle username field explicitly
-    if updates.username is not UnsetDefault:
-        if updates.username.strip().lower() != user.username.lower():
-            try:
-                user.username = updates.username.strip()
-                await db_session.flush()
-                updated_fields.append("username")
-            except IntegrityError as e:
-                await db_session.rollback()
-                if "username" in str(e.orig):
-                    raise UsernameAlreadyExists
-                raise
+    if (
+        updates.username is not UnsetDefault
+        and updates.username.strip().lower() != user.username.lower()
+    ):
+        try:
+            user.username = updates.username.strip()
+            await db_session.flush()
+            updated_fields.append("username")
+        except IntegrityError as e:
+            await db_session.rollback()
+            if "username" in str(e.orig):
+                raise UsernameAlreadyExists from e
+            raise
 
     # Handle name field explicitly
-    if updates.name is not UnsetDefault:
-        if updates.name != user.name:
-            user.name = updates.name.strip()
-            updated_fields.append("name")
+    if updates.name is not UnsetDefault and updates.name != user.name:
+        user.name = updates.name.strip()
+        updated_fields.append("name")
 
     # Handle password field explicitly
     if updates.password is not UnsetDefault:
@@ -498,39 +504,44 @@ async def update_user_fields(
         updated_fields.append("password")
 
     # Handle phone_number field explicitly
-    if updates.phone_number is not UnsetDefault:
-        if updates.phone_number != user.phone_number:
-            try:
-                user.phone_number = updates.phone_number
-                await db_session.flush()
-                updated_fields.append("phone_number")
-            except IntegrityError as e:
-                await db_session.rollback()
-                if "phone_number" in str(e.orig):
-                    raise PhoneNumberAlreadyExists
-                raise
+    if (
+        updates.phone_number is not UnsetDefault
+        and updates.phone_number != user.phone_number
+    ):
+        try:
+            user.phone_number = updates.phone_number
+            await db_session.flush()
+            updated_fields.append("phone_number")
+        except IntegrityError as e:
+            await db_session.rollback()
+            if "phone_number" in str(e.orig):
+                raise PhoneNumberAlreadyExists from e
+            raise
 
     # Handle email field explicitly
-    if updates.email is not UnsetDefault:
-        if updates.email != user.email:
-            try:
-                user.email = updates.email
-                await db_session.flush()
-                updated_fields.append("email")
-            except IntegrityError as e:
-                await db_session.rollback()
-                if "email" in str(e.orig):
-                    raise EmailAlreadyExists
-                raise
+    if updates.email is not UnsetDefault and updates.email != user.email:
+        try:
+            user.email = updates.email
+            await db_session.flush()
+            updated_fields.append("email")
+        except IntegrityError as e:
+            await db_session.rollback()
+            if "email" in str(e.orig):
+                raise EmailAlreadyExists from e
+            raise
 
     # Handle country_code field explicitly
-    if updates.country_code is not UnsetDefault:
+    if (
+        updates.country_code is not UnsetDefault
+        and user.country
+        and updates.country_code != user.country.code
+    ):
         try:
             country = await get_country(db_session, country_code=updates.country_code)
-        except CountryNotFound:
+        except CountryNotFound as e:
             raise InvalidCountryCodeError(
                 f"Invalid country code: {updates.country_code}"
-            )
+            ) from e
         user.country_id = country.id
         await db_session.flush()
         updated_fields.append("country_code")
@@ -543,7 +554,10 @@ async def update_user_fields(
         user.location = new_location  # type: ignore # this should work according to geoalchemy2
         updated_fields.append("location")
 
-    if updates.instagram_account is not UnsetDefault:
+    if (
+        updates.instagram_account is not UnsetDefault
+        and updates.instagram_account != user.instagram_account
+    ):
         user.instagram_account = updates.instagram_account
         updated_fields.append("instagram_account")
 
@@ -616,7 +630,8 @@ async def authenticate_user_by_google(
     existing_user = await get_user(db_session, email=google_user_info.email)
     if existing_user:
         if google_user_info.email_verified:
-            # oh, sorry, this email on your google account must be yours! let me give you access to this existing account!
+            # oh, sorry, this email on your google account must be yours! let me give
+            # you access to this existing account!
             await db_session.execute(
                 update(User)
                 .where(User.id == existing_user.id)
@@ -628,7 +643,8 @@ async def authenticate_user_by_google(
             )  # needs to be one query so as not to fail the constraint
             return existing_user
         else:
-            # you're going to have to do more to convince me that this email on your google account is yours
+            # you're going to have to do more to convince me that this email on
+            # your google account is yours
             raise AccountExistsError
 
     # there is no user with the same email nor google_id
@@ -656,8 +672,10 @@ async def authenticate_user_by_apple(
     Args:
         db_session: Database session
         id_token: Apple ID token
-        name: Name of the user. Can be None because the user may be just logging in, not signing up.
-        signup_source: How the user came to know the app. Defaults to SignupSource.UNKNOWN.
+        name: Name of the user. Can be None because the user may be just logging in,
+        not signing up.
+        signup_source: How the user came to know the app.
+        Defaults to SignupSource.UNKNOWN.
     Returns:
         Authenticated user
 
@@ -702,14 +720,16 @@ async def authenticate_user_by_apple(
             # We have a real email, generate name from it
             fallback_name = _generate_name_from_email(user_info.email)
             logger.info(
-                f"Generated fallback name '{fallback_name}' from Apple email for deleted user"
+                f"Generated fallback name '{fallback_name}' from Apple email for"
+                " deleted user"
             )
             name = fallback_name
         else:
             # No real email available, use generic name as last resort
             name = "Apple User"
             logger.info(
-                "Using generic 'Apple User' name - no email or name from Apple (likely deleted user)"
+                "Using generic 'Apple User' name - no email or name from Apple"
+                " (likely deleted user)"
             )
 
     return await _create_social_user(
@@ -778,7 +798,7 @@ async def get_user(
     db_session: AsyncSession,
     *,
     username: str | None = None,
-    id: int | None = None,
+    id: int | None = None,  # noqa: A002
     phone_number: str | None = None,
     email: str | None = None,
     google_id: str | None = None,
@@ -819,7 +839,8 @@ async def get_user(
         stmt = select(User).where(User.apple_id == apple_id)
     else:
         raise ValueError(
-            "Must provide either username, user_id, phone_number, email, google_id, or apple_id"
+            "Must provide either username, user_id, phone_number,"
+            " email, google_id, or apple_id"
         )
 
     if exclude_sentinel:
@@ -845,8 +866,10 @@ async def create_user_by_password(
         name: The name of the user to create
         password: The password of the user to create
         email: The email of the user to create
-        referred_by_username: The username of the user who referred the new user. Defaults to None.
-        signup_source: How the user came to know the app. Defaults to SignupSource.UNKNOWN.
+        referred_by_username: The username of the user who referred the new user.
+        Defaults to None.
+        signup_source: How the user came to know the app.
+        Defaults to SignupSource.UNKNOWN.
 
     Raises:
         ReferredByNotFoundError: The referred by user was not found
@@ -984,7 +1007,7 @@ async def request_password_reset(
     # Generate secure token
     token = secrets.token_urlsafe(32)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Store token with expiration (15 minutes)
     token_data = ResetPasswordTokenData(
@@ -1009,9 +1032,11 @@ async def get_valid_reset_token(token: str) -> ResetPasswordTokenData:
             await get_redis().get(f"reset_token:{token}")
         )
     except ValidationError as e:
-        raise InvalidResetTokenError(f"Invalid or expired reset token: {e.errors()}")
+        raise InvalidResetTokenError(
+            f"Invalid or expired reset token: {e.errors()}"
+        ) from e
 
-    if token_data.expires_at < datetime.now(timezone.utc):
+    if token_data.expires_at < datetime.now(UTC):
         raise InvalidResetTokenError("Reset token has expired")
     return token_data
 

@@ -5,7 +5,8 @@ Otherwise i would have to take a lot of care not to import certain files, etc.
 
 import asyncio
 import logging.config
-from typing import Any, Literal, Sequence
+from collections.abc import Sequence
+from typing import Any, Literal
 
 import uvloop
 from arq import run_worker
@@ -39,7 +40,6 @@ from app.flows.question_utils import (
     task_generate_question_answers,
     task_recompute_question_embeddings,
 )
-from app.flows.tasks import task_mark_question_timed_out
 from app.instrumentation import instrument_worker
 from app.logging_config import get_logging_config
 from app.mail import task_send_email
@@ -93,7 +93,6 @@ def make_worker_settings(
     class WorkerSettings:
         functions: Sequence[WorkerCoroutine | Function] = [
             ping,
-            task_mark_question_timed_out,
             task_send_email,
             task_send_notifications,
             task_generate_transcriptions,

@@ -4,7 +4,8 @@ import io
 import json
 import logging
 import re
-from typing import Any, Callable, ClassVar, TypeVar, cast
+from collections.abc import Callable
+from typing import Any, ClassVar, TypeVar, cast
 
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
@@ -23,12 +24,17 @@ from wtforms import StringField
 from app.base import resync_autoincrement
 from app.shared.bootstrap_sqladmin import monkey_patch_sqladmin
 
-monkey_patch_sqladmin()  # needs to run this before importing sqladmin. add sqladmin imports below!!!
-from sqladmin import ModelView
-from sqladmin.application import Admin as SQLAdminAdmin
-from sqladmin.forms import ModelConverter, converts
+monkey_patch_sqladmin()  # it is necessary to run this before importing sqladmin.
+# add sqladmin imports below!!!
+from sqladmin import ModelView  # noqa: E402
+from sqladmin.application import Admin as SQLAdminAdmin  # noqa: E402
+from sqladmin.forms import (  # noqa: E402
+    ModelConverter,
+    converts,  # pyright: ignore[reportUnknownVariableType]
+)
 
-MODEL_ATTR = str | InstrumentedAttribute[Any]
+type MODEL_ATTR = str | InstrumentedAttribute[Any]
+
 ModelType = TypeVar("ModelType", bound=DeclarativeBase)
 
 WKT_RE = re.compile(r"^POINT\(\s*([-0-9\.]+)\s+([-0-9\.]+)\s*\)$")
@@ -131,7 +137,7 @@ class AdminWithImport(SQLAdminAdmin):
         for error in cleaned_data:
             # Handle different types of data structures in error["data"]
             if isinstance(error["data"], list):
-                for i, data in enumerate(error["data"]):
+                for data in error["data"]:
                     # Only process if data is a dictionary
                     if isinstance(data, dict):
                         for key, value in data.items():
@@ -194,15 +200,15 @@ class AdminWithImport(SQLAdminAdmin):
             csv_reader = csv.DictReader(io.StringIO(content))
             rows = list(csv_reader)
 
-        except UnicodeDecodeError:
+        except UnicodeDecodeError as e:
             raise HTTPException(
                 status_code=400,
                 detail="Invalid file encoding. Please use UTF-8 encoded CSV files.",
-            )
+            ) from e
         except csv.Error as e:
             raise HTTPException(
-                status_code=400, detail=f"Error parsing CSV file: {str(e)}"
-            )
+                status_code=400, detail=f"Error parsing CSV file: {e!s}"
+            ) from e
 
         return await model_view.import_data(rows, dry_run=dry_run)
 
@@ -284,7 +290,7 @@ class LocationField(StringField):
     """
 
     def process_formdata(self, valuelist):
-        # valuelist is a single‑item list: [ "POINT(lon lat)" ]
+        # valuelist is a single-item list: [ "POINT(lon lat)" ]
         if not valuelist:
             self.data = None
             return
@@ -321,11 +327,11 @@ def serialize_for_csv(value: Any) -> str:
         return ""  # Empty string for None/null values
     elif isinstance(value, bool):
         return "true" if value else "false"  # JSON boolean format
-    elif isinstance(value, (int, float)):
+    elif isinstance(value, int | float):
         return str(value)
     elif isinstance(value, str):
         return value
-    elif isinstance(value, (list, dict)):
+    elif isinstance(value, list | dict):
         return json.dumps(value)
     else:
         # Fallback for other types (datetime, etc.)
@@ -463,7 +469,8 @@ class CustomModelView(ModelView):
                     await session.flush()
                     await resync_autoincrement(
                         session, self.model
-                    )  # needed to make sure everything works even if custom ids are imported
+                    )  # needed to make sure everything works even if custom ids
+                    # are imported
                 result.successful_rows = len(validated_data_list)
             except Exception as e:
                 result.failed_rows = len(validated_data_list)
@@ -471,7 +478,7 @@ class CustomModelView(ModelView):
                     {
                         "row": "batch",
                         "field": "transformation",
-                        "message": f"Batch transformation failed: {str(e)}",
+                        "message": f"Batch transformation failed: {e!s}",
                         "input_value": "validated_data",
                         "expected_type": "ORM instances",
                         "data": [
@@ -495,7 +502,7 @@ class CustomModelView(ModelView):
                     {
                         "row": "batch",
                         "field": "validation",
-                        "message": f"Validation failed: {str(e)}",
+                        "message": f"Validation failed: {e!s}",
                         "input_value": "validated_data",
                         "expected_type": "ORM instances",
                         "data": [
@@ -578,7 +585,8 @@ class CustomModelView(ModelView):
                     await session.flush()
                     await resync_autoincrement(
                         session, self.model
-                    )  # needed to make sure everything works even if custom ids are imported
+                    )  # needed to make sure everything works even if custom ids
+                    # are imported
             except Exception as e:
                 result.failed_rows += result.successful_rows
                 result.successful_rows = 0
@@ -586,7 +594,7 @@ class CustomModelView(ModelView):
                     {
                         "row": "batch",
                         "field": "transformation",
-                        "message": f"Batch transformation failed: {str(e)}",
+                        "message": f"Batch transformation failed: {e!s}",
                         "input_value": "all_validated_rows",
                         "expected_type": "ORM instances",
                         "data": [data.model_dump() for data in validated_data_list],
@@ -626,7 +634,7 @@ class CustomModelView(ModelView):
                     # Provide empty string for missing optional fields
                     sample_row.append("")
         except Exception as e:
-            raise CSVImportError(f"Error generating template: {str(e)}") from e
+            raise CSVImportError(f"Error generating template: {e!s}") from e
 
         # Create CSV with header and sample row
         output = io.StringIO()
@@ -642,7 +650,8 @@ class CustomModelView(ModelView):
             return {}
 
         guide = {
-            "Empty string vs None": "Use '\"\"' for empty string, leave cell empty for None/null"
+            "Empty string vs None": "Use '\"\"' for empty string, "
+            "leave cell empty for None/null"
         }
 
         for field_name, field_info in self.import_schema.model_fields.items():
@@ -665,6 +674,6 @@ class CustomModelView(ModelView):
                     'Object: JSON object format (e.g., {"key": "value"})'
                 )
             else:
-                guide[field_name] = f"Type: {str(annotation)}"
+                guide[field_name] = f"Type: {annotation!s}"
 
         return guide

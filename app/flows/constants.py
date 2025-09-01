@@ -739,7 +739,7 @@ Use a seguinte escala numérica:
 
 Critérios de avaliação:
 •	Centralidade do tema: atribua 5 quando o entendimento do tema for essencial para resolver a questão; 4 quando o tema for importante para resolução mas não exclusivo; 3 quando for auxiliar, mas houver outros temas mais centrais; 2 quando a conexão for periférica ou indireta; 1 para menções superficiais/contextuais; 0 quando não houver relação.
-•	Macrotema vs. subtema: para temas amplos (ex.: "Matemática", "Biologia"), questões da área tendem a pontuar 4–5; para subtemas específicos (ex.: "Funções exponenciais"), exija aderência ao subtema para 4–5.
+•	Macrotema vs. subtema: para temas amplos (ex.: "Matemática", "Biologia"), questões da área tendem a pontuar 4-5; para subtemas específicos (ex.: "Funções exponenciais"), exija aderência ao subtema para 4–5.
 •	Interdisciplinares: pondere pelo peso do tema no raciocínio exigido (tema principal ≥50%: 5; coadjuvante: 4; periférico: 3).
 •	Sinônimos e variações: aceite sinônimos, termos equivalentes, traduções e notações usuais do tema.
 •	Ruído: ignore nomes, datas ou termos que apareçam apenas como contexto sem serem o objeto avaliado.
@@ -768,29 +768,13 @@ o	Saída esperada: 0
 5 — Extremamente pertinente
 •	topic: Iluminismo; question: Em O Contrato Social, qual princípio está mais associado ao Iluminismo?
 •	topic: Genética; question: Em um cruzamento Aa x Aa com dominância completa, qual proporção fenotípica é esperada?
-•	topic: Derivadas; question: Calcule d/dx (3x^2 − 4x + 1)
+•	topic: Derivadas; question: Calcule d/dx (3x^2 - 4x + 1)
 
 Restrições:
 •	Baseie-se apenas no conteúdo fornecido em topic e question and choices; não invente informações externas.
 •	Não mencionar, citar ou reproduzir qualquer fonte interna ou metadados.
 •	Não explique sua decisão, não inclua texto extra, símbolos, espaços adicionais, quebras de linha, rótulos ou comentários.
 •	Retorne APENAS o número correspondente (0, 1, 2, 3, 4 ou 5).
-"""
-
-SYSTEM_MESSAGE_GENERATE_MINOR_TAGS_FOR_TOPIC = """
-Você é um especialista em gerar tags de conteúdo para um título de resumo ou tópico. Sua tarefa é produzir tags que representem os tópicos centrais desse título/tópico.
-Instruções
-•	Analise o título/tópico (e a descrição, se houver); não invente temas não sustentados pelo insumo.
-•	Escolha de 1 a 3 tags que melhor representem os tópicos centrais (evite temas periféricos).
-•	Seja específico (prefira "Porcentagem", "Citologia", "Leitura de gráfico" a termos muito amplos como "Matemática", "Biologia", "Interpretação").
-•	Evite redundância: não repita tags nem use sinônimos muito próximos na mesma resposta.
-•	Use termos curtos e canônicos (1–3 palavras por tag).
-•	Idioma das tags: produza-as no mesmo idioma do título/tópico.
-•	Se o insumo for amplo ou incompleto, escolha a(s) tag(s) mais geral(is) possível(is) que ainda representem corretamente o conteúdo; não invente detalhes.
-Formato de resposta obrigatório
-•	Retorne APENAS as tags separadas por vírgula (ex.: Tag1, Tag2, Tag3).
-•	De 1 a 3 tags.
-•	Sem pontuação adicional, aspas, explicações ou qualquer texto extra.
 """
 
 SYSTEM_MESSAGE_CLASSIFY_TOPIC_SUBJECT = """
@@ -805,7 +789,6 @@ Formato de resposta obrigatório
 •	Sem aspas, sem comentários, sem linhas extras, sem espaços antes/depois.
 Matérias disponíveis
 {subjects}
-
 """
 
 SYSTEM_MESSAGE_GENERATE_MINOR_TAGS_FOR_TOPIC = """
@@ -829,25 +812,6 @@ FORMATO DE RESPOSTA OBRIGATÓRIO:
 - Sem pontuação adicional, aspas, explicações ou qualquer texto extra
 """
 
-SYSTEM_MESSAGE_CLASSIFY_TOPIC_SUBJECT = """
-Você é um professor especializado em vestibulares e deve classificar a matéria do tópico recebido.
-
-A mensagem incluirá:
-- Tópico educacional
-
-Tarefa:
-- Com base no tópico fornecido, determine em qual matéria a questão se enquadra, considerando as competências centrais necessárias para resolvê-la
-- Considere metodologia, habilidades e conhecimentos específicos
-- Escolha apenas uma matéria dentro da lista fornecida em {subjects}
-- Se houver interdisciplinaridade, selecione a matéria predominante (a que mais dirige a resolução)
-- Se houver dúvida entre duas matérias semelhantes na lista, escolha a opção exatamente como aparece na lista (mesma grafia e acentuação)
-
-FORMATO DE RESPOSTA OBRIGATÓRIO:
-- Responda apenas o nome da matéria escolhida, sem nenhum detalhamento ou justificativa
-- Escreva SOMENTE matérias que estejam mencionadas na lista fornecida, e nenhuma outra, sem utilizar aspas
-- As matérias disponíveis são: {subjects}
-"""
-
 
 PROMPT_COVER_GENERATION = """
 Crie uma capa marcante para um quiz sobre {flow_title}.
@@ -858,7 +822,7 @@ Escolha o estilo pelo tema, priorizando estilos clássicos, surrealistas ou hipe
 •	matemática/engenharia → geometria clássica com elementos arquitetônicos renascentistas ou surrealistas
 •	literatura/humanas → estilo pictórico clássico com elementos surrealistas, inspirado em pinturas de museu
 (Se outro tema, adapte criativamente usando estilos clássicos, surrealistas ou hiper-realistas. Evite estilos cyberpunk, neon ou futuristas)
-Composição: símbolo central + 2–3 ícones do tema; área limpa para título; profundidade e dinamismo; paleta de cores elegante e sofisticada.
+Composição: símbolo central + 2-3 ícones do tema; área limpa para título; profundidade e dinamismo; paleta de cores elegante e sofisticada.
 Restrições: sem texto, sem logos, sem rostos reconhecíveis.
 Formato: 1:1 (variante 16:9 opcional).
  

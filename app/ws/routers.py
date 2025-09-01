@@ -27,7 +27,8 @@ logger = logging.getLogger(__name__)
 
 async def get_db_session_websocket():
     """
-    This function is used to get a database session in websocket endpoints, allowing you to begin and commit transactions whenever you want.
+    This function is used to get a database session in websocket endpoints,
+    allowing you to begin and commit transactions whenever you want.
     It will begin a transaction and yield the session.
     The transaction will be committed if the session is used.
     If an exception is raised, the transaction will be rolled back.
@@ -67,7 +68,8 @@ async def websocket_endpoint(
     # Accept connection after successful authentication
     await websocket.accept()
     logger.info(
-        f"WebSocket connection established for user {current_user.id} ({current_user.username})"
+        f"WebSocket connection established for user {current_user.id}"
+        " ({current_user.username})"
     )
 
     # Handle user connection event
@@ -84,7 +86,8 @@ async def websocket_endpoint(
 
     except WebSocketDisconnect:
         logger.info(
-            f"WebSocket disconnected normally for user {current_user.id} ({current_user.username})"
+            f"WebSocket disconnected normally for user {current_user.id}"
+            " ({current_user.username})"
         )
     except ValidationError:
         await websocket.close(
@@ -99,7 +102,8 @@ async def websocket_endpoint(
                 reason="Internal server error",
             )
             logger.warning(
-                f"WebSocket disconnected with error for user {current_user.id} ({current_user.username})"
+                f"WebSocket disconnected with error for user {current_user.id}"
+                " ({current_user.username})"
             )
         except Exception:
             pass  # Connection might already be closed

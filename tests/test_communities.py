@@ -1,4 +1,6 @@
+import pytest
 from httpx import AsyncClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -143,12 +145,11 @@ class TestCommunityUserRelationships:
             community_user2 = CommunityUser(community_id=community.id, user_id=user.id)
             session.add(community_user2)
 
-            try:
+            with pytest.raises(IntegrityError) as e:
                 await session.flush()
-                assert False, "Should have raised an integrity error"
-            except Exception as e:
-                # Should fail due to unique constraint
-                assert "unique" in str(e).lower() or "duplicate" in str(e).lower()
+            assert (
+                "unique" in str(e.value).lower() or "duplicate" in str(e.value).lower()
+            )
 
     async def test_remove_user_from_community(self, session: AsyncSession):
         """Test removing a user from a community."""
@@ -523,7 +524,8 @@ class TestCommunityRankingAPI:
             community = await CommunityFactory.create(session=session)
             country = await CountryFactory.create(session=session)
 
-            # Create 12 users with higher XP scores than the asking user, different xp scores
+            # Create 12 users with higher XP scores than the asking user, different xp
+            # scores
             high_score_users = [
                 await UserFactory.create(
                     session=session,

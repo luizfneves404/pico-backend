@@ -6,15 +6,23 @@ transcription processing, and official question retrieval.
 
 import asyncio
 import base64
+import functools
 import io
 import logging
+import operator
 import random
 from collections import Counter
-from typing import Any, Coroutine, TypedDict, cast
+from collections.abc import Coroutine
+from typing import Any, TypedDict
 
 from fastapi import UploadFile
-from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
-from pylatexenc.latex2text import LatexNodes2Text
+from openai.types.responses import (
+    ResponseInputMessageContentListParam,
+    ResponseInputParam,
+)
+from pylatexenc.latex2text import (  # pyright: ignore[reportMissingTypeStubs]
+    LatexNodes2Text,
+)
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -45,7 +53,6 @@ from app.flows.models import (
     Choice,
     Exam,
     Flow,
-    FlowElement,
     FlowQuestion,
     FlowTranscriptionBlock,
     OfficialQuestionSource,
@@ -88,51 +95,7 @@ class FlowNotFoundError(Exception):
 
 def latex_to_text(latex: str) -> str:
     """Convert LaTeX to text. Passes through to pylatexenc, but with type hints."""
-    return cast(str, LatexNodes2Text().latex_to_text(latex))
-
-
-async def _get_existing_questions_for_prompt(
-    db_session: AsyncSession, flow_id: int
-) -> str:
-    """
-    Get existing questions in the flow to provide context for AI generation.
-    Returns a formatted string with existing question texts.
-    """
-    try:
-        query = (
-            select(Question.content_blocks)
-            .join(FlowElement, Question.id == FlowElement.question_id)
-            .where(
-                FlowElement.flow_id == flow_id,
-                Question.source_type == QuestionSourceType.AI_GENERATED,
-            )
-            .limit(10)  # Limit to avoid too much context
-        )
-
-        result = await db_session.execute(query)
-        content_blocks_list = result.scalars().all()
-
-        if not content_blocks_list:
-            return ""
-
-        question_texts: list[str] = []
-        for content_blocks in content_blocks_list:
-            # Extract text from content blocks - handle both dict and object format
-            for block in content_blocks:
-                if hasattr(block, "block_type") and block.block_type == "text":
-                    # Handle TextBlock object
-                    if hasattr(block, "content") and block.content:
-                        for rich_text in block.content:
-                            if hasattr(rich_text, "text"):
-                                question_texts.append(rich_text.text)
-                elif isinstance(block, dict) and block.get("type") == "text":
-                    # Handle dict format
-                    question_texts.append(block.get("text", ""))
-
-        return "\n".join(question_texts[:10])  # Limit to 10 questions
-    except Exception as e:
-        logger.error(f"Error getting existing questions for flow {flow_id}: {str(e)}")
-        return ""
+    return LatexNodes2Text().latex_to_text(latex)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 
 
 async def get_official_questions(
@@ -147,7 +110,7 @@ async def get_official_questions(
     source_year: int | None,
     question_type: QuestionAnswerType,
     difficulty: QuestionDifficulty | None,
-    exclude_question_ids: set[int] = set(),
+    exclude_question_ids: set[int] | None = None,
 ) -> list[Question]:
     """Get official questions.
     As a rule of thumb, if you pass a falsy value, the filter is not applied.
@@ -171,6 +134,8 @@ async def get_official_questions(
     Returns:
         list[Question]: List of questions gotten from the database
     """
+    if exclude_question_ids is None:
+        exclude_question_ids = set()
     logger.info(f"Getting {n_questions} official questions with filters")
 
     # Base query
@@ -287,41 +252,26 @@ async def task_generate_transcriptions(
 
         if images:
             # For images: use direct URLs for transcription via OpenAI
-            try:
-                logger.info(
-                    f"Flow {flow_id}: transcrevendo {len(images)} imagens via URLs"
-                )
+            logger.info(f"Flow {flow_id}: transcrevendo {len(images)} imagens via URLs")
 
-                urls = await asyncio.gather(
-                    *(file_obj.get_url() for file_obj in images)
-                )
+            urls = await asyncio.gather(*(file_obj.get_url() for file_obj in images))
 
-                transcripts = await asyncio.gather(
-                    *(openai_utils.transcribe_image(url) for url in urls)
-                )
-
-            except Exception:
-                logger.exception("Falha na transcrição das imagens")
-                raise
+            transcripts = await asyncio.gather(
+                *(openai_utils.transcribe_image(url) for url in urls)
+            )
 
         else:  # PDFs
-            # For PDFs: use file streams to avoid loading everything into memory
-            try:
-                logger.info(
-                    f"Flow {flow_id}: transcrevendo {len(pdfs)} PDFs via file streams"
-                )
+            logger.info(
+                f"Flow {flow_id}: transcrevendo {len(pdfs)} PDFs via file streams"
+            )
 
-                async def transcribe_pdf_from_file(pdf_file: File) -> str:
-                    async with pdf_file.get_file_like() as file_like:
-                        return await gemini_utils.transcribe_uploaded_pdf(file_like)
+            async def transcribe_pdf_from_file(pdf_file: File) -> str:
+                async with pdf_file.get_file_like() as file_like:
+                    return await gemini_utils.transcribe_uploaded_pdf(file_like)
 
-                transcripts = await asyncio.gather(
-                    *(transcribe_pdf_from_file(pdf) for pdf in pdfs)
-                )
-
-            except Exception:
-                logger.exception("Falha na transcrição dos PDFs")
-                raise
+            transcripts = await asyncio.gather(
+                *(transcribe_pdf_from_file(pdf) for pdf in pdfs)
+            )
 
         # --------- 3. Post-processing -----------------------------------------
         cleaned = [latex_to_text(t).strip() for t in transcripts if t and t.strip()]
@@ -366,7 +316,9 @@ async def task_generate_transcriptions(
                 block_text=txt,
                 title=title,
             )
-            for idx, (txt, title) in enumerate(zip(block_texts, block_titles))
+            for idx, (txt, title) in enumerate(
+                zip(block_texts, block_titles, strict=False)
+            )
         ]
         db_session.add_all(blocks)
 
@@ -403,7 +355,7 @@ async def task_generate_transcriptions(
 
         except Exception as e:
             # Log error but don't fail the entire operation since transcriptions are already done
-            logger.error(f"Failed to generate cover image for flow {flow_id}: {str(e)}")
+            logger.error(f"Failed to generate cover image for flow {flow_id}: {e!s}")
 
 
 async def generate_flow_cover_image(flow_title: str) -> str:
@@ -412,12 +364,11 @@ async def generate_flow_cover_image(flow_title: str) -> str:
     """
     logger.info(f"Generating cover image for flow {flow_title}")
     prompt = PROMPT_COVER_GENERATION.format(flow_title=flow_title)
-    image_base64 = await openai_utils.generate_image(
-        prompt, format="jpeg", model="gpt-image-1"
-    )
+    image_base64 = await openai_utils.generate_image(prompt, image_format="jpeg")
     if image_base64:
         logger.info(
-            f"Successfully generated cover image for flow {flow_title}: {len(image_base64)} chars"
+            f"Successfully generated cover image for flow {flow_title}: "
+            "{len(image_base64)} chars"
         )
     else:
         logger.warning(f"Failed to generate cover image for flow {flow_title}")
@@ -443,7 +394,7 @@ async def save_cover_image_to_flow(
     try:
         image_data = base64.b64decode(image_base64)
     except Exception as e:
-        logger.error(f"Failed to decode base64 image for flow {flow_id}: {str(e)}")
+        logger.error(f"Failed to decode base64 image for flow {flow_id}: {e!s}")
         return None
 
     # Create file-like object in memory
@@ -507,7 +458,7 @@ async def task_generate_flow_cover_image(
             logger.warning(f"Failed to generate cover image for flow {flow_id}")
 
     except Exception as e:
-        logger.error(f"Error generating cover image for flow {flow_id}: {str(e)}")
+        logger.error(f"Error generating cover image for flow {flow_id}: {e!s}")
         # Do not propagate error, as it is not a critical operation
 
 
@@ -515,7 +466,7 @@ async def check_if_titles_involve_math_calculations(block_titles: list[str]) -> 
     """
     Check if the block titles involve math calculations using openai.
     """
-    messages = [
+    messages: ResponseInputParam = [
         {"role": "system", "content": SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT},
         {
             "role": "user",
@@ -525,13 +476,11 @@ async def check_if_titles_involve_math_calculations(block_titles: list[str]) -> 
     response = await openai_utils.get_completion(
         model="gpt-5-mini",
         temperature=None,
-        messages=cast(list[ChatCompletionMessageParam], messages),
-        json_mode=False,
-        timeout=30,
-        reasoning_effort="medium",
+        input=messages,
+        reasoning={"effort": "medium"},
     )
 
-    return response.content.strip().upper() == "SIM"
+    return response.strip().upper() == "SIM"
 
 
 async def generate_tags_for_topic(topic: str) -> tuple[list[str], list[str]]:
@@ -552,25 +501,23 @@ async def generate_tags_for_topic(topic: str) -> tuple[list[str], list[str]]:
         minor_tags_response = await openai_utils.get_completion(
             model="gpt-5-mini",
             temperature=None,
-            messages=[
+            input=[
                 {
                     "role": "system",
                     "content": SYSTEM_MESSAGE_GENERATE_MINOR_TAGS_FOR_TOPIC,
                 },
                 {"role": "user", "content": f"Tópico: {topic}"},
             ],
-            json_mode=False,
-            timeout=30,
-            reasoning_effort="medium",
+            reasoning={"effort": "medium"},
         )
 
-        minor_tags_text = minor_tags_response.content.strip()
+        minor_tags_text = minor_tags_response.strip()
         minor_tags = [tag.strip() for tag in minor_tags_text.split(",") if tag.strip()]
 
         return [major_tag] if major_tag else [], minor_tags[:5]  # Limit to 5 minor tags
 
     except Exception as e:
-        logger.error(f"Error generating tags for topic '{topic}': {str(e)}")
+        logger.error(f"Error generating tags for topic '{topic}': {e!s}")
         return [], []
 
 
@@ -581,12 +528,12 @@ async def _classify_topic_subject(topic: str) -> str:
     """
     try:
         # Get all subjects from ENEM_AREAS
-        all_subjects = sum(ENEM_AREAS.values(), [])
+        all_subjects = functools.reduce(operator.iadd, ENEM_AREAS.values(), [])
         system_message = SYSTEM_MESSAGE_CLASSIFY_TOPIC_SUBJECT.format(
             subjects=chr(10).join(all_subjects)
         )
 
-        messages: list[ChatCompletionMessageParam] = [
+        messages: ResponseInputParam = [
             {"role": "system", "content": system_message},
             {"role": "user", "content": f"Tópico: {topic}"},
         ]
@@ -594,12 +541,11 @@ async def _classify_topic_subject(topic: str) -> str:
         response = await openai_utils.get_completion(
             model="gpt-5-mini",
             temperature=None,
-            messages=messages,
-            timeout=30,
-            reasoning_effort="medium",
+            input=messages,
+            reasoning={"effort": "medium"},
         )
 
-        response_text = response.content.strip()
+        response_text = response.strip()
         if response_text in all_subjects:
             return response_text
 
@@ -607,7 +553,7 @@ async def _classify_topic_subject(topic: str) -> str:
         return "Conhecimentos Gerais"
 
     except Exception as e:
-        logger.error(f"Error classifying topic subject for '{topic}': {str(e)}")
+        logger.error(f"Error classifying topic subject for '{topic}': {e!s}")
         return "Conhecimentos Gerais"
 
 
@@ -623,11 +569,9 @@ async def get_topic_user_generated_questions(
     """
     Generate AI questions based on a topic for a flow.
     """
-    model = "gpt-5"
-    reasoning_models = ["gpt-5"]
-
     logger.info(
-        f"Generating {n_questions} AI questions for flow {flow.id} with topic: {flow.input_topic}"
+        f"Generating {n_questions} AI questions for flow {flow.id} "
+        f"with topic: {flow.input_topic}"
     )
 
     # Generate tags for the flow topic and assign to flow
@@ -651,20 +595,19 @@ async def get_topic_user_generated_questions(
     if extra_instructions:
         user_message += f"\n\nInstruções adicionais: {extra_instructions}"
 
-    messages: list[ChatCompletionMessageParam] = [
+    messages: ResponseInputParam = [
         {"role": "system", "content": system_message},
         {"role": "user", "content": user_message},
     ]
     response = await openai_utils.get_completion_parsed(
-        model=model,
-        messages=messages,
+        model="gpt-5",
+        input=messages,
         response_format=QuestionSet,
         temperature=None,
-        reasoning_effort="medium",
-        timeout=90,
+        reasoning={"effort": "medium"},
     )
 
-    questions_data = response.content
+    questions_data = response
 
     questions: list[Question] = []
     for question_data in questions_data.questions:
@@ -773,9 +716,6 @@ async def get_files_user_generated_questions(
     """
     Generate AI questions based on uploaded files for a flow.
     """
-    model = "gpt-5"
-    reasoning_models = ["gpt-5"]
-
     query = (
         select(FlowTranscriptionBlock)
         .where(FlowTranscriptionBlock.flow_id == flow.id)
@@ -822,7 +762,7 @@ async def get_files_user_generated_questions(
         if extra_instructions:
             user_message += f"\n\nInstruções adicionais: {extra_instructions}"
 
-        messages: list[ChatCompletionMessageParam] = [
+        messages: ResponseInputParam = [
             {
                 "role": "system",
                 "content": system_message,
@@ -832,15 +772,14 @@ async def get_files_user_generated_questions(
 
         try:
             response = await openai_utils.get_completion_parsed(
-                model=model,
-                messages=messages,
+                model="gpt-5",
+                input=messages,
                 response_format=QuestionSet,
                 temperature=None,
-                reasoning_effort="medium",
-                timeout=90,
+                reasoning={"effort": "medium"},
             )
 
-            questions_data = response.content
+            questions_data = response
             block_questions: list[BlockQuestion] = []
 
             for question_data in questions_data.questions:
@@ -860,7 +799,7 @@ async def get_files_user_generated_questions(
 
         except Exception as e:
             logger.error(
-                f"Error generating questions for block {block_index + 1}: {str(e)}"
+                f"Error generating questions for block {block_index + 1}: {e!s}"
             )
             return []
 
@@ -1047,7 +986,7 @@ async def get_topic_query_official_questions(
         # Create question-score pairs and filter by score >= 3
         question_score_pairs = [
             (question, score)
-            for question, score in zip(questions, pertinence_scores)
+            for question, score in zip(questions, pertinence_scores, strict=False)
             if score >= 3
         ]
 
@@ -1147,7 +1086,9 @@ async def get_files_query_official_questions(
     all_questions: list[Question] = []
     unique_question_ids: set[int] = set()
 
-    for i, (block_title, embedding) in enumerate(zip(block_titles, embeddings)):
+    for i, (block_title, embedding) in enumerate(
+        zip(block_titles, embeddings, strict=False)
+    ):
         # Get questions using the generalized function with proper exclusion
         block_questions = await get_official_questions(
             db_session=db_session,
@@ -1195,7 +1136,7 @@ async def get_files_query_official_questions(
         # Create question-score pairs and filter by score >= 3
         question_score_pairs = [
             (question, score)
-            for question, score in zip(all_questions, pertinence_scores)
+            for question, score in zip(all_questions, pertinence_scores, strict=False)
             if score >= 3
         ]
 
@@ -1273,17 +1214,15 @@ async def _generate_block_title(block_text: str) -> str:
         response = await openai_utils.get_completion(
             model="gpt-5-mini",
             temperature=None,
-            messages=[
+            input=[
                 {"role": "system", "content": SYSTEM_MESSAGE_BLOCK_TITLE},
                 {"role": "user", "content": block_text},
             ],
-            json_mode=False,
-            timeout=30,
-            reasoning_effort="medium",
+            reasoning={"effort": "medium"},
         )
-        return response.content.strip()
+        return response.strip()
     except Exception as e:
-        logger.error(f"Error generating block title: {str(e)}")
+        logger.error(f"Error generating block title: {e!s}")
         # Return a fallback title if generation fails
         return "Conteúdo transcrito"
 
@@ -1305,7 +1244,7 @@ async def generate_flow_title_from_block_titles(
         result = await openai_utils.get_completion(
             model="gpt-5-mini",
             temperature=None,
-            messages=[
+            input=[
                 {
                     "role": "system",
                     "content": SYSTEM_MESSAGE_GENERATE_TITLE_FROM_TRANSCRIPTIONS,
@@ -1315,10 +1254,10 @@ async def generate_flow_title_from_block_titles(
                     "content": f"Títulos das transcrições:\n{titles_text}",
                 },
             ],
-            reasoning_effort="medium",
+            reasoning={"effort": "medium"},
         )
 
-        title = result.content.strip()
+        title = result.strip()
         # Ensure title is not too long
         if len(title) > 60:
             title = title[:57] + "..."
@@ -1362,10 +1301,10 @@ async def verify_question_pertinence_to_topic(
                 # Handle ImageBlock object
                 if hasattr(block, "image_id"):
                     image_ids.append(block.image_id)
-            elif isinstance(block, dict) and block.get("block_type") == "image":
+            elif isinstance(block, dict) and block.get("block_type") == "image":  # pyright: ignore[reportUnknownMemberType]
                 # Handle dict format
                 if "image_id" in block:
-                    image_ids.append(block["image_id"])
+                    image_ids.append(block["image_id"])  # pyright: ignore[reportUnknownArgumentType]
 
         # Also check for images in choices
         for choice in question.choices:
@@ -1379,8 +1318,8 @@ async def verify_question_pertinence_to_topic(
         ]
 
         # Prepare user message content (text + images if any)
-        user_message_content: list[dict[str, Any]] = [
-            {"type": "text", "text": "\n\n".join(content_parts)}
+        user_message_content: ResponseInputMessageContentListParam = [
+            {"type": "input_text", "text": "\n\n".join(content_parts)}
         ]
 
         # Add images if present
@@ -1395,15 +1334,16 @@ async def verify_question_pertinence_to_topic(
                     if url:
                         user_message_content.append(
                             {
-                                "type": "image_url",
-                                "image_url": {"url": url, "detail": "high"},
+                                "type": "input_image",
+                                "image_url": url,
+                                "detail": "high",
                             }
                         )
                 except Exception as e:
                     logger.warning(f"Failed to get URL for image {image_file.id}: {e}")
 
         # Use gpt-5-mini for all cases (supports both text and images)
-        messages = [
+        messages: ResponseInputParam = [
             {
                 "role": "system",
                 "content": SYSTEM_MESSAGE_QUESTION_PERTINENCE_TO_TOPIC,
@@ -1417,14 +1357,12 @@ async def verify_question_pertinence_to_topic(
         response = await openai_utils.get_completion(
             model="gpt-5-mini",
             temperature=None,
-            messages=cast(list[ChatCompletionMessageParam], messages),
-            json_mode=False,
-            timeout=45,  # Increased timeout for vision capabilities
-            reasoning_effort="medium",
+            input=messages,
+            reasoning={"effort": "medium"},
         )
 
         # Extract the numeric score from the response
-        score_str = response.content.strip()
+        score_str = response.strip()
         try:
             score = int(score_str)
             # Ensure score is within valid range

@@ -25,39 +25,39 @@ async def create_superuser(
     Returns:
         The created User object if successful, None if user already exists
     """
-    async with db_manager.use_db():
-        async with db_manager.session_with_transaction() as session:
-            # Check if user already exists
-            existing_user = await get_user(session, username=username)
-            if existing_user:
-                print(f"User {username} already exists")
-                return None
+    async with db_manager.use_db(), db_manager.session_with_transaction() as session:
+        # Check if user already exists
+        existing_user = await get_user(session, username=username)
+        if existing_user:
+            print(f"User {username} already exists")
+            return None
 
-            # Create new user
-            user_data = UserIn(
-                name=username,
-                email=email,
-                password=SecretStr(password),
-                referred_by_username="",
-                signup_source=SignupSource.OTHER,  # Mark as admin-created
-            )
+        # Create new user
+        user_data = UserIn(
+            name=username,
+            email=email,
+            password=SecretStr(password),
+            referred_by_username="",
+            signup_source=SignupSource.OTHER,  # Mark as admin-created
+        )
 
-            hashed_password = get_password_hash(user_data.password.get_secret_value())
-            db_user = User(
-                name=str(user_data.name),
-                username=str(user_data.name),
-                email=str(user_data.email),
-                hashed_password=str(hashed_password),
-                is_superuser=True,
-                google_id="",
-                apple_id="",
-            )
+        hashed_password = get_password_hash(user_data.password.get_secret_value())
+        db_user = User(
+            name=str(user_data.name),
+            username=str(user_data.name),
+            email=str(user_data.email),
+            hashed_password=str(hashed_password),
+            is_superuser=True,
+            google_id="",
+            apple_id="",
+            instagram_account="",
+        )
 
-            session.add(db_user)
-            await session.flush()
+        session.add(db_user)
+        await session.flush()
 
-            print(f"Superuser {username} created successfully")
-            return db_user
+        print(f"Superuser {username} created successfully")
+        return db_user
 
 
 async def main():

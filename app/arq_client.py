@@ -1,6 +1,7 @@
 import contextlib
 import logging
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
@@ -54,7 +55,7 @@ def _get_redis() -> ArqRedis:
         IOError: If the ARQ Redis connection is not initialized
     """
     if _redis is None:
-        raise IOError("ARQ Redis connection is not initialized")
+        raise OSError("ARQ Redis connection is not initialized")
     return _redis
 
 

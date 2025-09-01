@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from typing import Any, Callable, Coroutine
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -29,7 +30,8 @@ logger = logging.getLogger(__name__)
 
 
 async def test_flow_feed(user_client: AsyncClient, user: User, session: AsyncSession):
-    """Test the flow feed endpoint returns flows ordered by answer count and doesn't repeat flows."""
+    """Test the flow feed endpoint returns flows ordered by answer count and doesn't
+    repeat flows."""
     async with session.begin():
         another_user = await UserFactory.create(session=session)
 
@@ -124,7 +126,8 @@ async def test_flow_feed(user_client: AsyncClient, user: User, session: AsyncSes
 async def test_discover_flows(
     user_client: AsyncClient, user: User, session: AsyncSession
 ):
-    """Test the flow discover endpoint returns flows ordered by answer count and doesn't repeat flows."""
+    """Test the flow discover endpoint returns flows ordered by answer count and doesn't
+    repeat flows."""
     async with session.begin():
         another_user = await UserFactory.create(session=session)
 
@@ -320,7 +323,8 @@ async def test_get_flow_details_not_found(user_client: AsyncClient):
 async def test_submit_flow_question_answer_correct_first_time(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
-    """Test submitting a correct answer for the first time awards full XP and updates social score"""
+    """Test submitting a correct answer for the first time awards full XP and updates
+    social score"""
     async with session.begin():
         another_user = await UserFactory.create(session=session)
         flow = await FlowFactory.create(created_by=another_user, session=session)
@@ -391,7 +395,8 @@ async def test_submit_flow_question_answer_correct_first_time(
         assert user_answer.choice_id == correct_choice.id
         assert user_answer.submitted_text == ""
 
-        # Check that user's XP increased (should be full XP since it's correct and first time)
+        # Check that user's XP increased (should be full XP since it's correct and
+        # first time)
         user_result = await session.execute(select(User).where(User.id == user.id))
         user = user_result.scalar_one()
         await session.refresh(user)
@@ -500,7 +505,8 @@ async def test_submit_flow_question_answer_wrong_answer(
 async def test_submit_flow_question_answer_repeated_flow_question(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
-    """Test submitting an answer when the user has already answered the same question in this flow is not allowed"""
+    """Test submitting an answer when the user has already answered the same question
+    in this flow is not allowed"""
     async with session.begin():
         another_user = await UserFactory.create(session=session)
         flow = await FlowFactory.create(created_by=another_user, session=session)
@@ -550,7 +556,8 @@ async def test_submit_flow_question_answer_repeated_flow_question(
 async def test_submit_flow_question_answer_repeated_question(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
-    """Test submitting a correct answer after previously answered correctly awards reduced XP"""
+    """Test submitting a correct answer after previously answered correctly awards
+    reduced XP"""
     async with session.begin():
         another_user = await UserFactory.create(session=session)
         flow = await FlowFactory.create(created_by=another_user, session=session)
@@ -564,7 +571,8 @@ async def test_submit_flow_question_answer_repeated_question(
             2, question=flow_question.question, is_correct=False, session=session
         )
 
-        # Add a previous correct answer from the same user to the same question in a different flow
+        # Add a previous correct answer from the same user to the same question in a
+        # different flow
         other_flow = await FlowFactory.create(created_by=another_user, session=session)
         other_flow_question = await FlowQuestionFactory.create(
             flow=other_flow, question=flow_question.question, session=session
@@ -626,7 +634,8 @@ async def test_submit_flow_question_answer_repeated_question(
 async def test_submit_flow_question_answer_same_user_as_creator(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
-    """Test that social score is NOT increased when answerer is the same as flow creator"""
+    """Test that social score is NOT increased when answerer is the same as flow
+    creator"""
     async with session.begin():
         # User creates their own flow
         flow = await FlowFactory.create(created_by=user, session=session)
@@ -849,7 +858,8 @@ async def test_submit_flow_question_answer_nonexistent_question(
 async def test_submit_flow_question_answer_none_choice_id(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
-    """Test submitting an answer with None choice_id (no selection) should fail validation"""
+    """Test submitting an answer with None choice_id (no selection) should fail
+    validation"""
     async with session.begin():
         flow = await FlowFactory.create(created_by=user, session=session)
         flow_question = await FlowQuestionFactory.create(flow=flow, session=session)
@@ -984,7 +994,8 @@ async def test_search_flows_basic_functionality(
 async def test_search_flows_weighted_scoring(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
-    """Test that flows with matches in major_tags rank higher than those with matches in minor_tags"""
+    """Test that flows with matches in major_tags rank higher than those with matches
+    in minor_tags"""
     async with session.begin():
         # Create flows where search term appears in different tag types
         flow_major = await FlowFactory.create(
@@ -1782,7 +1793,8 @@ async def test_list_exams_empty_result(
 
 
 async def test_list_areas(user_client: AsyncClient, session: AsyncSession, user: User):
-    """Test listing question areas filters by user's country, education level, and course"""
+    """Test listing question areas filters by user's country, education level, and
+    course"""
     from tests.factories import QuestionAreaFactory
 
     # Ensure user has education info

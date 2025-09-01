@@ -1,7 +1,8 @@
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Awaitable
+from collections.abc import Awaitable
+from typing import Any
 
 from sqlalchemy import and_, delete, func, not_, select
 from sqlalchemy.engine import RowMapping

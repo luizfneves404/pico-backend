@@ -146,7 +146,8 @@ class User(Base, kw_only=True):
             "(google_id != '' AND apple_id = '' AND hashed_password = '') OR "
             "(google_id = '' AND apple_id != '' AND hashed_password = '') OR "
             "(google_id = '' AND apple_id = '' AND hashed_password != '') OR "
-            "(google_id = '' AND apple_id = '' AND hashed_password = '')",  # this one cannot login
+            "(google_id = '' AND apple_id = '' AND hashed_password = '')",
+            # this last one cannot login, but exists
             name="google_or_apple_or_password_exclusive_check",
         ),
         Index("ix_user_email_lower", func.lower(email), unique=True),

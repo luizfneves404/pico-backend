@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 import jwt
@@ -52,7 +52,7 @@ def generate_tokens(
     Returns:
         tuple[str, str]: A tuple containing the access, refresh tokens.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     common_payload = {
         "user_id": user.id,
         "email": user.email,
@@ -92,7 +92,8 @@ async def process_token(
     Args:
         db_session (AsyncSession): The database session.
         token (str): The token to process.
-        expected_type (Literal["access", "refresh", ""]): The expected type of token. if "" it performs no validation of type.
+        expected_type (Literal["access", "refresh", ""]): The expected type of token.
+        if "" it performs no validation of type.
 
     Raises:
         InvalidTokenError: The token is invalid.
@@ -118,9 +119,9 @@ async def process_token(
             raise UserNotFoundError("User not found")
         logger.debug(f"User found for token. User id: {user.id}")
         return user
-    except jwt.ExpiredSignatureError:
+    except jwt.ExpiredSignatureError as e:
         logger.info(f"Expired {expected_type} token")
-        raise ExpiredTokenError(f"{expected_type.capitalize()} token expired")
-    except jwt.InvalidTokenError:
+        raise ExpiredTokenError(f"{expected_type.capitalize()} token expired") from e
+    except jwt.InvalidTokenError as e:
         logger.info(f"Invalid {expected_type} token")
-        raise InvalidTokenError(f"Invalid {expected_type} token")
+        raise InvalidTokenError(f"Invalid {expected_type} token") from e

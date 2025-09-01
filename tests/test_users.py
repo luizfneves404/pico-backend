@@ -33,7 +33,8 @@ class TestUserCreation:
     """Test user creation via different methods."""
 
     async def test_create_user_password_auth_full_flow(self, client: AsyncClient):
-        """Test complete user creation flow with password auth, JWT generation, and user retrieval."""
+        """Test complete user creation flow with password auth, JWT generation, and user
+        retrieval."""
         name = f"Test User {uuid.uuid4().hex[:8]}"
         email = f"{uuid.uuid4().hex[:8]}@example.com"
         response = await client.post(
@@ -52,7 +53,8 @@ class TestUserCreation:
 
         # Verify response data
         assert response_data["name"] == name
-        # Username should be normalized: lowercase name with spaces replaced by underscores + 4 digits
+        # Username should be normalized: lowercase name with spaces replaced by
+        # underscores + 4 digits
         expected_username_pattern = rf"^{name.lower().replace(' ', '_')}\d{{4}}$"
         assert re.match(expected_username_pattern, response_data["username"])
         assert response_data["email"] == email
@@ -809,28 +811,28 @@ class TestSocialAuthentication:
 
         mock_public_key = Mock(spec=RSAPublicKey)
 
-        with patch(
-            "app.users.external_auth.jwt.get_unverified_header"
-        ) as mock_get_header:
-            with patch(
-                "app.users.external_auth.RSAAlgorithm.from_jwk"
-            ) as mock_from_jwk:
-                with patch("app.users.external_auth.jwt.decode") as mock_jwt_decode:
-                    mock_get_header.return_value = {"kid": "test_kid"}
-                    mock_from_jwk.return_value = mock_public_key
-                    mock_jwt_decode.return_value = {
-                        "sub": "google_123",
-                        "email": "test@gmail.com",
-                        "email_verified": True,
-                        "name": "Test User",
-                    }
+        with (
+            patch(
+                "app.users.external_auth.jwt.get_unverified_header"
+            ) as mock_get_header,
+            patch("app.users.external_auth.RSAAlgorithm.from_jwk") as mock_from_jwk,
+            patch("app.users.external_auth.jwt.decode") as mock_jwt_decode,
+        ):
+            mock_get_header.return_value = {"kid": "test_kid"}
+            mock_from_jwk.return_value = mock_public_key
+            mock_jwt_decode.return_value = {
+                "sub": "google_123",
+                "email": "test@gmail.com",
+                "email_verified": True,
+                "name": "Test User",
+            }
 
-                    result = await external_auth.verify_google_id_token("fake_token")
+            result = await external_auth.verify_google_id_token("fake_token")
 
-                    assert result.sub == "google_123"
-                    assert result.email == "test@gmail.com"
-                    assert result.name == "Test User"
-                    mock_jwt_decode.assert_called_once()
+            assert result.sub == "google_123"
+            assert result.email == "test@gmail.com"
+            assert result.name == "Test User"
+            mock_jwt_decode.assert_called_once()
 
     @patch("app.users.external_auth.httpx.AsyncClient")
     async def test_apple_token_verification_with_external_call(
@@ -862,26 +864,26 @@ class TestSocialAuthentication:
 
         mock_public_key = Mock(spec=RSAPublicKey)
 
-        with patch(
-            "app.users.external_auth.jwt.get_unverified_header"
-        ) as mock_get_header:
-            with patch(
-                "app.users.external_auth.RSAAlgorithm.from_jwk"
-            ) as mock_from_jwk:
-                with patch("app.users.external_auth.jwt.decode") as mock_jwt_decode:
-                    mock_get_header.return_value = {"kid": "test_kid"}
-                    mock_from_jwk.return_value = mock_public_key
-                    mock_jwt_decode.return_value = {
-                        "sub": "apple_123",
-                        "email": "test@icloud.com",
-                        "email_verified": True,
-                    }
+        with (
+            patch(
+                "app.users.external_auth.jwt.get_unverified_header"
+            ) as mock_get_header,
+            patch("app.users.external_auth.RSAAlgorithm.from_jwk") as mock_from_jwk,
+            patch("app.users.external_auth.jwt.decode") as mock_jwt_decode,
+        ):
+            mock_get_header.return_value = {"kid": "test_kid"}
+            mock_from_jwk.return_value = mock_public_key
+            mock_jwt_decode.return_value = {
+                "sub": "apple_123",
+                "email": "test@icloud.com",
+                "email_verified": True,
+            }
 
-                    result = await external_auth.verify_apple_id_token("fake_token")
+            result = await external_auth.verify_apple_id_token("fake_token")
 
-                    assert result.sub == "apple_123"
-                    assert result.email == "test@icloud.com"
-                    mock_jwt_decode.assert_called_once()
+            assert result.sub == "apple_123"
+            assert result.email == "test@icloud.com"
+            mock_jwt_decode.assert_called_once()
 
     async def test_malformed_token_handling(self, client: AsyncClient):
         """Test handling of malformed authentication tokens via endpoints."""
@@ -894,7 +896,8 @@ class TestSocialAuthentication:
     async def test_password_user_links_google_then_password_login_fails(
         self, mock_verify_google: AsyncMock, client: AsyncClient, session: AsyncSession
     ):
-        """Password user links Google: provider set, other creds cleared, password login blocked."""
+        """Password user links Google: provider set, other creds cleared, password login
+        blocked."""
 
         # Create password user
         create_resp = await client.post(
@@ -947,7 +950,8 @@ class TestSocialAuthentication:
     async def test_password_user_links_apple_then_password_login_fails(
         self, mock_verify_apple: AsyncMock, client: AsyncClient, session: AsyncSession
     ):
-        """Password user links Apple: provider set, other creds cleared, password login blocked."""
+        """Password user links Apple: provider set, other creds cleared, password login
+        blocked."""
 
         # Create password user
         create_resp = await client.post(
@@ -1004,7 +1008,8 @@ class TestSocialAuthentication:
         client: AsyncClient,
         session: AsyncSession,
     ):
-        """User created with Google then signs in with Apple: apple_id set, google_id cleared."""
+        """User created with Google then signs in with Apple: apple_id set, google_id
+        cleared."""
 
         # Create via Google first
         mock_verify_google.return_value = GoogleIdToken(
@@ -1062,7 +1067,8 @@ class TestSocialAuthentication:
         client: AsyncClient,
         session: AsyncSession,
     ):
-        """User created with Apple then signs in with Google: google_id set, apple_id cleared."""
+        """User created with Apple then signs in with Google: google_id set, apple_id
+        cleared."""
 
         # Create via Apple first
         mock_verify_apple.return_value = AppleIdToken(
@@ -1650,7 +1656,8 @@ class TestSocialFeatures:
         education_level: EducationLevel,
         level_stage: LevelStage,
     ) -> None:
-        """Test that users automatically join communities based on their education when changed."""
+        """Test that users automatically join communities based on their education when
+        changed."""
         # Create education resources first
         async with session.begin():
             institution = await InstitutionFactory.create(session=session)

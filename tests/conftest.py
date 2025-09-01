@@ -1,16 +1,18 @@
 import contextlib
 import logging
 import logging.config
-from typing import (
-    Any,
+from collections.abc import (
     AsyncGenerator,
     AsyncIterator,
     Awaitable,
     Callable,
     Coroutine,
     Generator,
-    Literal,
     Sequence,
+)
+from typing import (
+    Any,
+    Literal,
     TypeVar,
 )
 
@@ -128,7 +130,8 @@ async def migrated_postgres_template(pg_url: str) -> AsyncGenerator[str, None]:
     """
     Creates temporary database and applies migrations.
 
-    Has "session" scope, so is called only once per tests run (unless using pytest-xdist, in which case it runs once per worker).
+    Has "session" scope, so is called only once per tests run
+    (unless using pytest-xdist, in which case it runs once per worker).
     """
     async with tmp_database(pg_url, "pytest") as tmp_url:
         alembic_config = alembic_config_from_url(tmp_url)
@@ -149,7 +152,7 @@ async def sessionmanager_for_tests(
         yield db_manager
 
 
-@pytest.fixture()
+@pytest.fixture
 async def session_factory(
     sessionmanager_for_tests: DatabaseSessionManager,
 ) -> AsyncGenerator[SessionFactory, None]:
@@ -157,7 +160,7 @@ async def session_factory(
         yield factory
 
 
-@pytest.fixture()
+@pytest.fixture
 async def websocket_session_factory(
     sessionmanager_for_tests: DatabaseSessionManager,
 ) -> AsyncGenerator[SessionFactory, None]:
@@ -240,7 +243,7 @@ async def redis_for_tests(redis_url: str):
         yield
 
 
-@pytest.fixture()
+@pytest.fixture
 async def arq_worker(
     migrated_postgres_template: str,
     redis_url: str,
@@ -268,9 +271,8 @@ def app(
     firebase_for_tests: None,
 ) -> Generator[FastAPI, None, None]:
     async def get_db_session_override():
-        async with session_factory() as session:
-            async with session.begin():
-                yield session
+        async with session_factory() as session, session.begin():
+            yield session
 
     fastapi_app.dependency_overrides[get_db_session] = get_db_session_override
 
@@ -301,7 +303,7 @@ async def ws_client(app: FastAPI) -> AsyncIterator[AsyncClient]:
         yield client
 
 
-@pytest.fixture()
+@pytest.fixture
 async def user(session: AsyncSession) -> User:
     async with session.begin():
         return await UserFactory.create(session)
@@ -314,10 +316,9 @@ async def websocket_user(
     """
     Creates a user using the websocket session factory with rollback-based isolation.
     """
-    async with websocket_session_factory() as session:
-        async with session.begin():
-            user = await UserFactory.create(session)
-            yield user
+    async with websocket_session_factory() as session, session.begin():
+        user = await UserFactory.create(session)
+        yield user
 
 
 @pytest.fixture
@@ -336,7 +337,7 @@ async def user_client(
 ) -> AsyncIterator[AsyncClient]:
     client.headers["Authorization"] = f"Bearer {access_token}"
 
-    yield client
+    return client
 
 
 @pytest.fixture

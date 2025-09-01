@@ -4,11 +4,16 @@ This module provides modern FastAPI implementations of key question processing f
 All functions are implemented as ARQ tasks for use in admin actions.
 """
 
+import functools
 import logging
+import operator
 from collections import Counter
 from typing import Any
 
-from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
+from openai.types.responses import (
+    ResponseInputMessageContentListParam,
+    ResponseInputParam,
+)
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -141,7 +146,7 @@ Diretrizes:
 •	Utilize conteúdo a nível de ensino médio e faculdade para justificar as respostas, considerando o que é sabido acerca dos temas abordados na questão.
 •	Siga rigorosamente as indicações de correta/incorreta fornecidas; não altere o gabarito. Se houver inconsistência clara entre o enunciado e as marcações, sinalize brevemente e adote a interpretação mais plausível.
 •	Seja específico: aponte trechos, ideias ou condições nas alternativas que justificam o acerto/erro; evite generalidades.
-•	Mantenha objetividade: em geral, 1 parágrafo para a correta e 1–2 frases para cada incorreta, detalhando mais apenas quando necessário.
+•	Mantenha objetividade: em geral, 1 parágrafo para a correta e 1-2 frases para cada incorreta, detalhando mais apenas quando necessário.
 •	Em questões com cálculo, apresente o raciocínio essencial (fórmulas e passos mínimos) sem usar Latex, declare unidades e critérios de arredondamento quando aplicáveis, evitando derivações longas.
 •	Se algum dado indispensável estiver ausente, explicite a suposição mínima necessária, sem inventar informações não suportadas.
 
@@ -165,38 +170,33 @@ async def categorize_minor_tags(
     Returns:
         MinorTagsCategorization: Categorization result with minor tags only
     """
-    try:
-        # Get question with choices
-        question = await db_session.scalar(
-            select(Question)
-            .where(Question.id == question_id)
-            .options(selectinload(Question.choices))
-        )
+    # Get question with choices
+    question = await db_session.scalar(
+        select(Question)
+        .where(Question.id == question_id)
+        .options(selectinload(Question.choices))
+    )
 
-        if not question:
-            raise ValueError(f"Question {question_id} not found")
+    if not question:
+        raise ValueError(f"Question {question_id} not found")
 
-        # Get complete question text with choices
-        question_text_with_choices = question.question_text_with_choices_text
+    # Get complete question text with choices
+    question_text_with_choices = question.question_text_with_choices_text
 
-        if not question_text_with_choices:
-            logger.info(f"Skipping question without text or choices: {question_id}")
-            return MinorTagsCategorization(minor_tags=[])
+    if not question_text_with_choices:
+        logger.info(f"Skipping question without text or choices: {question_id}")
+        return MinorTagsCategorization(minor_tags=[])
 
-        # Get question image URLs
-        image_urls = await get_question_image_urls(db_session, question)
+    # Get question image URLs
+    image_urls = await get_question_image_urls(db_session, question)
 
-        # Generate minor tags using the full categorization system
-        minor_tags = await _generate_minor_tags(question_text_with_choices, image_urls)
+    # Generate minor tags using the full categorization system
+    minor_tags = await _generate_minor_tags(question_text_with_choices, image_urls)
 
-        result = MinorTagsCategorization(minor_tags=minor_tags)
+    result = MinorTagsCategorization(minor_tags=minor_tags)
 
-        logger.info(f"Categorized question {question_id}: {result}")
-        return result
-
-    except Exception as e:
-        logger.error(f"Error categorizing question {question_id}: {str(e)}")
-        raise
+    logger.info(f"Categorized question {question_id}: {result}")
+    return result
 
 
 async def generate_answer(
@@ -213,108 +213,104 @@ async def generate_answer(
     Returns:
         AnswerGeneration: Generated answer and explanation
     """
-    try:
-        # Get question with choices
-        question = await db_session.scalar(
-            select(Question)
-            .where(Question.id == question_id)
-            .options(selectinload(Question.choices))
+    # Get question with choices
+    question = await db_session.scalar(
+        select(Question)
+        .where(Question.id == question_id)
+        .options(selectinload(Question.choices))
+    )
+
+    if not question:
+        raise ValueError(f"Question {question_id} not found")
+
+    # Check if answer already exists
+    if question.answer_content_blocks:
+        logger.info(f"Answer already exists for question {question_id}")
+        # Extract existing answer text
+        existing_answer: str = ""
+        for block in question.answer_content_blocks:
+            if hasattr(block, "block_type") and block.block_type == "text":
+                # Handle TextBlock object
+                if hasattr(block, "content") and block.content:
+                    for rich_text in block.content:
+                        if hasattr(rich_text, "text"):
+                            existing_answer += rich_text.text
+            elif isinstance(block, dict) and block.get("type") == "text":
+                # Handle dict format
+                existing_answer += str(block.get("text", ""))
+
+        return AnswerGeneration(
+            answer_text=existing_answer,
         )
 
-        if not question:
-            raise ValueError(f"Question {question_id} not found")
+    # Get question text and choices
+    question_text = question.question_text_with_choices_text
 
-        # Check if answer already exists
-        if question.answer_content_blocks:
-            logger.info(f"Answer already exists for question {question_id}")
-            # Extract existing answer text
-            existing_answer = ""
-            for block in question.answer_content_blocks:
-                if hasattr(block, "block_type") and block.block_type == "text":
-                    # Handle TextBlock object
-                    if hasattr(block, "content") and block.content:
-                        for rich_text in block.content:
-                            if hasattr(rich_text, "text"):
-                                existing_answer += rich_text.text
-                elif isinstance(block, dict) and block.get("type") == "text":
-                    # Handle dict format
-                    existing_answer += block.get("text", "")
+    if not question_text:
+        raise ValueError(f"Question {question_id} has no text or choices")
 
-            return AnswerGeneration(
-                answer_text=existing_answer,
-            )
+    # Find the correct choice letter for reference
+    correct_choice_letter = None
+    for i, choice in enumerate(question.choices):
+        if choice.is_correct:
+            correct_choice_letter = chr(65 + i)  # A, B, C, D, E
+            break
 
-        # Get question text and choices
-        question_text = question.question_text_with_choices_text
+    if not correct_choice_letter:
+        raise ValueError(f"Question {question_id} has no correct choice marked")
 
-        if not question_text:
-            raise ValueError(f"Question {question_id} has no text or choices")
+    # Get question image URLs
+    image_urls = await get_question_image_urls(db_session, question)
 
-        # Find the correct choice letter for reference
-        correct_choice_letter = None
-        for i, choice in enumerate(question.choices):
-            if choice.is_correct:
-                correct_choice_letter = chr(65 + i)  # A, B, C, D, E
-                break
-
-        if not correct_choice_letter:
-            raise ValueError(f"Question {question_id} has no correct choice marked")
-
-        # Get question image URLs
-        image_urls = await get_question_image_urls(db_session, question)
-
-        # Simple message - let the model use its full reasoning
-        user_message = f"""
+    # Simple message - let the model use its full reasoning
+    user_message = f"""
 {question_text}
 
 Alternativa correta: {correct_choice_letter}
 """
 
-        # Build messages with images if available
-        if image_urls:
-            user_content = [{"type": "text", "text": user_message}]
-            for image_url in image_urls:
-                user_content.append(
-                    {  # type: ignore
-                        "type": "image_url",
-                        "image_url": {"url": image_url, "detail": "high"},
-                    }
-                )
-
-            messages: list[ChatCompletionMessageParam] = [
-                {"role": "system", "content": SYSTEM_MESSAGE_GENERATE_ANSWER},
-                {"role": "user", "content": user_content},  # type: ignore
+    # Build messages with images if available
+    if image_urls:
+        user_content: ResponseInputMessageContentListParam = [
+            {"type": "input_text", "text": user_message}
+        ]
+        user_content.extend(
+            [
+                {
+                    "type": "input_image",
+                    "image_url": image_url,
+                    "detail": "high",
+                }
+                for image_url in image_urls
             ]
-        else:
-            messages: list[ChatCompletionMessageParam] = [
-                {"role": "system", "content": SYSTEM_MESSAGE_GENERATE_ANSWER},
-                {"role": "user", "content": user_message},
-            ]
-
-        # Use gpt-5 model with reasoning effort for better quality
-        response = await openai_utils.get_completion(
-            model="gpt-5",
-            temperature=None,
-            messages=messages,
-            timeout=90,
-            reasoning_effort="high",
         )
 
-        # Use the complete response as the answer (simplified approach)
-        content = response.content.strip()
+        messages: ResponseInputParam = [
+            {"role": "system", "content": SYSTEM_MESSAGE_GENERATE_ANSWER},
+            {"role": "user", "content": user_content},
+        ]
+    else:
+        messages: ResponseInputParam = [
+            {"role": "system", "content": SYSTEM_MESSAGE_GENERATE_ANSWER},
+            {"role": "user", "content": user_message},
+        ]
 
-        result = AnswerGeneration(
-            answer_text=content,
-        )
+    # Use gpt-5 model with reasoning effort for better quality
+    response = await openai_utils.get_completion(
+        model="gpt-5",
+        temperature=None,
+        input=messages,
+        reasoning={"effort": "high"},
+    )
 
-        logger.info(
-            f"Generated answer for question {question_id} (using reasoning_effort=high)"
-        )
-        return result
+    # Use the complete response as the answer (simplified approach)
+    content = response.strip()
 
-    except Exception as e:
-        logger.error(f"Error generating answer for question {question_id}: {str(e)}")
-        raise
+    result = AnswerGeneration(
+        answer_text=content,
+    )
+
+    return result
 
 
 async def is_quantitative(
@@ -334,50 +330,49 @@ async def is_quantitative(
     if image_urls is None:
         image_urls = []
 
-    try:
-        # Build messages with images if available
-        if image_urls:
-            user_content = [{"type": "text", "text": question_text_with_choices}]
-            for image_url in image_urls:
-                user_content.append(
-                    {  # type: ignore
-                        "type": "image_url",
-                        "image_url": {"url": image_url, "detail": "high"},
-                    }
-                )
-
-            messages: list[ChatCompletionMessageParam] = [
-                {"role": "system", "content": SYSTEM_MESSAGE_IS_QUANTITATIVE},
-                {"role": "user", "content": user_content},  # type: ignore
+    # Build messages with images if available
+    if image_urls:
+        user_content: ResponseInputMessageContentListParam = [
+            {"type": "input_text", "text": question_text_with_choices}
+        ]
+        user_content.extend(
+            [
+                {
+                    "type": "input_image",
+                    "image_url": image_url,
+                    "detail": "high",
+                }
+                for image_url in image_urls
             ]
-        else:
-            messages: list[ChatCompletionMessageParam] = [
-                {"role": "system", "content": SYSTEM_MESSAGE_IS_QUANTITATIVE},
-                {"role": "user", "content": question_text_with_choices},
-            ]
-
-        # Use gpt-5 with high reasoning effort
-        response = await openai_utils.get_completion(
-            model="gpt-5",
-            temperature=None,
-            messages=messages,
-            timeout=30,
-            reasoning_effort="high",
         )
 
-        # Parse the simple true/false response
-        response_text = response.content.strip().lower()
-        requires_paper = response_text == "true"
+        messages: ResponseInputParam = [
+            {"role": "system", "content": SYSTEM_MESSAGE_IS_QUANTITATIVE},
+            {"role": "user", "content": user_content},
+        ]
+    else:
+        messages: ResponseInputParam = [
+            {"role": "system", "content": SYSTEM_MESSAGE_IS_QUANTITATIVE},
+            {"role": "user", "content": question_text_with_choices},
+        ]
 
-        result = QuantitativeAnalysis(requires_paper=requires_paper)
-        logger.info(
-            f"Quantitative analysis completed: requires_paper={result.requires_paper}"
-        )
-        return result
+    # Use gpt-5 with high reasoning effort
+    response = await openai_utils.get_completion(
+        model="gpt-5",
+        temperature=None,
+        input=messages,
+        reasoning={"effort": "high"},
+    )
 
-    except Exception as e:
-        logger.error(f"Error in quantitative analysis: {str(e)}")
-        raise
+    # Parse the simple true/false response
+    response_text = response.strip().lower()
+    requires_paper = response_text == "true"
+
+    result = QuantitativeAnalysis(requires_paper=requires_paper)
+    logger.info(
+        f"Quantitative analysis completed: requires_paper={result.requires_paper}"
+    )
+    return result
 
 
 # Helper functions
@@ -407,7 +402,7 @@ async def get_question_image_urls(
                 image_ids.append(block.image_id)
         elif isinstance(block, dict) and block.get("block_type") == "image":
             # Handle dict format
-            image_id = block.get("image_id")
+            image_id = int(block.get("image_id"))
             if image_id:
                 image_ids.append(image_id)
 
@@ -438,42 +433,33 @@ async def categorize_major_tag(
     Returns:
         MajorTagCategorization: Major tag (subject) categorization result
     """
-    try:
-        # Get question with choices
-        question = await db_session.scalar(
-            select(Question)
-            .where(Question.id == question_id)
-            .options(selectinload(Question.choices))
-        )
+    # Get question with choices
+    question = await db_session.scalar(
+        select(Question)
+        .where(Question.id == question_id)
+        .options(selectinload(Question.choices))
+    )
 
-        if not question:
-            raise ValueError(f"Question {question_id} not found")
+    if not question:
+        raise ValueError(f"Question {question_id} not found")
 
-        # Get complete question text with choices
-        question_text_with_choices = question.question_text_with_choices_text
+    # Get complete question text with choices
+    question_text_with_choices = question.question_text_with_choices_text
 
-        if not question_text_with_choices:
-            logger.info(f"Skipping question without text or choices: {question_id}")
-            return MajorTagCategorization(major_tag="Questão Discursiva")
+    if not question_text_with_choices:
+        logger.info(f"Skipping question without text or choices: {question_id}")
+        return MajorTagCategorization(major_tag="Questão Discursiva")
 
-        # Get question image URLs
-        image_urls = await get_question_image_urls(db_session, question)
+    # Get question image URLs
+    image_urls = await get_question_image_urls(db_session, question)
 
-        # Classify the subject using ENEM areas approach
-        major_tag = await _classify_question_subject(
-            question_text_with_choices, image_urls
-        )
+    # Classify the subject using ENEM areas approach
+    major_tag = await _classify_question_subject(question_text_with_choices, image_urls)
 
-        result = MajorTagCategorization(major_tag=major_tag)
+    result = MajorTagCategorization(major_tag=major_tag)
 
-        logger.info(f"Classified major tag for question {question_id}: {major_tag}")
-        return result
-
-    except Exception as e:
-        logger.error(
-            f"Error classifying major tag for question {question_id}: {str(e)}"
-        )
-        raise
+    logger.info(f"Classified major tag for question {question_id}: {major_tag}")
+    return result
 
 
 async def _classify_question_subject(
@@ -483,98 +469,64 @@ async def _classify_question_subject(
     Classify question subject to determine major tag.
     Uses the original subject classification approach from utils.py.
     """
-    if image_urls is None:
-        image_urls = []
+    image_urls = image_urls or []
 
-    try:
-        # First, determine which area this question belongs to
-        best_area = None
-        best_subject = None
-        best_confidence = 0.0
-
-        for area, subjects in ENEM_AREAS.items():
-            system_message = SYSTEM_MESSAGE_MAJOR_TAG.format(
-                subjects="\n".join(subjects)
-            )
-
-            user_message = f"""
+    user_message = f"""
 Texto extraído: 
 
 {question_text_with_choices}
 """
 
-            # Build messages with images if available
-            if image_urls:
-                user_content = [{"type": "text", "text": user_message}]
-                for image_url in image_urls:
-                    user_content.append(
-                        {  # type: ignore
-                            "type": "image_url",
-                            "image_url": {"url": image_url, "detail": "low"},
-                        }
-                    )
-
-                messages = [
-                    {"role": "system", "content": system_message},
-                    {"role": "user", "content": user_content},  # type: ignore
-                ]
-            else:
-                messages = [
-                    {"role": "system", "content": system_message},
-                    {"role": "user", "content": user_message},
-                ]
-
-            response = await openai_utils.get_completion(
-                model="gpt-5-mini",
-                temperature=None,
-                messages=messages,  # type: ignore
-                timeout=20,
-                reasoning_effort="medium",
-            )
-
-            response_text = response.content.strip()
-
-            # Check if the response is a valid subject from this area
-            if response_text in subjects:
-                # Use this subject as major tag
-                return response_text
-
-        # Fallback: try all subjects at once
-        all_subjects = sum(ENEM_AREAS.values(), [])
-        system_message = SYSTEM_MESSAGE_MAJOR_TAG.format(
-            subjects="\n".join(all_subjects)
-        )
-
-        # Build fallback messages with images if available
+    def build_messages(system_message: str) -> ResponseInputParam:
+        """Helper to build messages with optional images."""
         if image_urls:
-            user_content = [{"type": "text", "text": user_message}]
+            user_content: ResponseInputMessageContentListParam = [
+                {"type": "input_text", "text": user_message}
+            ]
             for image_url in image_urls:
                 user_content.append(
-                    {  # type: ignore
-                        "type": "image_url",
-                        "image_url": {"url": image_url, "detail": "low"},
-                    }
+                    {"type": "input_image", "image_url": image_url, "detail": "low"}
                 )
-
-            fallback_messages = [
+            return [
                 {"role": "system", "content": system_message},
-                {"role": "user", "content": user_content},  # type: ignore
+                {"role": "user", "content": user_content},
             ]
         else:
-            fallback_messages = [
+            return [
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_message},
             ]
 
-        response = await openai_utils.get_completion(
-            model="gpt-5-mini",
-            temperature=None,
-            messages=fallback_messages,  # type: ignore
-            timeout=20,
-            reasoning_effort="medium",
+    try:
+        # First pass: try area by area
+        for subjects in ENEM_AREAS.values():
+            system_message = SYSTEM_MESSAGE_MAJOR_TAG.format(
+                subjects="\n".join(subjects)
+            )
+
+            response = await openai_utils.get_completion(
+                model="gpt-5-mini",
+                input=build_messages(system_message),
+                reasoning={"effort": "medium"},
+            )
+
+            response_text = response.strip()
+            if response_text in subjects:
+                return response_text
+
+        # Fallback: try all subjects at once
+        all_subjects = functools.reduce(operator.iadd, ENEM_AREAS.values(), [])
+        system_message = SYSTEM_MESSAGE_MAJOR_TAG.format(
+            subjects="\n".join(all_subjects)
         )
 
-        response_text = response.content.strip()
+        response = await openai_utils.get_completion(
+            model="gpt-5-mini",
+            input=build_messages(system_message),
+            reasoning={"effort": "medium"},
+        )
+
+        response_text = response.strip()
         if response_text in all_subjects:
             return response_text
 
@@ -582,7 +534,7 @@ Texto extraído:
         return "Conhecimentos Gerais"
 
     except Exception as e:
-        logger.error(f"Error classifying question subject: {str(e)}")
+        logger.error(f"Error classifying question subject: {e!s}")
         return "Conhecimentos Gerais"
 
 
@@ -605,34 +557,34 @@ Analise a questão e identifique as tags mais apropriadas.
 """
 
         # Build message content with images if available
-        messages: list[ChatCompletionMessageParam] = [
-            {"role": "system", "content": system_message}
-        ]
+        messages: ResponseInputParam = [{"role": "system", "content": system_message}]
 
         if image_urls:
-            user_content = [{"type": "text", "text": user_message}]
+            user_content: ResponseInputMessageContentListParam = [
+                {"type": "input_text", "text": user_message}
+            ]
             for image_url in image_urls:
                 user_content.append(
-                    {  # type: ignore
-                        "type": "image_url",
-                        "image_url": {"url": image_url, "detail": "low"},
+                    {
+                        "type": "input_image",
+                        "image_url": image_url,
+                        "detail": "low",
                     }
                 )
 
-            messages.append({"role": "user", "content": user_content})  # type: ignore
+            messages.append({"role": "user", "content": user_content})
         else:
             messages.append({"role": "user", "content": user_message})
 
         response = await openai_utils.get_completion(
             model="gpt-5-mini",
             temperature=None,
-            messages=messages,
-            timeout=20,
-            reasoning_effort="medium",
+            input=messages,
+            reasoning={"effort": "medium"},
         )
 
         # Parse the response to extract tags
-        content = response.content.strip()
+        content = response.strip()
 
         # Simple parsing - look for comma-separated tags
         if "," in content:
@@ -643,7 +595,7 @@ Analise a questão e identifique as tags mais apropriadas.
             return [content] if content else []
 
     except Exception as e:
-        logger.error(f"Error generating minor tags: {str(e)}")
+        logger.error(f"Error generating minor tags: {e!s}")
         return []
 
 
@@ -662,54 +614,47 @@ async def task_categorize_minor_tags(
     When question_ids is provided (AI questions case), process regardless of is_active status.
     """
     async with get_db_session_for_worker(ctx) as session:
-        try:
-            # Get questions to categorize
-            if question_ids is None:
-                # Admin case: only process active questions
-                stmt = (
-                    select(Question)
-                    .options(selectinload(Question.choices))
-                    .where(Question.is_active == True)
-                )
-            else:
-                # Specific questions case (AI): process regardless of is_active status
-                stmt = (
-                    select(Question)
-                    .options(selectinload(Question.choices))
-                    .where(Question.id.in_(question_ids))
-                )
-
-            result = await session.execute(stmt)
-            questions: list[Question] = list(result.scalars())
-
-            logger.info(f"Starting categorization for {len(questions)} questions")
-
-            # Process each question
-            for question in questions:
-                try:
-                    # Generate minor tags
-                    categorization = await categorize_minor_tags(session, question.id)
-
-                    # Save minor tags to question
-                    question.minor_tags = categorization.minor_tags
-
-                    logger.info(
-                        f"Categorized question {question.id} with tags: {categorization.minor_tags}"
-                    )
-
-                except Exception as e:
-                    logger.error(f"Error categorizing question {question.id}: {str(e)}")
-                    continue
-
-            # Commit all changes
-            await session.commit()
-            logger.info(
-                f"Completed minor tags categorization for {len(questions)} questions"
+        # Get questions to categorize
+        if question_ids is None:
+            # Admin case: only process active questions
+            stmt = (
+                select(Question)
+                .options(selectinload(Question.choices))
+                .where(Question.is_active.is_(True))
+            )
+        else:
+            # Specific questions case (AI): process regardless of is_active status
+            stmt = (
+                select(Question)
+                .options(selectinload(Question.choices))
+                .where(Question.id.in_(question_ids))
             )
 
-        except Exception as e:
-            logger.error(f"Error in task_categorize_minor_tags: {str(e)}")
-            raise
+        result = await session.execute(stmt)
+        questions: list[Question] = list(result.scalars())
+
+        logger.info(f"Starting categorization for {len(questions)} questions")
+
+        # Process each question
+        for question in questions:
+            try:
+                # Generate minor tags
+                categorization = await categorize_minor_tags(session, question.id)
+
+                # Save minor tags to question
+                question.minor_tags = categorization.minor_tags
+
+                logger.info(
+                    f"Categorized question {question.id} with tags: {categorization.minor_tags}"
+                )
+
+            except Exception as e:
+                logger.error(f"Error categorizing question {question.id}: {e!s}")
+                continue
+
+        logger.info(
+            f"Completed minor tags categorization for {len(questions)} questions"
+        )
 
 
 async def task_categorize_major_tags(
@@ -722,56 +667,47 @@ async def task_categorize_major_tags(
     When question_ids is provided (AI questions case), process regardless of is_active status.
     """
     async with get_db_session_for_worker(ctx) as session:
-        try:
-            # Get questions to categorize
-            if question_ids is None:
-                # Admin case: only process active questions
-                stmt = (
-                    select(Question)
-                    .options(selectinload(Question.choices))
-                    .where(Question.is_active == True)
-                )
-            else:
-                # Specific questions case (AI): process regardless of is_active status
-                stmt = (
-                    select(Question)
-                    .options(selectinload(Question.choices))
-                    .where(Question.id.in_(question_ids))
-                )
-
-            result = await session.execute(stmt)
-            questions: list[Question] = list(result.scalars())
-
-            logger.info(
-                f"Starting major tag classification for {len(questions)} questions"
+        # Get questions to categorize
+        if question_ids is None:
+            # Admin case: only process active questions
+            stmt = (
+                select(Question)
+                .options(selectinload(Question.choices))
+                .where(Question.is_active.is_(True))
+            )
+        else:
+            # Specific questions case (AI): process regardless of is_active status
+            stmt = (
+                select(Question)
+                .options(selectinload(Question.choices))
+                .where(Question.id.in_(question_ids))
             )
 
-            # Process each question
-            for question in questions:
-                try:
-                    # Generate major tag (subject)
-                    categorization = await categorize_major_tag(session, question.id)
+        result = await session.execute(stmt)
+        questions: list[Question] = list(result.scalars())
 
-                    # Save major tag to question (as single item list)
-                    question.major_tags = [categorization.major_tag]
+        logger.info(f"Starting major tag classification for {len(questions)} questions")
 
-                    logger.info(
-                        f"Classified question {question.id} with major tag: {categorization.major_tag}"
-                    )
+        # Process each question
+        for question in questions:
+            try:
+                # Generate major tag (subject)
+                categorization = await categorize_major_tag(session, question.id)
 
-                except Exception as e:
-                    logger.error(f"Error classifying question {question.id}: {str(e)}")
-                    continue
+                # Save major tag to question (as single item list)
+                question.major_tags = [categorization.major_tag]
 
-            # Commit all changes
-            await session.commit()
-            logger.info(
-                f"Completed major tag classification for {len(questions)} questions"
-            )
+                logger.info(
+                    f"Classified question {question.id} with major tag: {categorization.major_tag}"
+                )
 
-        except Exception as e:
-            logger.error(f"Error in task_categorize_major_tags: {str(e)}")
-            raise
+            except Exception as e:
+                logger.error(f"Error classifying question {question.id}: {e!s}")
+                continue
+
+        logger.info(
+            f"Completed major tag classification for {len(questions)} questions"
+        )
 
 
 async def task_generate_question_answers(
@@ -784,74 +720,67 @@ async def task_generate_question_answers(
     When question_ids is provided (AI questions case), process regardless of is_active status.
     """
     async with get_db_session_for_worker(ctx) as session:
-        try:
-            # Get questions to generate answers for
-            if question_ids is None:
-                # Admin case: only process active questions
-                stmt = (
-                    select(Question)
-                    .options(selectinload(Question.choices))
-                    .where(Question.is_active == True)
-                )
-            else:
-                # Specific questions case (AI): process regardless of is_active status
-                stmt = (
-                    select(Question)
-                    .options(selectinload(Question.choices))
-                    .where(Question.id.in_(question_ids))
-                )
+        # Get questions to generate answers for
+        if question_ids is None:
+            # Admin case: only process active questions
+            stmt = (
+                select(Question)
+                .options(selectinload(Question.choices))
+                .where(Question.is_active.is_(True))
+            )
+        else:
+            # Specific questions case (AI): process regardless of is_active status
+            stmt = (
+                select(Question)
+                .options(selectinload(Question.choices))
+                .where(Question.id.in_(question_ids))
+            )
 
-            result = await session.execute(stmt)
-            questions: list[Question] = list(result.scalars())
+        result = await session.execute(stmt)
+        questions: list[Question] = list(result.scalars())
 
-            logger.info(f"Starting answer generation for {len(questions)} questions")
+        logger.info(f"Starting answer generation for {len(questions)} questions")
 
-            # Process each question
-            for question in questions:
-                try:
-                    # Skip if answer already exists
-                    if question.answer_content_blocks:
-                        logger.info(f"Answer already exists for question {question.id}")
-                        continue
-
-                    # Generate answer
-                    answer_generation = await generate_answer(session, question.id)
-
-                    # Create answer content blocks
-                    answer_text_block = TextBlock(
-                        block_type="text",
-                        style="paragraph",
-                        content=[
-                            RichText(
-                                text=answer_generation.answer_text,
-                                bold=False,
-                                italic=False,
-                                underline=False,
-                                strikethrough=False,
-                                link=None,
-                            )
-                        ],
-                    )
-
-                    question.answer_content_blocks = validate_content_block_list(
-                        [answer_text_block]
-                    )
-
-                    logger.info(f"Generated answer for question {question.id}")
-
-                except Exception as e:
-                    logger.error(
-                        f"Error generating answer for question {question.id}: {str(e)}"
-                    )
+        # Process each question
+        for question in questions:
+            try:
+                # Skip if answer already exists
+                if question.answer_content_blocks:
+                    logger.info(f"Answer already exists for question {question.id}")
                     continue
 
-            # Commit all changes
-            await session.commit()
-            logger.info(f"Completed answer generation for {len(questions)} questions")
+                # Generate answer
+                answer_generation = await generate_answer(session, question.id)
 
-        except Exception as e:
-            logger.error(f"Error in task_generate_question_answers: {str(e)}")
-            raise
+                # Create answer content blocks
+                answer_text_block = TextBlock(
+                    block_type="text",
+                    style="paragraph",
+                    content=[
+                        RichText(
+                            text=answer_generation.answer_text,
+                            bold=False,
+                            italic=False,
+                            underline=False,
+                            strikethrough=False,
+                            link=None,
+                        )
+                    ],
+                )
+
+                question.answer_content_blocks = validate_content_block_list(
+                    [answer_text_block]
+                )
+
+                logger.info(f"Generated answer for question {question.id}")
+
+            except Exception as e:
+                logger.error(
+                    f"Error generating answer for question {question.id}: {e!s}"
+                )
+                continue
+
+        logger.info(f"Completed answer generation for {len(questions)} questions")
 
 
 async def task_analyze_question_quantitativeness(
@@ -864,73 +793,58 @@ async def task_analyze_question_quantitativeness(
     When question_ids is provided (AI questions case), process regardless of is_active status.
     """
     async with get_db_session_for_worker(ctx) as session:
-        try:
-            # Get questions to analyze
-            if question_ids is None:
-                # Admin case: only process active questions
-                stmt = (
-                    select(Question)
-                    .options(selectinload(Question.choices))
-                    .where(Question.is_active == True)
-                )
-            else:
-                # Specific questions case (AI): process regardless of is_active status
-                stmt = (
-                    select(Question)
-                    .options(selectinload(Question.choices))
-                    .where(Question.id.in_(question_ids))
-                )
-
-            result = await session.execute(stmt)
-            questions: list[Question] = list(result.scalars())
-
-            logger.info(
-                f"Starting quantitative analysis for {len(questions)} questions"
+        # Get questions to analyze
+        if question_ids is None:
+            # Admin case: only process active questions
+            stmt = (
+                select(Question)
+                .options(selectinload(Question.choices))
+                .where(Question.is_active.is_(True))
+            )
+        else:
+            # Specific questions case (AI): process regardless of is_active status
+            stmt = (
+                select(Question)
+                .options(selectinload(Question.choices))
+                .where(Question.id.in_(question_ids))
             )
 
-            # Process each question
-            for question in questions:
-                try:
-                    # Get complete question text with choices
-                    question_text_with_choices = (
-                        question.question_text_with_choices_text
-                    )
+        result = await session.execute(stmt)
+        questions: list[Question] = list(result.scalars())
 
-                    if not question_text_with_choices:
-                        logger.info(
-                            f"Skipping question without text or choices: {question.id}"
-                        )
-                        question.is_quantitative = False
-                        continue
+        logger.info(f"Starting quantitative analysis for {len(questions)} questions")
 
-                    # Get question image URLs
-                    image_urls = await get_question_image_urls(session, question)
+        # Process each question
+        for question in questions:
+            try:
+                # Get complete question text with choices
+                question_text_with_choices = question.question_text_with_choices_text
 
-                    # Analyze quantitativeness
-                    analysis = await is_quantitative(
-                        question_text_with_choices, image_urls
-                    )
-
-                    # Save to question
-                    question.is_quantitative = analysis.requires_paper
-
+                if not question_text_with_choices:
                     logger.info(
-                        f"Analyzed question {question.id}: requires_paper={analysis.requires_paper}"
+                        f"Skipping question without text or choices: {question.id}"
                     )
-
-                except Exception as e:
-                    logger.error(f"Error analyzing question {question.id}: {str(e)}")
+                    question.is_quantitative = False
                     continue
 
-            # Commit all changes
-            await session.commit()
-            logger.info(
-                f"Completed quantitative analysis for {len(questions)} questions"
-            )
+                # Get question image URLs
+                image_urls = await get_question_image_urls(session, question)
 
-        except Exception as e:
-            logger.error(f"Error in task_analyze_question_quantitativeness: {str(e)}")
-            raise
+                # Analyze quantitativeness
+                analysis = await is_quantitative(question_text_with_choices, image_urls)
+
+                # Save to question
+                question.is_quantitative = analysis.requires_paper
+
+                logger.info(
+                    f"Analyzed question {question.id}: requires_paper={analysis.requires_paper}"
+                )
+
+            except Exception as e:
+                logger.error(f"Error analyzing question {question.id}: {e!s}")
+                continue
+
+        logger.info(f"Completed quantitative analysis for {len(questions)} questions")
 
 
 def _build_question_embedding_text(question: Question) -> str:
@@ -1016,7 +930,7 @@ async def _process_question_embedding_batches(
             texts_for_embedding = [_build_question_embedding_text(q) for q in questions]
             embeddings = await openai_utils.compute_embedding(texts_for_embedding)
 
-            for question, embedding in zip(questions, embeddings):
+            for question, embedding in zip(questions, embeddings, strict=False):
                 question.embedding = embedding
 
         processed_count += len(questions)
@@ -1105,93 +1019,78 @@ async def task_fix_question_newlines(
     When question_ids is provided, process regardless of is_active status.
     """
     async with get_db_session_for_worker(ctx) as session:
-        try:
-            if question_ids is None:
-                stmt = select(Question).where(Question.is_active == True)
-            else:
-                stmt = select(Question).where(Question.id.in_(question_ids))
+        if question_ids is None:
+            stmt = select(Question).where(Question.is_active.is_(True))
+        else:
+            stmt = select(Question).where(Question.id.in_(question_ids))
 
-            result = await session.execute(stmt)
-            questions: list[Question] = list(result.scalars())
+        result = await session.execute(stmt)
+        questions: list[Question] = list(result.scalars())
 
-            updated_count = 0
+        updated_count = 0
 
-            for question in questions:
-                changed = False
-
-                # Helper to clean a list of content blocks
-                def clean_blocks(blocks: list[Any] | None) -> list[Any] | None:
-                    if not blocks:
-                        return blocks
-                    new_blocks: list[Any] = []
-                    for block in blocks:
-                        # Handle Pydantic TextBlock
-                        if (
-                            hasattr(block, "block_type")
-                            and getattr(block, "block_type") == "text"
-                        ):
-                            contents = getattr(block, "content", [])
-                            new_contents: list[RichText] = []
-                            for rt in contents:
-                                if hasattr(rt, "text"):
-                                    new_text = rt.text.replace("\\n", " ")
-                                    if new_text != rt.text:
-                                        changed_flag = True
-                                    else:
-                                        changed_flag = False
-                                    # Recreate RichText to avoid mutating in-place
-                                    new_contents.append(
-                                        RichText(
-                                            text=new_text,
-                                            bold=rt.bold,
-                                            italic=rt.italic,
-                                            underline=rt.underline,
-                                            strikethrough=rt.strikethrough,
-                                            link=rt.link,
-                                        )
+        for question in questions:
+            # Helper to clean a list of content blocks
+            def clean_blocks(blocks: list[Any] | None) -> list[Any] | None:
+                if not blocks:
+                    return blocks
+                new_blocks: list[Any] = []
+                for block in blocks:
+                    # Handle Pydantic TextBlock
+                    if hasattr(block, "block_type") and block.block_type == "text":
+                        contents = getattr(block, "content", [])
+                        new_contents: list[RichText] = []
+                        for rt in contents:
+                            if hasattr(rt, "text"):
+                                new_text = rt.text.replace("\\n", " ")
+                                changed_flag = new_text != rt.text
+                                # Recreate RichText to avoid mutating in-place
+                                new_contents.append(
+                                    RichText(
+                                        text=new_text,
+                                        bold=rt.bold,
+                                        italic=rt.italic,
+                                        underline=rt.underline,
+                                        strikethrough=rt.strikethrough,
+                                        link=rt.link,
                                     )
-                                    if changed_flag:
-                                        nonlocal_changed[0] = True
-                                else:
-                                    # Fallback: keep as is if not the expected model
-                                    new_contents.append(rt)
-                            new_blocks.append(
-                                TextBlock(
-                                    block_type="text",
-                                    style=getattr(block, "style"),
-                                    content=new_contents,
                                 )
+                                if changed_flag:
+                                    nonlocal_changed[0] = True
+                            else:
+                                # Fallback: keep as is if not the expected model
+                                new_contents.append(rt)
+                        new_blocks.append(
+                            TextBlock(
+                                block_type="text",
+                                style=block.style,
+                                content=new_contents,
                             )
-                        else:
-                            # Keep non-text blocks (e.g., image) untouched
-                            new_blocks.append(block)
-                    return new_blocks
-
-                # Use a list as a mutable flag for nested scope
-                nonlocal_changed = [False]
-
-                cleaned_cb = clean_blocks(question.content_blocks)
-                cleaned_ans_cb = clean_blocks(question.answer_content_blocks)
-
-                if nonlocal_changed[0]:
-                    # Assign back using validator to ensure correct types
-                    if cleaned_cb is not None:
-                        question.content_blocks = validate_content_block_list(
-                            cleaned_cb
                         )
-                    if cleaned_ans_cb is not None:
-                        question.answer_content_blocks = validate_content_block_list(
-                            cleaned_ans_cb
-                        )
-                    updated_count += 1
+                    else:
+                        # Keep non-text blocks (e.g., image) untouched
+                        new_blocks.append(block)
+                return new_blocks
 
-            if updated_count:
-                await session.commit()
-            logger.info(f"Fixed literal \\n in {updated_count} questions")
+            # Use a list as a mutable flag for nested scope
+            nonlocal_changed = [False]
 
-        except Exception as e:
-            logger.error(f"Error in task_fix_question_newlines: {str(e)}")
-            raise
+            cleaned_cb = clean_blocks(question.content_blocks)
+            cleaned_ans_cb = clean_blocks(question.answer_content_blocks)
+
+            if nonlocal_changed[0]:
+                # Assign back using validator to ensure correct types
+                if cleaned_cb is not None:
+                    question.content_blocks = validate_content_block_list(cleaned_cb)
+                if cleaned_ans_cb is not None:
+                    question.answer_content_blocks = validate_content_block_list(
+                        cleaned_ans_cb
+                    )
+                updated_count += 1
+
+        if updated_count:
+            await session.commit()
+        logger.info(f"Fixed literal \\n in {updated_count} questions")
 
 
 async def task_categorize_questions(
@@ -1234,8 +1133,6 @@ async def task_categorize_questions(
 
         for question in questions:
             try:
-                # Extract question text and choices
-                question_text = question.question_text
                 choices = [choice.text for choice in question.choices]
 
                 if not choices:
@@ -1274,7 +1171,7 @@ async def task_categorize_questions(
                 )
 
             except Exception as e:
-                logger.error(f"Error categorizing question {question.id}: {str(e)}")
+                logger.error(f"Error categorizing question {question.id}: {e!s}")
                 continue
 
         logger.info(f"Categorized {categorized_count} questions")
@@ -1290,81 +1187,73 @@ async def task_consolidate_flow_tags(
     in the flow and applies them to the flow.
     """
     async with get_db_session_for_worker(ctx) as session:
-        try:
-            # Get flow
-            flow = await session.scalar(select(Flow).where(Flow.id == flow_id))
-            if not flow:
-                logger.error(f"Flow {flow_id} not found")
-                return
+        # Get flow
+        flow = await session.scalar(select(Flow).where(Flow.id == flow_id))
+        if not flow:
+            logger.error(f"Flow {flow_id} not found")
+            return
 
-            # Get all questions in the flow
-            from app.flows.models import FlowQuestion
+        # Get all questions in the flow
+        from app.flows.models import FlowQuestion
 
-            stmt = (
-                select(Question)
-                .join(FlowQuestion, Question.id == FlowQuestion.question_id)
-                .where(
-                    FlowQuestion.flow_id == flow_id,
-                    Question.source_type == QuestionSourceType.AI_GENERATED,
-                )
+        stmt = (
+            select(Question)
+            .join(FlowQuestion, Question.id == FlowQuestion.question_id)
+            .where(
+                FlowQuestion.flow_id == flow_id,
+                Question.source_type == QuestionSourceType.AI_GENERATED,
             )
+        )
 
-            result = await session.execute(stmt)
-            questions = list(result.scalars())
+        result = await session.execute(stmt)
+        questions = list(result.scalars())
 
-            if not questions:
-                logger.info(f"No AI-generated questions found for flow {flow_id}")
-                return
+        if not questions:
+            logger.info(f"No AI-generated questions found for flow {flow_id}")
+            return
 
-            # Collect all minor tags from questions
-            all_minor_tags: list[str] = []
-            all_major_tags: list[str] = []
+        # Collect all minor tags from questions
+        all_minor_tags: list[str] = []
+        all_major_tags: list[str] = []
 
-            for question in questions:
-                if question.minor_tags:
-                    clean_minor_tags = [
-                        tag.strip().lower()
-                        for tag in question.minor_tags
-                        if tag.strip()
-                    ]
-                    all_minor_tags.extend(clean_minor_tags)
-
-                if question.major_tags:
-                    clean_major_tags = [
-                        tag.strip() for tag in question.major_tags if tag.strip()
-                    ]
-                    all_major_tags.extend(clean_major_tags)
-
-            # Find top minor tags (TOP_TAGS_COUNT from question_service.py)
-            TOP_TAGS_COUNT = 10
-            if all_minor_tags:
-                minor_tag_counter = Counter(all_minor_tags)
-                top_minor_tags = [
-                    tag for tag, count in minor_tag_counter.most_common(TOP_TAGS_COUNT)
+        for question in questions:
+            if question.minor_tags:
+                clean_minor_tags = [
+                    tag.strip().lower() for tag in question.minor_tags if tag.strip()
                 ]
-                flow.minor_tags = top_minor_tags
-                logger.info(
-                    f"Applied top {TOP_TAGS_COUNT} minor tags to flow {flow_id}: {top_minor_tags}"
-                )
+                all_minor_tags.extend(clean_minor_tags)
 
-            # Find most frequent major tag (only 1)
-            if all_major_tags:
-                major_tag_counter = Counter(all_major_tags)
-                top_major_tag = major_tag_counter.most_common(1)[0][0]
-                flow.major_tags = [top_major_tag]
-                logger.info(f"Applied major tag to flow {flow_id}: {top_major_tag}")
+            if question.major_tags:
+                clean_major_tags = [
+                    tag.strip() for tag in question.major_tags if tag.strip()
+                ]
+                all_major_tags.extend(clean_major_tags)
 
-            # Save changes
-            session.add(flow)
-            await session.commit()
-
+        # Find top minor tags (TOP_TAGS_COUNT from question_service.py)
+        TOP_TAGS_COUNT = 10
+        if all_minor_tags:
+            minor_tag_counter = Counter(all_minor_tags)
+            top_minor_tags = [
+                tag for tag, _ in minor_tag_counter.most_common(TOP_TAGS_COUNT)
+            ]
+            flow.minor_tags = top_minor_tags
             logger.info(
-                f"Successfully consolidated tags for flow {flow_id} from {len(questions)} questions"
+                f"Applied top {TOP_TAGS_COUNT} minor tags to flow {flow_id}: {top_minor_tags}"
             )
 
-        except Exception as e:
-            logger.error(f"Error consolidating tags for flow {flow_id}: {str(e)}")
-            raise
+        # Find most frequent major tag (only 1)
+        if all_major_tags:
+            major_tag_counter = Counter(all_major_tags)
+            top_major_tag = major_tag_counter.most_common(1)[0][0]
+            flow.major_tags = [top_major_tag]
+            logger.info(f"Applied major tag to flow {flow_id}: {top_major_tag}")
+
+        # Save changes
+        session.add(flow)
+
+        logger.info(
+            f"Successfully consolidated tags for flow {flow_id} from {len(questions)} questions"
+        )
 
 
 async def task_generate_and_consolidate_tags(
@@ -1381,33 +1270,22 @@ async def task_generate_and_consolidate_tags(
 
     This ensures the consolidation only happens after all individual tags are generated.
     """
-    try:
-        logger.info(
-            f"Starting tag generation orchestrator for {len(question_ids)} questions in flow {flow_id}"
-        )
+    logger.info(
+        f"Starting tag generation orchestrator for {len(question_ids)} questions in flow {flow_id}"
+    )
 
-        # Step 1: Generate minor tags (wait for completion)
-        logger.info(
-            f"Step 1/3: Generating minor tags for {len(question_ids)} questions"
-        )
-        await task_categorize_minor_tags(ctx, question_ids)
+    # Step 1: Generate minor tags (wait for completion)
+    logger.info(f"Step 1/3: Generating minor tags for {len(question_ids)} questions")
+    await task_categorize_minor_tags(ctx, question_ids)
 
-        # Step 2: Generate major tags (wait for completion)
-        logger.info(
-            f"Step 2/3: Generating major tags for {len(question_ids)} questions"
-        )
-        await task_categorize_major_tags(ctx, question_ids)
+    # Step 2: Generate major tags (wait for completion)
+    logger.info(f"Step 2/3: Generating major tags for {len(question_ids)} questions")
+    await task_categorize_major_tags(ctx, question_ids)
 
-        # Step 3: Consolidate tags into flow (only after steps 1 & 2 complete)
-        logger.info(f"Step 3/3: Consolidating tags for flow {flow_id}")
-        await task_consolidate_flow_tags(ctx, flow_id)
+    # Step 3: Consolidate tags into flow (only after steps 1 & 2 complete)
+    logger.info(f"Step 3/3: Consolidating tags for flow {flow_id}")
+    await task_consolidate_flow_tags(ctx, flow_id)
 
-        logger.info(
-            f"Successfully completed tag generation orchestrator for flow {flow_id}"
-        )
-
-    except Exception as e:
-        logger.error(
-            f"Error in tag generation orchestrator for flow {flow_id}: {str(e)}"
-        )
-        raise
+    logger.info(
+        f"Successfully completed tag generation orchestrator for flow {flow_id}"
+    )

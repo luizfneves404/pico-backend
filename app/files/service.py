@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Iterable
+from collections.abc import Iterable
 
 from fastapi import UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -86,4 +86,4 @@ async def pks_to_urls(db_session: AsyncSession, pks: Iterable[int]) -> dict[int,
     """
     files = list(await db_session.scalars(select(File).where(File.id.in_(pks))))
     urls = await asyncio.gather(*[file.get_url() for file in files])
-    return {file.id: url for file, url in zip(files, urls)}
+    return {file.id: url for file, url in zip(files, urls, strict=True)}
