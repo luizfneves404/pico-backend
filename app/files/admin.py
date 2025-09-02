@@ -8,7 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, field_validator
 from sqladmin import action
-from wtforms import Field, FileField, IntegerField, StringField
+from wtforms import DateTimeField, Field, FileField, IntegerField, StringField
 from wtforms.validators import Optional
 
 from app.files.models import File
@@ -112,6 +112,8 @@ class FileAdmin(CustomModelView, model=File):
         "file_id": FileField,
         "original_name": StringField,
         "size": IntegerField,
+        "updated_at": DateTimeField,
+        "created_at": DateTimeField,
     }
     form_args: ClassVar[dict[str, dict[str, Any]]] = {
         "file_id": {
@@ -124,18 +126,32 @@ class FileAdmin(CustomModelView, model=File):
         "size": {
             "validators": [Optional()],
         },
+        "updated_at": {
+            "validators": [Optional()],
+        },
+        "created_at": {
+            "validators": [Optional()],
+        },
     }
     form_widget_args: ClassVar[dict[str, dict[str, Any]]] = {
         "file_id": {
             "required": False,
         },
         "original_name": {
-            "readonly": True,
+            "required": False,
         },
         "size": {
+            "required": False,
+        },
+        "updated_at": {
+            "readonly": True,
+        },
+        "created_at": {
             "readonly": True,
         },
     }
+
+    form_create_rules: ClassVar[list[str]] = ["file_id", "original_name", "size"]
 
     # Import functionality
     can_import = True
