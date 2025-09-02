@@ -369,6 +369,13 @@ class QuestionAdmin(CustomModelView, model=Question):
         "flow_questions",
     )
 
+    form_ajax_refs: ClassVar[dict[str, dict[str, Any]]] = {
+        "choices": {
+            "fields": ("text", "is_correct"),
+            "order_by": "id",
+        }
+    }
+
     form_overrides: ClassVar[dict[str, type[Field]]] = {
         "content_blocks": ContentBlocksField,
         "answer_content_blocks": ContentBlocksField,
@@ -742,7 +749,6 @@ class QuestionAdmin(CustomModelView, model=Question):
         return stmt.options(
             selectinload(Question.official_source),
             selectinload(Question.source_user),
-            selectinload(Question.choices),
         )
 
     def form_edit_query(self, request: Request) -> Select[tuple[Question]]:
@@ -753,7 +759,6 @@ class QuestionAdmin(CustomModelView, model=Question):
                 selectinload(OfficialQuestionSource.exam),
             ),
             selectinload(Question.source_user),
-            selectinload(Question.choices),
         )
 
     def details_query(self, request: Request) -> Select[tuple[Question]]:
@@ -765,7 +770,6 @@ class QuestionAdmin(CustomModelView, model=Question):
                 selectinload(OfficialQuestionSource.exam),
             ),
             selectinload(Question.source_user),
-            selectinload(Question.choices),
         )
 
     async def on_model_change(
