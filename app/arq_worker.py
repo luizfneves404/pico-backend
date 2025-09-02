@@ -6,7 +6,7 @@ Otherwise i would have to take a lot of care not to import certain files, etc.
 import asyncio
 import logging.config
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import uvloop
 from arq import run_worker
@@ -122,7 +122,7 @@ def make_worker_settings(
         ]
 
         health_check_interval: SecondsTimedelta = 30
-        ctx: dict[str, Any] = {"session_factory": session_factory}
+        ctx: ClassVar[dict[str, Any]] = {"session_factory": session_factory}
         job_timeout: SecondsTimedelta = 900
 
     return WorkerSettings

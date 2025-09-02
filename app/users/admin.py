@@ -173,14 +173,16 @@ class UserAdmin(CustomModelView, model=User):
     async def on_model_change(
         self, data: dict[str, Any], model: User, is_created: bool, request: Request
     ) -> None:
-        if data.get("hashed_password"):
-            if is_created or (
+        if data.get("hashed_password") and (
+            is_created
+            or (
                 not data["hashed_password"].startswith(user_service.HASH_PREFIX)
                 and data["hashed_password"] != model.hashed_password
-            ):
-                data["hashed_password"] = user_service.get_password_hash(
-                    data["hashed_password"]
-                )
+            )
+        ):
+            data["hashed_password"] = user_service.get_password_hash(
+                data["hashed_password"]
+            )
 
         # Ensure bot_difficulty is set correctly based on is_bot
         if "is_bot" in data:

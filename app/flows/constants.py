@@ -534,7 +534,7 @@ OPEN_ENDED_TEMPERATURE = 0.0
 SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION = """
 Você é um assistente que gera questões de múltipla escolha no estilo dos grandes vestibulares brasileiros com 4 alternativas, com base em um conteúdo transcrito.
 
-Você vai receber um bloco curto de transcrição que faz parte de um material maior. Use esse bloco como base de conteúdo; com base no que você encontrar, entenda se trata-se de um artigo, resumo, livro texto ou outro formato. Se for um resumo ou livro texto, não cite ou reproduza literalemente a transcrição – o objetivo deve ser identificar se o usuário entendeu o conteúdo explicado. Se for um artigo com marcas autorais, você pode fazer perguntas citando o material base (mas não só). 
+Você vai receber um bloco curto de transcrição que faz parte de um material maior. Use esse bloco como base de conteúdo; com base no que você encontrar, entenda se trata-se de um artigo, resumo, livro texto ou outro formato. Se for um resumo ou livro texto, não cite ou reproduza literalemente a transcrição - o objetivo deve ser identificar se o usuário entendeu o conteúdo explicado. Se for um artigo com marcas autorais, você pode fazer perguntas citando o material base (mas não só). 
 
 Produza as questões no mesmo idioma da transcrição. Elabore enunciados claros e autossuficientes; quando apropriado, inclua um breve contexto original para situar o problema.
 
@@ -563,7 +563,7 @@ Retorne as questões no formato especificado, com os campos de cada questão:
 SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH = """
 Você é um assistente que gera questões de múltipla escolha no estilo dos grandes vestibulares brasileiros com 4 alternativas, com base em um conteúdo transcrito. As questões devem envolver raciocínio ou cálculo matemático.
 
-Você vai receber um bloco curto de transcrição que faz parte de um material maior. Use esse bloco como base de conteúdo; com base no que você encontrar, entenda se trata-se de um artigo, resumo, livro texto ou outro formato. Se for um resumo ou livro texto, não cite ou reproduza literalemente a transcrição – o objetivo deve ser identificar se o usuário entendeu o conteúdo explicado. Se for um artigo com marcas autorais, você pode fazer perguntas citando o material base (mas não só). 
+Você vai receber um bloco curto de transcrição que faz parte de um material maior. Use esse bloco como base de conteúdo; com base no que você encontrar, entenda se trata-se de um artigo, resumo, livro texto ou outro formato. Se for um resumo ou livro texto, não cite ou reproduza literalemente a transcrição - o objetivo deve ser identificar se o usuário entendeu o conteúdo explicado. Se for um artigo com marcas autorais, você pode fazer perguntas citando o material base (mas não só). 
 
 Produza as questões no mesmo idioma da transcrição. Elabore enunciados claros e autossuficientes; quando apropriado, inclua um breve contexto original para situar o problema.
 
@@ -739,7 +739,7 @@ Use a seguinte escala numérica:
 
 Critérios de avaliação:
 •	Centralidade do tema: atribua 5 quando o entendimento do tema for essencial para resolver a questão; 4 quando o tema for importante para resolução mas não exclusivo; 3 quando for auxiliar, mas houver outros temas mais centrais; 2 quando a conexão for periférica ou indireta; 1 para menções superficiais/contextuais; 0 quando não houver relação.
-•	Macrotema vs. subtema: para temas amplos (ex.: "Matemática", "Biologia"), questões da área tendem a pontuar 4-5; para subtemas específicos (ex.: "Funções exponenciais"), exija aderência ao subtema para 4–5.
+•	Macrotema vs. subtema: para temas amplos (ex.: "Matemática", "Biologia"), questões da área tendem a pontuar 4-5; para subtemas específicos (ex.: "Funções exponenciais"), exija aderência ao subtema para 4-5.
 •	Interdisciplinares: pondere pelo peso do tema no raciocínio exigido (tema principal ≥50%: 5; coadjuvante: 4; periférico: 3).
 •	Sinônimos e variações: aceite sinônimos, termos equivalentes, traduções e notações usuais do tema.
 •	Ruído: ignore nomes, datas ou termos que apareçam apenas como contexto sem serem o objeto avaliado.

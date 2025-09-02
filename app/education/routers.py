@@ -44,14 +44,14 @@ async def list_levels(
 
 
 @router.get("/courses/{id}", response_model=CourseOut)
-async def get_course_detail(db_session: DBSessionAnnotated, id: int) -> CourseOut:
+async def get_course_detail(db_session: DBSessionAnnotated, id: int) -> CourseOut:  # noqa: A002
     try:
-        course = await education_service.get_course(db_session, id=id)
+        course = await education_service.get_course(db_session, course_id=id)
         return CourseOut.from_orm_model(course)
-    except education_service.CourseNotFoundError:
+    except education_service.CourseNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Course not found"
-        )
+        ) from e
 
 
 @router.post("/institutions/create", response_model=InstitutionOut)
@@ -107,7 +107,7 @@ async def get_institution_detail(
             db_session, institution_id
         )
         return InstitutionOut.from_orm_model(institution)
-    except education_service.InstitutionNotFoundError:
+    except education_service.InstitutionNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Institution not found"
-        )
+        ) from e

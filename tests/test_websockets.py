@@ -83,9 +83,8 @@ class TestWebSocketMessaging:
         ) as websocket:
             # Send message with unsupported type
             invalid_msg = {"message_type": "unsupported_type", "message": "test"}
-
+            await websocket.send_json(invalid_msg)
             with pytest.raises(WebSocketDisconnect) as e:
-                await websocket.send_json(invalid_msg)
                 await websocket.receive_json()
             assert e.value.code == status.WS_1007_INVALID_FRAME_PAYLOAD_DATA
 

@@ -5,38 +5,38 @@ from app.shared.admin import CustomModelView
 class FCMDeviceAdmin(CustomModelView, model=FCMDevice):
     icon = "fa-solid fa-mobile-alt"
 
-    column_list = [
+    column_list = (
         FCMDevice.id,
         FCMDevice.user_id,
         FCMDevice.registration_id,
         FCMDevice.device_type,
         FCMDevice.active,
         FCMDevice.created_at,
-    ]
-    column_searchable_list = [
+    )
+    column_searchable_list = (
         FCMDevice.user_id,
         FCMDevice.registration_id,
         FCMDevice.device_type,
-    ]
-    column_sortable_list = [
+    )
+    column_sortable_list = (
         FCMDevice.id,
         FCMDevice.user_id,
         FCMDevice.device_type,
         FCMDevice.active,
         FCMDevice.created_at,
-    ]
-    column_details_list = [
+    )
+    column_details_list = (
         FCMDevice.id,
         FCMDevice.user_id,
         FCMDevice.registration_id,
         FCMDevice.device_type,
         FCMDevice.active,
         FCMDevice.created_at,
-    ]
+    )
 
-    form_columns = [
+    form_columns = (
         "user_id",
         "registration_id",
         "device_type",
         "active",
-    ]
+    )

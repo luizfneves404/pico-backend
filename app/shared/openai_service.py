@@ -33,7 +33,7 @@ class AbstractOpenAIService(Protocol):
         self,
         *,
         model: str,
-        input: ResponseInputParam,
+        input: ResponseInputParam,  # noqa: A002
         temperature: float | NotGiven | None,
         reasoning: Reasoning | NotGiven | None,
     ) -> str: ...
@@ -69,7 +69,7 @@ class AbstractOpenAIService(Protocol):
         self,
         *,
         model: str,
-        input: str | list[str],
+        input: str | list[str],  # noqa: A002
         dimensions: int,
     ) -> list[float] | list[list[float]]: ...
 
@@ -164,7 +164,7 @@ class RealOpenAIService(AbstractOpenAIService):
         self,
         *,
         model: str,
-        input: str | list[str],
+        input: str | list[str],  # noqa: A002
         dimensions: int,
     ) -> list[float] | list[list[float]]:
         response = await self.client.embeddings.create(
@@ -277,7 +277,7 @@ class MockOpenAIService(AbstractOpenAIService):
         self,
         *,
         model: str,
-        input: str | list[str],
+        input: str | list[str],  # noqa: A002
         dimensions: int,
     ) -> list[float] | list[list[float]]:
         def gen() -> list[float]:

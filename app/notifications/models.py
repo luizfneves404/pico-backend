@@ -1,5 +1,5 @@
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from sqlalchemy import ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -27,7 +27,7 @@ class InAppNotification(Base, kw_only=True):
 
     in_app_notification_type: Mapped[InAppNotificationType] = mapped_column()
 
-    __mapper_args__ = {
+    __mapper_args__ = {  # noqa: RUF012
         "polymorphic_on": in_app_notification_type,
         "polymorphic_identity": InAppNotificationType.IN_APP_NOTIFICATION,
     }
@@ -39,7 +39,7 @@ class ExternalInAppNotification(InAppNotification, kw_only=True):
         init=False,
         insert_default=InAppNotificationType.IN_APP_NOTIFICATION,
     )
-    __mapper_args__ = {
+    __mapper_args__: Final = {
         "polymorphic_identity": InAppNotificationType.EXTERNAL,
         "polymorphic_load": "inline",
     }
@@ -51,7 +51,7 @@ class FlowInAppNotification(InAppNotification, kw_only=True):
     in_app_notification_type: Mapped[InAppNotificationType] = mapped_column(
         use_existing_column=True, init=False, insert_default=InAppNotificationType.FLOW
     )
-    __mapper_args__ = {
+    __mapper_args__: Final = {
         "polymorphic_identity": InAppNotificationType.FLOW,
         "polymorphic_load": "inline",
     }

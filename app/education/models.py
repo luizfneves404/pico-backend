@@ -82,7 +82,7 @@ class Course(Base, kw_only=True):
     )
 
     def __str__(self) -> str:
-        return str(self.name_i18n["en"] if "en" in self.name_i18n else self.name_i18n)
+        return str(self.name_i18n.get("en", self.name_i18n))
 
 
 class LevelStage(Base, kw_only=True):
@@ -139,7 +139,7 @@ class EducationLevel(Base, kw_only=True):
     )
 
     def __str__(self) -> str:
-        return str(self.name_i18n["en"] if "en" in self.name_i18n else self.name_i18n)
+        return str(self.name_i18n.get("en", self.name_i18n))
 
 
 class EducationInfo(Base, kw_only=True):
@@ -176,7 +176,7 @@ class EducationInfo(Base, kw_only=True):
         string = f"Education Info {self.id}"
 
         if "level" not in insp.unloaded:
-            string += f" - {self.level.name_i18n['en'] if 'en' in self.level.name_i18n else self.level.name_i18n}"
+            string += f" - {self.level.name_i18n.get('en', self.level.name_i18n)}"
 
         if "institution" not in insp.unloaded and self.institution:
             string += f" - {self.institution.name}"
@@ -185,6 +185,6 @@ class EducationInfo(Base, kw_only=True):
             string += f" - {self.stage.name}"
 
         if "course" not in insp.unloaded and self.course:
-            string += f" - {self.course.name_i18n['en'] if 'en' in self.course.name_i18n else self.course.name_i18n}"
+            string += f" - {self.course.name_i18n.get('en', self.course.name_i18n)}"
 
         return string

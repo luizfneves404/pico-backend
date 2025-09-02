@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
 from geoalchemy2 import WKTElement
@@ -81,7 +83,7 @@ class InstitutionAdmin(CustomModelView, model=Institution):
 
     can_import = True
     import_schema = InstitutionImportSchema
-    import_template_data = {
+    import_template_data: ClassVar = {
         "name": "Arlekia University",
         "full_name": "Universidade Arlekia - Centro de Ensino Superior e Tecnologia",
         "user_submitted": True,
@@ -142,10 +144,10 @@ class InstitutionAdmin(CustomModelView, model=Institution):
         else:
             try:
                 ids = [int(pk) for pk in pks_str.split(",") if pk]
-            except ValueError:
+            except ValueError as e:
                 raise HTTPException(
                     status_code=400, detail="Invalid primary key format."
-                )
+                ) from e
 
         if not ids:
             referer = request.headers.get("Referer")

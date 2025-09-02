@@ -30,7 +30,7 @@ async def my_communities(
 async def get_community_ranking(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
-    id: int,
+    id: int,  # noqa: A002
     score_type: Literal["xp", "social"],
 ) -> list[UserInCommunityRanking]:
     users = await service.get_community_ranking(

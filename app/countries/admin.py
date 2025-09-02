@@ -18,44 +18,44 @@ class CountryAdmin(CustomModelView, model=Country):
     # Enable CSV import
     can_import: ClassVar[bool] = True
     import_schema = CountryImportSchema
-    import_template_data = {
+    import_template_data: ClassVar = {
         "code": "AA",
         "name": "Arlekia Anamasia",
         "phone_code": "690",
     }
 
-    column_list = [
+    column_list = (
         Country.id,
         Country.code,
         Country.name,
         Country.phone_code,
         Country.created_at,
-    ]
-    column_searchable_list = [
+    )
+    column_searchable_list = (
         Country.code,
         Country.name,
         Country.phone_code,
-    ]
-    column_sortable_list = [
+    )
+    column_sortable_list = (
         Country.id,
         Country.code,
         Country.name,
         Country.phone_code,
         Country.created_at,
-    ]
-    column_details_list = [
+    )
+    column_details_list = (
         Country.id,
         Country.code,
         Country.name,
         Country.phone_code,
         Country.created_at,
-    ]
+    )
 
-    form_columns = [
+    form_columns = (
         "code",
         "name",
         "phone_code",
-    ]
+    )
 
     async def to_orm_model(
         self, validated_data_list: list[CountryImportSchema]

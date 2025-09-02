@@ -174,7 +174,7 @@ class TestCreateUserByPassword:
                 )
 
     @pytest.mark.parametrize(
-        "name,expected_username_base",
+        ("name", "expected_username_base"),
         [
             ("João da Silva", "joao_da_silva"),  # Accent removal
             ("Maria José", "maria_jose"),  # Space to underscore

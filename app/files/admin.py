@@ -156,7 +156,7 @@ class FileAdmin(CustomModelView, model=File):
     # Import functionality
     can_import = True
     import_schema = FileImportSchema
-    import_template_data: ClassVar[dict[str, Any]] = {
+    import_template_data: ClassVar = {
         "zip_file": "Upload a ZIP file containing files to import",
         "csv_manifest": "filename,original_name\ndocument1.pdf,My Document.pdf\nimage.jpg,Profile Image.jpg",
         "direct_files": "Or upload files directly (for small batches)",
@@ -243,7 +243,7 @@ class FileAdmin(CustomModelView, model=File):
         extracted_files = await run_in_threadpool(_process_zip)
 
         # Upload each file to storage and create File records
-        for _, (content, record) in extracted_files.items():
+        for content, record in extracted_files.values():
             file_id = await run_in_threadpool(
                 storage.upload,
                 io.BytesIO(content),

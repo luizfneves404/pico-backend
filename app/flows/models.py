@@ -2,7 +2,7 @@ import logging
 import string
 import uuid
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -380,7 +380,7 @@ class FlowElement(Base, kw_only=True):
         ),
     )
 
-    __mapper_args__ = {
+    __mapper_args__ = {  # noqa: RUF012
         "polymorphic_on": element_type,
         "polymorphic_identity": "flow_element",
     }
@@ -672,7 +672,7 @@ class OfficialQuestionSource(Base, kw_only=True):
 
 
 class FlowQuestion(FlowElement):
-    __mapper_args__ = {"polymorphic_identity": "flow_question"}
+    __mapper_args__: Final = {"polymorphic_identity": "flow_question"}
 
     element_type: Mapped[str] = mapped_column(
         Text, use_existing_column=True, init=False, insert_default="flow_question"

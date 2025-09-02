@@ -45,7 +45,7 @@ target_metadata = Base.metadata
 
 
 def include_object(
-    object: SchemaItem,
+    obj: SchemaItem,
     name: str | None,
     type_: Literal[
         "schema",
@@ -68,7 +68,7 @@ def include_object(
     if type_ == "index":
         # Alembic passes you the Index object; dialect_options holds
         # any dialect-specific args (like postgresql_using)
-        dialect_opts = getattr(object, "dialect_options", {})
+        dialect_opts = getattr(obj, "dialect_options", {})
         pg_opts = dialect_opts.get("postgresql", {})
         if pg_opts.get("using") == "gist":
             return False

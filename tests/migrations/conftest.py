@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from tests.db_utils import alembic_config_from_url, tmp_database
 
 
-@pytest.fixture()
+@pytest.fixture
 async def postgres(pg_url: str):
     """
     Creates empty temporary database.
@@ -13,7 +13,7 @@ async def postgres(pg_url: str):
         yield tmp_url
 
 
-@pytest.fixture()
+@pytest.fixture
 async def postgres_engine(postgres: str):
     """
     SQLAlchemy engine, bound to temporary database.
@@ -28,7 +28,7 @@ async def postgres_engine(postgres: str):
         await engine.dispose()
 
 
-@pytest.fixture()
+@pytest.fixture
 def alembic_config(postgres: str):
     """
     Alembic configuration object, bound to temporary database.

@@ -244,7 +244,7 @@ async def create_course(
     return course
 
 
-async def get_course(db_session: AsyncSession, id: int) -> Course:
+async def get_course(db_session: AsyncSession, course_id: int) -> Course:
     """Get a course by ID.
 
     Args:
@@ -257,7 +257,7 @@ async def get_course(db_session: AsyncSession, id: int) -> Course:
     Raises:
         CourseNotFoundError: If no course is found with the given ID
     """
-    course = await db_session.get(Course, id)
+    course = await db_session.get(Course, course_id)
     if not course:
         raise CourseNotFoundError
     return course

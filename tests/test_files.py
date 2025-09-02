@@ -123,14 +123,7 @@ class TestFileImport:
             UploadFile(file=io.BytesIO(b"Content 2"), filename="file2.txt", size=9),
         ]
 
-        # This would normally upload to storage and create File objects
-        # For the test, we'll just verify it doesn't crash
-        try:
-            await admin.process_direct_import(files)
-            # The actual storage upload will fail in tests, but the logic should work
-        except Exception as e:
-            # Expected to fail due to storage not being set up in tests
-            assert "storage" in str(e).lower() or "session" in str(e).lower()
+        await admin.process_direct_import(files)
 
     async def test_create_zip_with_manifest(self):
         """Test creating a zip file with CSV manifest for import."""

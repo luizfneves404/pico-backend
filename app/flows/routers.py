@@ -157,7 +157,7 @@ async def community_feed(
 async def flow_detail(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
-    id: int,
+    id: int,  # noqa: A002
 ) -> FlowDetail:
     """Get details for a specific flow"""
 
@@ -170,10 +170,10 @@ async def flow_detail(
         return await FlowDetail.from_orm_model_with_context(
             flow, user_id=current_user.id, image_id_to_file_url=image_id_to_file_url
         )
-    except flow_service.FlowNotFoundError:
+    except flow_service.FlowNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
-        )
+        ) from e
 
 
 @flows_router.post("", response_model=FlowDetail, status_code=status.HTTP_201_CREATED)
@@ -200,25 +200,29 @@ async def create_flow(
             flow, user_id=current_user.id, image_id_to_file_url=image_id_to_file_url
         )
     except flow_service.FlowValidationError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
     except flow_service.InvalidFileTypeError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
 
 
 @flows_router.get("/{id}/is-ready", response_model=bool)
 async def is_flow_ready_for_question_creation(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
-    id: int,
+    id: int,  # noqa: A002
 ) -> bool:
     """Check if a flow is ready"""
     try:
         flow = await flow_service.get_flow(db_session, flow_id=id)
         return flow.is_ready
-    except flow_service.FlowNotFoundError:
+    except flow_service.FlowNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
-        )
+        ) from e
 
 
 @flows_router.post(
@@ -229,7 +233,7 @@ async def is_flow_ready_for_question_creation(
 async def add_questions_to_flow_official(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
-    id: int,
+    id: int,  # noqa: A002
     add_questions_to_flow_official: AddQuestionsToFlowOfficial,
 ) -> FlowDetail:
     """Add questions to a flow"""
@@ -245,14 +249,14 @@ async def add_questions_to_flow_official(
         return await FlowDetail.from_orm_model_with_context(
             flow, user_id=current_user.id, image_id_to_file_url=image_id_to_file_url
         )
-    except flow_service.FlowNotFoundError:
+    except flow_service.FlowNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
-        )
-    except question_service.QuestionAreaNotFoundError:
+        ) from e
+    except question_service.QuestionAreaNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Question area not found"
-        )
+        ) from e
 
 
 @flows_router.post(
@@ -263,7 +267,7 @@ async def add_questions_to_flow_official(
 async def add_questions_to_flow_ai(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
-    id: int,
+    id: int,  # noqa: A002
     add_questions_to_flow_ai: AddQuestionsToFlowAI,
 ) -> FlowDetail:
     """Add questions to a flow"""
@@ -279,10 +283,10 @@ async def add_questions_to_flow_ai(
         return await FlowDetail.from_orm_model_with_context(
             flow, user_id=current_user.id, image_id_to_file_url=image_id_to_file_url
         )
-    except flow_service.FlowNotFoundError:
+    except flow_service.FlowNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
-        )
+        ) from e
 
 
 @flows_router.post(
@@ -293,7 +297,7 @@ async def add_questions_to_flow_ai(
 async def add_questions_to_flow_full(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
-    id: int,
+    id: int,  # noqa: A002
     add_questions_to_flow_full: AddQuestionsToFlowFull,
 ) -> FlowDetail:
     """Add AI and official questions to a flow"""
@@ -309,14 +313,14 @@ async def add_questions_to_flow_full(
         return await FlowDetail.from_orm_model_with_context(
             flow, user_id=current_user.id, image_id_to_file_url=image_id_to_file_url
         )
-    except flow_service.FlowNotFoundError:
+    except flow_service.FlowNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
-        )
-    except question_service.QuestionAreaNotFoundError:
+        ) from e
+    except question_service.QuestionAreaNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Question area not found"
-        )
+        ) from e
 
 
 @flows_router.post(
@@ -327,7 +331,7 @@ async def add_questions_to_flow_full(
 async def submit_answer_multiple_choice(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
-    id: int,
+    id: int,  # noqa: A002
     answer: SubmitAnswerMultipleChoiceRequest,
 ) -> SubmitAnswerMultipleChoiceResponse:
     """Submit an answer for a question in the flow"""
@@ -340,28 +344,30 @@ async def submit_answer_multiple_choice(
             choice_id=answer.choice_id,
         )
         return SubmitAnswerMultipleChoiceResponse(xp_increase=xp_increase)
-    except flow_service.FlowQuestionNotFoundError:
+    except flow_service.FlowQuestionNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow element not found"
-        )
+        ) from e
     except flow_service.InvalidAnswerError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
 
 
 @flows_router.delete("/{id}/delete", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_flow(
     db_session: DBSessionAnnotated,
     current_user: CurrentUserAnnotated,
-    id: int,
+    id: int,  # noqa: A002
 ) -> None:
     """Delete a flow"""
 
     try:
         await flow_service.delete_flow(db_session, user_id=current_user.id, flow_id=id)
-    except flow_service.FlowNotFoundError:
+    except flow_service.FlowNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
-        )
+        ) from e
     return None
 
 

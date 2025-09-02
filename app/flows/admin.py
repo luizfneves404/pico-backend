@@ -88,7 +88,7 @@ class TagsTextAreaField(Field):
 class FlowAdmin(CustomModelView, model=Flow):
     icon = "fa-solid fa-stream"
 
-    column_list: ClassVar[str | Sequence[MODEL_ATTR]] = [
+    column_list = (
         Flow.id,
         Flow.code,
         Flow.title,
@@ -101,22 +101,22 @@ class FlowAdmin(CustomModelView, model=Flow):
         Flow.is_ready,
         Flow.has_quantitative_questions,
         Flow.created_at,
-    ]
-    column_searchable_list = [
+    )
+    column_searchable_list = (
         Flow.title,
         Flow.input_topic,
         Flow.major_tags,
         Flow.minor_tags,
-    ]
-    column_sortable_list = [
+    )
+    column_sortable_list = (
         Flow.id,
         Flow.title,
         Flow.created_at,
         Flow.difficulty,
         Flow.flow_input_type,
         Flow.source_type,
-    ]
-    column_details_list: ClassVar[str | Sequence[MODEL_ATTR]] = [
+    )
+    column_details_list = (
         Flow.id,
         Flow.code,
         Flow.title,
@@ -138,7 +138,7 @@ class FlowAdmin(CustomModelView, model=Flow):
         "num_total_answers",
         Flow.has_quantitative_questions,
         Flow.created_at,
-    ]
+    )
 
     column_labels: ClassVar[dict[MODEL_ATTR, str]] = {
         "num_total_questions": "Total Questions",
@@ -166,7 +166,7 @@ class FlowAdmin(CustomModelView, model=Flow):
         Flow.has_quantitative_questions,
     ]
 
-    form_args = {
+    form_args: ClassVar[dict[str, Any]] = {
         "major_tags": {
             "validators": [Optional()],
             "description": "Digite as tags principais separadas por vírgula (ex: matemática, álgebra, geometria)",
@@ -177,7 +177,7 @@ class FlowAdmin(CustomModelView, model=Flow):
         },
     }
 
-    form_overrides = {
+    form_overrides: ClassVar[dict[str, type[Field]]] = {
         "major_tags": TagsTextAreaField,
         "minor_tags": TagsTextAreaField,
     }
@@ -396,7 +396,7 @@ class QuestionAdmin(CustomModelView, model=Question):
 
     import_schema = QuestionImportSchema
 
-    import_template_data: ClassVar[dict[str, Any]] = {
+    import_template_data: ClassVar = {
         "id": 99999,
         "content_blocks": [
             {
@@ -830,7 +830,7 @@ class QuestionAreaAdmin(CustomModelView, model=QuestionArea):
         QuestionArea.course,
     )
 
-    form_args = {
+    form_args: ClassVar[dict[str, Any]] = {
         "tags": {
             "validators": [Optional()],
             "description": "Digite as tags separadas por vírgula (ex: matemática, básico, ensino médio)",
@@ -884,7 +884,7 @@ class ExamAdmin(CustomModelView, model=Exam):
 
     can_import = True
     import_schema = ExamImportSchema
-    import_template_data: ClassVar[dict[str, Any]] = {
+    import_template_data: ClassVar = {
         "name": "Exame Nacional do Ensino Médio",
         "country_id": 1,
         "education_level_id": 1,
@@ -941,7 +941,7 @@ class OfficialQuestionSourceAdmin(CustomModelView, model=OfficialQuestionSource)
 
     can_import = True
     import_schema = OfficialQuestionSourceImportSchema
-    import_template_data: ClassVar[dict[str, Any]] = {
+    import_template_data: ClassVar = {
         "exam_id": 1,
         "year": 2024,
     }
@@ -1099,7 +1099,7 @@ class ChoiceAdmin(CustomModelView, model=Choice):
 
     can_import = True
     import_schema = ChoiceImportSchema
-    import_template_data: ClassVar[dict[str, Any]] = {
+    import_template_data: ClassVar = {
         "question_id": 1,
         "text": "Digite o texto da opção aqui",
         "is_correct": True,

@@ -270,9 +270,7 @@ class PreviewBulkOperationView(BaseView):
             matching_loggers.append("")
 
         # Check all other loggers
-        for name in logger_dict:
-            if regex.match(name):
-                matching_loggers.append(name)
+        matching_loggers.extend(name for name in logger_dict if regex.match(name))
 
         return sorted(matching_loggers)
 
