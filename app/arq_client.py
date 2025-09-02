@@ -3,8 +3,8 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from arq import create_pool
-from arq.connections import ArqRedis, RedisSettings
+from arq import ArqRedis, create_pool
+from arq.connections import RedisSettings
 
 _redis: ArqRedis | None = None
 
@@ -89,4 +89,4 @@ async def enqueue_job(function: str, *args: Any, **kwargs: Any) -> None:
 async def clear_redis() -> None:
     """Clear the Redis connection pool."""
     client = _get_redis()
-    await client.flushall()
+    await client.flushall()  # pyright: ignore[reportUnknownMemberType]

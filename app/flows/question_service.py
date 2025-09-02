@@ -20,7 +20,7 @@ from openai.types.responses import (
     ResponseInputMessageContentListParam,
     ResponseInputParam,
 )
-from pylatexenc.latex2text import (  # pyright: ignore[reportMissingTypeStubs]
+from pylatexenc.latex2text import (
     LatexNodes2Text,
 )
 from sqlalchemy import func, select
@@ -95,7 +95,7 @@ class FlowNotFoundError(Exception):
 
 def latex_to_text(latex: str) -> str:
     """Convert LaTeX to text. Passes through to pylatexenc, but with type hints."""
-    return LatexNodes2Text().latex_to_text(latex)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+    return LatexNodes2Text().latex_to_text(latex)
 
 
 async def get_official_questions(
@@ -1301,15 +1301,17 @@ async def verify_question_pertinence_to_topic(
                 # Handle ImageBlock object
                 if hasattr(block, "image_id"):
                     image_ids.append(block.image_id)
-            elif isinstance(block, dict) and block.get("block_type") == "image":  # pyright: ignore[reportUnknownMemberType]
+            elif (
+                isinstance(block, dict)
+                and block.get("block_type") == "image"  # pyright: ignore[reportUnknownMemberType]
+                and block.get("image_id")  # pyright: ignore[reportUnknownMemberType]
+            ):
                 # Handle dict format
-                if "image_id" in block:
-                    image_ids.append(block["image_id"])  # pyright: ignore[reportUnknownArgumentType]
+                image_ids.append(block["image_id"])  # pyright: ignore[reportUnknownArgumentType]
 
-        # Also check for images in choices
-        for choice in question.choices:
-            if choice.image_id:
-                image_ids.append(choice.image_id)
+        image_ids.extend(
+            choice.image_id for choice in question.choices if choice.image_id
+        )
 
         # Prepare content parts
         content_parts = [

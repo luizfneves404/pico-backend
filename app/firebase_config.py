@@ -1,6 +1,9 @@
 import json
 
-from firebase_admin import credentials, initialize_app
+from firebase_admin import (  # pyright: ignore[reportMissingTypeStubs]
+    credentials,
+    initialize_app,  # pyright: ignore[reportUnknownVariableType]
+)
 
 from app.config import settings
 

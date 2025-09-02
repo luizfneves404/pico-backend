@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-import firebase_admin.messaging as firebase_messaging
+import firebase_admin.messaging as firebase_messaging  # pyright: ignore[reportMissingTypeStubs]
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
