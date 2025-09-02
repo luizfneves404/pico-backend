@@ -23,6 +23,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db_session_for_worker
 from app.files.models import File
 from app.flows.db_types import (
+    ImageBlockDB,
     RichText,
     TextBlock,
     validate_content_block_list,
@@ -224,26 +225,6 @@ async def generate_answer(
     if not question:
         raise ValueError(f"Question {question_id} not found")
 
-    # Check if answer already exists
-    if question.answer_content_blocks:
-        logger.info(f"Answer already exists for question {question_id}")
-        # Extract existing answer text
-        existing_answer: str = ""
-        for block in question.answer_content_blocks:
-            if hasattr(block, "block_type") and block.block_type == "text":
-                # Handle TextBlock object
-                if hasattr(block, "content") and block.content:
-                    for rich_text in block.content:
-                        if hasattr(rich_text, "text"):
-                            existing_answer += rich_text.text
-            elif isinstance(block, dict) and block.get("type") == "text":
-                # Handle dict format
-                existing_answer += str(block.get("text", ""))
-
-        return AnswerGeneration(
-            answer_text=existing_answer,
-        )
-
     # Get question text and choices
     question_text = question.question_text_with_choices_text
 
@@ -395,17 +376,11 @@ async def get_question_image_urls(
     image_urls: list[str] = []
 
     # Extract image IDs from content blocks
-    image_ids: list[int] = []
-    for block in question.content_blocks:
-        if hasattr(block, "block_type") and block.block_type == "image":
-            # Handle ImageBlock object
-            if hasattr(block, "image_id"):
-                image_ids.append(block.image_id)
-        elif isinstance(block, dict) and block.get("block_type") == "image":
-            # Handle dict format
-            image_id = int(block.get("image_id"))
-            if image_id:
-                image_ids.append(image_id)
+    image_ids: list[int] = [
+        block.image_id
+        for block in question.content_blocks
+        if isinstance(block, ImageBlockDB)
+    ]
 
     # Get File objects and URLs
     if image_ids:
