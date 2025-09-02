@@ -60,7 +60,7 @@ class LoggingControlView(BaseView):
             "logging_levels": logging_levels,
         }
 
-        return await self.templates.TemplateResponse(
+        return await self.templates.TemplateResponse(  # pyright: ignore[reportUnknownMemberType]
             request,
             "logging_control.html",
             context=context,

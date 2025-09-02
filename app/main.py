@@ -90,7 +90,7 @@ fastapi_app = FastAPI(
 # middlewares
 
 
-fastapi_app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+fastapi_app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")  # pyright: ignore[reportArgumentType]
 
 
 fastapi_app.add_middleware(

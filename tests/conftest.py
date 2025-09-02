@@ -13,6 +13,7 @@ from collections.abc import (
 from typing import (
     Any,
     Literal,
+    TypedDict,
     TypeVar,
 )
 
@@ -24,7 +25,9 @@ from httpx import ASGITransport, AsyncClient
 from httpx_ws.transport import ASGIWebSocketTransport
 from sqlalchemy import NullPool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from testcontainers.redis import AsyncRedisContainer
+from testcontainers.redis import (  # pyright: ignore[reportMissingTypeStubs]
+    AsyncRedisContainer,
+)
 
 import app.arq_client as arq_client
 import app.mail as mail
@@ -78,16 +81,15 @@ def pytest_exception_interact(
             logger.warning("Test failed, no excinfo")
 
 
+class SESEmail(TypedDict):
+    Source: str
+    Destination: dict[str, Sequence[str]]
+    Message: dict[str, dict[str, str | dict[str, str]]]
+
+
 class DummySESClient:
     def __init__(self) -> None:
-        self.sent_emails: list[
-            dict[
-                str,
-                str
-                | dict[str, Sequence[str]]
-                | dict[str, dict[str, str | dict[str, str]]],
-            ]
-        ] = []
+        self.sent_emails: list[SESEmail] = []
 
     def send_email(
         self,
@@ -239,7 +241,7 @@ def redis_url() -> Generator[str, None, None]:
 async def redis_for_tests(redis_url: str):
     async with use_redis(redis_url):
         redis_client = get_redis()
-        await redis_client.flushall()
+        await redis_client.flushall()  # pyright: ignore[reportUnknownMemberType]
         yield
 
 
@@ -332,9 +334,7 @@ def websocket_access_token(websocket_user: User) -> str:
 
 
 @pytest.fixture
-async def user_client(
-    client: AsyncClient, access_token: str
-) -> AsyncIterator[AsyncClient]:
+def user_client(client: AsyncClient, access_token: str) -> AsyncClient:
     client.headers["Authorization"] = f"Bearer {access_token}"
 
     return client

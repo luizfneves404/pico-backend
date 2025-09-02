@@ -116,8 +116,8 @@ class SESClient(Protocol):
     ) -> dict[str, str]: ...
 
 
-client: SESClient = (
-    boto3.client("ses", region_name=settings.aws_ses_region_name)
+client: SESClient = (  # pyright: ignore[reportUnknownVariableType]
+    boto3.client("ses", region_name=settings.aws_ses_region_name)  # pyright: ignore[reportUnknownMemberType]
     if settings.environment == Environment.PROD
     else FileBasedEmailClient()
 )
@@ -231,7 +231,9 @@ async def send_bulk_email(
 class AdminEmailHandler(logging.Handler):
     def __init__(self):
         super().__init__()
-        self.last_email_time = {}  # Track last email time by error type
+        self.last_email_time: dict[
+            str, datetime
+        ] = {}  # Track last email time by error type
         self.email_cooldown = timedelta(
             minutes=15
         )  # 15 minute cooldown between similar errors

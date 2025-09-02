@@ -3,7 +3,7 @@ import enum
 import logging
 import re
 from collections.abc import Callable
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, ClassVar, cast
 
 import sqlalchemy
 from sqlalchemy import TIMESTAMP, MetaData, event, func, inspect, text
@@ -60,7 +60,7 @@ class Base(MappedAsDataclass, DeclarativeBase, kw_only=True):
             "pk": "pk__%(table_name)s",
         }
     )
-    type_annotation_map = {
+    type_annotation_map: ClassVar[dict[type, Any]] = {
         datetime.datetime: TIMESTAMP(timezone=True),
         enum.Enum: sqlalchemy.Enum(
             enum.Enum, length=50, native_enum=False, create_constraint=True

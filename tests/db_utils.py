@@ -9,11 +9,13 @@ from urllib.parse import urlparse, urlunparse
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy_utils.functions.database import (
-    _set_url_database,
+from sqlalchemy_utils.functions.database import (  # pyright: ignore[reportMissingTypeStubs]
+    _set_url_database,  # pyright: ignore[reportUnknownVariableType, reportPrivateUsage]
     make_url,
 )
-from sqlalchemy_utils.functions.orm import quote
+from sqlalchemy_utils.functions.orm import (  # pyright: ignore[reportMissingTypeStubs]
+    quote,  # pyright: ignore[reportUnknownVariableType]
+)
 
 from alembic.config import Config as AlembicConfig
 from app.config import settings

@@ -71,7 +71,7 @@ class S3Storage(StorageBackend):
 
     def __init__(self, bucket_name: str):
         self.bucket_name = bucket_name
-        self.client = boto3.client("s3")
+        self.client = boto3.client("s3")  # pyright: ignore[reportUnknownMemberType]
 
     def upload(self, file_obj_or_path: IO[bytes] | str, file_name: str) -> str:
         file_id = f"{uuid.uuid4()}-{file_name}"
@@ -97,7 +97,7 @@ class S3Storage(StorageBackend):
 
     def get_file_like(self, file_id: str) -> IO[bytes]:
         response = self.client.get_object(Bucket=self.bucket_name, Key=file_id)
-        return response["Body"]
+        return response["Body"]  # pyright: ignore[reportReturnType]
 
 
 class LocalStorage(StorageBackend):
