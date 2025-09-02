@@ -39,5 +39,7 @@ class StrictQuery(sqladmin._queries.Query):
 
 
 def monkey_patch_sqladmin():
+    """Needed because SQLAdmin does not like sqlalchemy mapped as dataclasses. It instantiates the model without any data and then adds stuff later.
+    We override it to instantiate passing the data."""
     sqladmin._queries.Query = StrictQuery
     sqladmin.models.Query = StrictQuery
