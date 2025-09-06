@@ -531,11 +531,7 @@ async def update_user_fields(
             raise
 
     # Handle country_code field explicitly
-    if (
-        updates.country_code is not UnsetDefault
-        and user.country
-        and updates.country_code != user.country.code
-    ):
+    if updates.country_code is not UnsetDefault:
         try:
             country = await get_country(db_session, country_code=updates.country_code)
         except CountryNotFound as e:
