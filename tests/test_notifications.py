@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.community.models import Community, CommunityUser
 from app.fcm import fcm_service
-from app.fcm.models import FCMDevice
+from app.fcm.models import DeviceType, FCMDevice
 from app.notifications.models import (
     FlowInAppNotification,
     InAppNotification,
@@ -755,3 +755,214 @@ async def test_notify_communities_flow_posted_only_notifies_community_members(
         == f"O usuário {users[0].name} postou o flow {flow.title} em {community1.name}"
     )
     assert fcm_message.token == fcm_device["registration_id"]
+
+
+async def test_create_or_update_device_creates_new(
+    session: AsyncSession,
+):
+    async with session.begin():
+        user = await UserFactory.create(session=session)
+
+    # Act
+    async with session.begin():
+        device = await fcm_service.create_or_update_device(
+            session, user.id, "reg_token_new", DeviceType.ANDROID
+        )
+
+    # Assert
+    async with session.begin():
+        result = await session.execute(
+            select(FCMDevice).where(FCMDevice.user_id == user.id)
+        )
+        db_device = result.scalar_one_or_none()
+        assert db_device is not None
+        assert device.id == db_device.id
+        assert db_device.registration_id == "reg_token_new"
+        assert db_device.device_type == DeviceType.ANDROID
+        assert db_device.active is True
+
+
+async def test_create_or_update_device_updates_device_type_same_token(
+    session: AsyncSession,
+):
+    async with session.begin():
+        user = await UserFactory.create(session=session)
+        # Existing device for the same user and token
+        session.add(
+            FCMDevice(
+                user_id=user.id,
+                registration_id="reg_token_same",
+                device_type=DeviceType.ANDROID,
+                active=True,
+            )
+        )
+
+    # Act: update same token with different device type
+    async with session.begin():
+        device = await fcm_service.create_or_update_device(
+            session, user.id, "reg_token_same", DeviceType.IOS
+        )
+
+    # Assert
+    async with session.begin():
+        result = await session.execute(
+            select(FCMDevice).where(FCMDevice.user_id == user.id)
+        )
+        db_device = result.scalar_one_or_none()
+        assert db_device is not None
+        assert device.id == db_device.id
+        assert db_device.registration_id == "reg_token_same"
+        assert db_device.device_type == DeviceType.IOS
+        assert db_device.active is True
+
+
+async def test_create_or_update_device_reassigns_token_to_new_user(
+    session: AsyncSession,
+):
+    # Setup: user A has token t1, user B has token t2
+    async with session.begin():
+        user_a = await UserFactory.create(session=session)
+        user_b = await UserFactory.create(session=session)
+        session.add(
+            FCMDevice(
+                user_id=user_a.id,
+                registration_id="t1",
+                device_type=DeviceType.ANDROID,
+                active=True,
+            )
+        )
+        session.add(
+            FCMDevice(
+                user_id=user_b.id,
+                registration_id="t2",
+                device_type=DeviceType.ANDROID,
+                active=True,
+            )
+        )
+
+    # Act: assign t1 to user B
+    async with session.begin():
+        device = await fcm_service.create_or_update_device(
+            session, user_b.id, "t1", DeviceType.IOS
+        )
+
+    # Assert: user B now has t1, user A has no device, t2 is gone
+    async with session.begin():
+        res_t1 = await session.execute(
+            select(FCMDevice).where(FCMDevice.registration_id == "t1")
+        )
+        dev_t1 = res_t1.scalar_one_or_none()
+        assert dev_t1 is not None
+        assert device.id == dev_t1.id
+        assert dev_t1.user_id == user_b.id
+        assert dev_t1.device_type == DeviceType.IOS
+        assert dev_t1.active is True
+
+        res_user_a = await session.execute(
+            select(FCMDevice).where(FCMDevice.user_id == user_a.id)
+        )
+        assert res_user_a.scalar_one_or_none() is None
+
+        res_t2 = await session.execute(
+            select(FCMDevice).where(FCMDevice.registration_id == "t2")
+        )
+        assert res_t2.scalar_one_or_none() is None
+
+
+async def test_create_or_update_device_replaces_existing_user_device_with_new_token(
+    session: AsyncSession,
+):
+    async with session.begin():
+        user = await UserFactory.create(session=session)
+        session.add(
+            FCMDevice(
+                user_id=user.id,
+                registration_id="old_token",
+                device_type=DeviceType.WEB,
+                active=True,
+            )
+        )
+
+    # Act: replace with a new token
+    async with session.begin():
+        device = await fcm_service.create_or_update_device(
+            session, user.id, "new_token", DeviceType.WEB
+        )
+
+    # Assert: user now has only new_token, old_token is gone
+    async with session.begin():
+        res_user = await session.execute(
+            select(FCMDevice).where(FCMDevice.user_id == user.id)
+        )
+        db_device = res_user.scalar_one_or_none()
+        assert db_device is not None
+        assert device.id == db_device.id
+        assert db_device.registration_id == "new_token"
+
+        res_old = await session.execute(
+            select(FCMDevice).where(FCMDevice.registration_id == "old_token")
+        )
+        assert res_old.scalar_one_or_none() is None
+
+
+async def test_create_or_update_device_reactivates_inactive_token(
+    session: AsyncSession,
+):
+    # Setup: token belongs to user A and is inactive
+    async with session.begin():
+        user_a = await UserFactory.create(session=session)
+        user_b = await UserFactory.create(session=session)
+        session.add(
+            FCMDevice(
+                user_id=user_a.id,
+                registration_id="inactive_token",
+                device_type=DeviceType.ANDROID,
+                active=False,
+            )
+        )
+
+    # Act: assign same token to user B, should set active=True
+    async with session.begin():
+        device = await fcm_service.create_or_update_device(
+            session, user_b.id, "inactive_token", DeviceType.IOS
+        )
+
+    # Assert
+    async with session.begin():
+        res = await session.execute(
+            select(FCMDevice).where(FCMDevice.registration_id == "inactive_token")
+        )
+        db_device = res.scalar_one_or_none()
+        assert db_device is not None
+        assert device.id == db_device.id
+        assert db_device.user_id == user_b.id
+        assert db_device.device_type == DeviceType.IOS
+        assert db_device.active is True
+
+
+async def test_create_or_update_device_is_idempotent(
+    session: AsyncSession,
+):
+    async with session.begin():
+        user = await UserFactory.create(session=session)
+
+    # Act: call twice with same data
+    async with session.begin():
+        await fcm_service.create_or_update_device(
+            session, user.id, "same_token", DeviceType.ANDROID
+        )
+    async with session.begin():
+        await fcm_service.create_or_update_device(
+            session, user.id, "same_token", DeviceType.ANDROID
+        )
+
+    # Assert: single row for the token and user with latest values
+    async with session.begin():
+        res = await session.execute(
+            select(FCMDevice).where(FCMDevice.registration_id == "same_token")
+        )
+        db_device = res.scalar_one_or_none()
+        assert db_device is not None
+        assert db_device.user_id == user.id
+        assert db_device.device_type == DeviceType.ANDROID
+        assert db_device.active is True
