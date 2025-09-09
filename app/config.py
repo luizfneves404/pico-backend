@@ -164,7 +164,6 @@ class Settings(BaseSettings):
     pen_to_print_rapidapi_key: str = Field(default=...)
 
     firebase_json_service_key: str = Field(default=...)
-    fcm_dry_run: bool = Field(default=False)
 
     # Social authentication settings
     apple_app_id: str = Field(

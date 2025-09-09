@@ -28,7 +28,6 @@ services:
       - DATABASE_SSL_VERIFY_FULL=false
       - DOCS_URL=/docs
       - ENVIRONMENT=test
-      - FCM_DRY_RUN=true
       - OPENAPI_API_KEY=123456
       - OPENAPI_URL=/openapi.json
       - REDIS_URL=redis://redis:6379 # isn't used because we use testcontainers for redis

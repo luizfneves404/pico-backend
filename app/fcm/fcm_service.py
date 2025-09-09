@@ -4,6 +4,7 @@ from typing import Any
 
 import firebase_admin.messaging as firebase_messaging  # pyright: ignore[reportMissingTypeStubs]
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.notifications.service as notifications_service
@@ -23,54 +24,53 @@ async def create_or_update_device(
     registration_id: str,
     device_type: DeviceType,
 ) -> FCMDevice:
+    """Create or update an FCM device using PostgreSQL upsert with RETURNING clause.
+
+    Handles both registration_id and user_id unique constraints atomically.
+    Since user_id has a unique constraint, we first delete any existing device
+    for this user, then insert the new one. Uses RETURNING clause to get the
+    device in a single query, eliminating the need for a separate SELECT.
+
+    Args:
+        db_session: The async database session
+        user_id: ID of the user
+        registration_id: FCM registration token
+        device_type: Type of device (android, ios, web)
+
+    Returns:
+        The created or updated FCMDevice
+    """
     logger.debug(
         f"Creating or updating device for user {user_id} with registration_id {registration_id}"
     )
 
-    # First, check if the device exists
-    existing_device = (
-        await db_session.execute(
-            select(FCMDevice).filter(FCMDevice.registration_id == registration_id)
-        )
-    ).scalar_one_or_none()
+    # First, delete any existing device for this user to handle user_id unique constraint
+    await db_session.execute(delete(FCMDevice).where(FCMDevice.user_id == user_id))
 
-    if existing_device:
-        logger.debug(
-            f"Device with registration_id {registration_id} already exists, updating..."
-        )
-        # Update existing device
-        existing_device.device_type = device_type
-        existing_device.active = True
-        existing_device.user_id = user_id
-        db_session.add(existing_device)
-        await db_session.flush()
+    # Now use upsert for registration_id constraint
+    stmt = insert(FCMDevice).values(
+        user_id=user_id,
+        registration_id=registration_id,
+        device_type=device_type,
+        active=True,
+    )
 
-        device_to_return = existing_device
-    else:
-        logger.debug(
-            f"Device with registration_id {registration_id} does not exist, creating..."
-        )
-        # Create new device
-        new_device = FCMDevice(
-            user_id=user_id,
-            registration_id=registration_id,
-            device_type=device_type,
-            active=True,
-        )
-        db_session.add(new_device)
-        await db_session.flush()
+    # Handle conflict on registration_id (update existing registration)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[FCMDevice.registration_id],
+        set_={
+            "user_id": stmt.excluded.user_id,
+            "device_type": stmt.excluded.device_type,
+            "active": stmt.excluded.active,
+        },
+    )
 
-        # Find and delete other devices for this user in a single operation
-        await db_session.execute(
-            delete(FCMDevice).filter(
-                FCMDevice.user_id == user_id,
-                FCMDevice.registration_id != registration_id,
-            )
-        )
+    # Execute the upsert with RETURNING clause to get the device directly
+    result = await db_session.execute(stmt.returning(FCMDevice))
+    device = result.scalar_one()
 
-        device_to_return = new_device
-
-    return device_to_return
+    logger.debug(f"Successfully created/updated device for user {user_id}")
+    return device
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -231,6 +231,11 @@ async def task_send_notifications(
 
         total_success += response.success_count
         total_failure += response.failure_count
+
+        if total_failure > 0:
+            logger.exception(
+                f"Failed to send {total_failure} messages. Reasons: {[single_response.exception for single_response in response.responses]}.",
+            )
 
     logger.debug(f"Successfully sent {total_success} messages, failed: {total_failure}")
 

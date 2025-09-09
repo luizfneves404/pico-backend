@@ -4,7 +4,7 @@ import uuid
 from enum import StrEnum
 from typing import TYPE_CHECKING, Final
 
-from pgvector.sqlalchemy import Vector
+from pgvector.sqlalchemy import Vector  # pyright: ignore[reportMissingTypeStubs]
 from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
