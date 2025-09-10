@@ -1,11 +1,11 @@
 import asyncio
+import datetime
 import json
 import logging
 import re
 import traceback
 from asyncio import Task
 from collections.abc import Sequence
-from datetime import datetime, timedelta
 from io import BytesIO
 from typing import Any, Protocol
 
@@ -72,6 +72,8 @@ ERROR_EMAIL_HTML_TEMPLATE = Template("""
     </body>
     </html>
     """)
+ADMIN_EMAIL_WINDOW_DURATION = datetime.timedelta(minutes=10)
+ADMIN_EMAIL_MAX_EMAILS_PER_WINDOW = 50
 
 
 class EmailMessage(BaseModel):
@@ -97,7 +99,7 @@ class FileBasedEmailClient:
         email_json = json.dumps(email_data, indent=2)
         file_obj = BytesIO(email_json.encode("utf-8"))
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d_%H%M%S")
         file_name = f"email_{timestamp}.json"
 
         # Upload to storage
@@ -132,7 +134,7 @@ def sanitize_subject(subject: str) -> str:
     return re.sub(r"[\x00-\x1F\x7F]", "", subject)
 
 
-async def task_send_email(ctx: dict[Any, Any], email: EmailMessage) -> None:
+async def task_send_email(_: dict[Any, Any], email: EmailMessage) -> None:
     """
     Task function to write an email to a file instead of sending it.
     This function is meant to be called by Arq workers.
@@ -230,92 +232,41 @@ async def send_bulk_email(
 class AdminEmailHandler(logging.Handler):
     def __init__(self):
         super().__init__()
-        self.last_email_time: dict[
-            str, datetime
-        ] = {}  # Track last email time by error type
-        self.email_cooldown = timedelta(
-            minutes=15
-        )  # 15 minute cooldown between similar errors
-        # Circuit breaker for email failures
-        self.email_failures = 0
-        self.last_failure_time = None
-        self.circuit_breaker_threshold = 5  # After 5 failures
-        self.circuit_breaker_timeout = timedelta(minutes=30)  # Wait 30 minutes
+        self.email_count = 0
+        self.window_start = datetime.datetime.now(datetime.UTC)
 
-    def _get_error_key(self, record: logging.LogRecord) -> str:
-        """Generate a key to identify similar errors for rate limiting."""
-        return f"{record.name}:{record.funcName}:{record.getMessage()[:50]}"
+    def _within_window(self) -> bool:
+        """Check if we are still within the current rate-limiting window."""
+        now = datetime.datetime.now(datetime.UTC)
+        if now - self.window_start >= ADMIN_EMAIL_WINDOW_DURATION:
+            # Reset the window
+            self.window_start = now
+            self.email_count = 0
+        return True
 
-    def _should_send_email(self, error_key: str) -> bool:
-        """Check if we should send an email based on rate limiting."""
-        now = datetime.now()
-        last_time = self.last_email_time.get(error_key)
-
-        if last_time is None or now - last_time > self.email_cooldown:
-            self.last_email_time[error_key] = now
+    def _should_send_email(self) -> bool:
+        """Decide if we can send an email under the rate limit."""
+        self._within_window()
+        if self.email_count < ADMIN_EMAIL_MAX_EMAILS_PER_WINDOW:
+            self.email_count += 1
             return True
         return False
 
-    def _is_circuit_breaker_open(self) -> bool:
-        """Check if circuit breaker is open (too many recent failures)."""
-        if self.email_failures < self.circuit_breaker_threshold:
-            return False
-
-        if self.last_failure_time is None:
-            return False
-
-        time_since_failure = datetime.now() - self.last_failure_time
-        if time_since_failure > self.circuit_breaker_timeout:
-            # Reset circuit breaker after timeout
-            self.email_failures = 0
-            self.last_failure_time = None
-            return False
-
-        return True
-
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            # Check if error emails are enabled
             if not settings.enable_error_emails:
                 logger.debug("Error emails are disabled, skipping email notification")
                 return
 
-            # Check circuit breaker
-            if self._is_circuit_breaker_open():
-                logger.debug("Email circuit breaker is open, skipping error email")
+            if not self._should_send_email():
+                logger.debug("Rate limit reached, skipping error email")
                 return
 
-            # Check rate limiting to avoid quota issues
-            error_key = self._get_error_key(record)
-            if not self._should_send_email(error_key):
-                # Log that we're skipping this email due to rate limiting
-                logger.debug(f"Skipping error email due to rate limiting: {error_key}")
-                return
-            # Prepare the plain text version (as fallback)
-            text_parts: list[str] = [
-                "ERROR DETAILS",
-                "═══════════════",
-                "",
-                "Metadata:",
-                f"  • Severity: {record.levelname}",
-                f"  • Logger: {record.name}",
-                f"  • Location: {record.pathname}:{record.lineno}",
-                f"  • Function: {record.funcName}",
-            ]
-
-            if hasattr(record, "asctime"):
-                text_parts.append(f"  • Timestamp: {record.asctime}")
-
-            text_parts.extend(
-                ["", "Error Message:", "─────────────────", record.getMessage(), ""]
-            )
-
+            # Build email content
             traceback_text = None
             if record.exc_info:
                 traceback_text = "".join(traceback.format_exception(*record.exc_info))
-                text_parts.extend(["Traceback:", "────────────", traceback_text])
 
-            # Generate HTML version
             html_content = ERROR_EMAIL_HTML_TEMPLATE.render(
                 level=record.levelname,
                 logger=record.name,
@@ -327,15 +278,13 @@ class AdminEmailHandler(logging.Handler):
             )
 
             subject = f"[{record.levelname}] Error in {record.name}: {record.getMessage()[:50]}..."
-
             email_message = EmailMessage(
                 subject=subject,
-                body_text="\n".join(text_parts),  # Fallback plain text version
-                body_html=html_content,  # HTML version
+                body_text=record.getMessage(),
+                body_html=html_content,
                 to_emails=settings.admin_emails,
             )
 
-            # Schedule the email directly using the task function to avoid asyncio issues
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 task = loop.create_task(enqueue_email(email_message))
@@ -345,7 +294,7 @@ class AdminEmailHandler(logging.Handler):
                 asyncio.run(enqueue_email(email_message))
         except Exception as e:
             logger.warning(
-                f"Not sending error email to avoid infinite recursion. Error inside AdminEmailHandler.emit was: {e}",
+                f"Error inside AdminEmailHandler.emit: {e}",
                 exc_info=True,
             )
 
