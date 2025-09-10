@@ -6,7 +6,7 @@ from fastapi import status
 from httpx import AsyncClient
 from httpx_ws import WebSocketDisconnect, aconnect_ws
 
-import app.users.jwt_token as jwt_token
+from app.users import jwt_token
 from app.ws.schemas import MessageType, WebsocketMessage
 from tests.conftest import BASE_URL
 

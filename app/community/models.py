@@ -1,9 +1,13 @@
+from typing import TYPE_CHECKING
+
 from sqlalchemy import String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql.schema import ForeignKey
 
 from app.base import Base
-from app.users.models import User
+
+if TYPE_CHECKING:
+    from app.users.models import User
 
 
 class CommunityUser(Base, kw_only=True):

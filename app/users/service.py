@@ -17,8 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import app.community.service as community_service
-import app.mail as mail
-import app.users.external_auth as external_auth
+from app import mail
 from app.countries.service import CountryNotFound, get_country
 from app.education import service as education_service
 from app.education.models import EducationInfo
@@ -30,6 +29,7 @@ from app.shared.validation import (
     UsernameStr,
     phone_number_adapter,
 )
+from app.users import external_auth
 from app.users.constants import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     DELETED_EMAIL,

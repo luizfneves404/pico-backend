@@ -85,8 +85,12 @@ lint.select = [
     "PERF", # Performance rules
     "FURB", # Refurbish the codebase
     "PT", # pytest
+    "ARG", # unused args
+    "PTH", # use pathlib
+    "PL", # pylint
+    "TC", # type checking
 ]
-lint.ignore = ["E501"]
+lint.ignore = ["E501", "PLR2004", "PLW0603", "PLR0912", "PLR0913", "PLR0915"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends", "fastapi.Query", "fastapi.params.Query", "fastapi.Form", "fastapi.File"]

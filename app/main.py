@@ -17,7 +17,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.routing import Route
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-import app.arq_client as arq_client
+from app import arq_client
 from app.admin_registry import admin_views, authentication_backend, require_admin_login
 from app.community.routers import router as community_router
 from app.config import Environment, settings

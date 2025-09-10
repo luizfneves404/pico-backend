@@ -13,9 +13,9 @@ from fastapi import (
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import app.users.jwt_token as jwt_token
 import app.ws.service as ws_service
 from app.database import db_manager
+from app.users import jwt_token
 from app.users.models import User
 from app.ws.schemas import MessageType, WebsocketMessage
 

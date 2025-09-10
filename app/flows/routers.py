@@ -6,12 +6,14 @@ from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from fastapi import File as FastAPIFile
 
 import app.files.service as file_service
-import app.flows.area_service as area_service
-import app.flows.campaign_service as campaign_service
-import app.flows.exam_service as exam_service
-import app.flows.flow_service as flow_service
 from app.deps import CurrentUserAnnotated, CurrentUserDep, DBSessionAnnotated
-from app.flows import question_service
+from app.flows import (
+    area_service,
+    campaign_service,
+    exam_service,
+    flow_service,
+    question_service,
+)
 from app.flows.schemas import (
     AddQuestionsToFlowAI,
     AddQuestionsToFlowFull,
@@ -368,7 +370,6 @@ async def delete_flow(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
         ) from e
-    return None
 
 
 @flows_router.get("/user/{user_id}", response_model=PaginatedResponse[FlowInSearch])

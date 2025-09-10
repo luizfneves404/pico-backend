@@ -7,7 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import app.timezone as timezone
+from app import timezone
 from app.ws.models import UserOnlineInfo
 
 logger = logging.getLogger(__name__)

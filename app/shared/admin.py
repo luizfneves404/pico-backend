@@ -150,7 +150,7 @@ class AdminWithImport(SQLAdminAdmin):
                                         if isinstance(item, UploadFile)
                                         else item
                                     )
-                                    for item in cast(list[Any], value)
+                                    for item in cast("list[Any]", value)
                                 ]
                     # If data is not a dict (e.g., string), leave it as is
             elif isinstance(error["data"], dict):
@@ -165,7 +165,7 @@ class AdminWithImport(SQLAdminAdmin):
                                 if isinstance(item, UploadFile)
                                 else item
                             )
-                            for item in cast(list[Any], value)
+                            for item in cast("list[Any]", value)
                         ]
             # If error["data"] is neither list nor dict (e.g., string), leave it as is
 

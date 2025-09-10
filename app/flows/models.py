@@ -25,12 +25,12 @@ from app.base import (
     ASYNC_PARENT_FOREIGN_KEY_OPTIONS,
     Base,
 )
-from app.countries.models import Country
-from app.files.models import File
 from app.flows.db_types import ContentBlockDB, ContentBlockListType, ImageBlockDB
 
 if TYPE_CHECKING:
+    from app.countries.models import Country
     from app.education.models import Course, EducationLevel
+    from app.files.models import File
     from app.users.models import User
 
 

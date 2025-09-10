@@ -29,10 +29,8 @@ from testcontainers.redis import (  # pyright: ignore[reportMissingTypeStubs]
     AsyncRedisContainer,
 )
 
-import app.arq_client as arq_client
-import app.mail as mail
-import app.users.jwt_token as jwt_token
 from alembic.command import upgrade
+from app import arq_client, mail
 from app.arq_worker import make_worker_settings
 from app.config import settings
 from app.countries.models import Country
@@ -43,6 +41,7 @@ from app.firebase_config import init_firebase
 from app.logging_config import get_logging_config
 from app.main import fastapi_app
 from app.redis_client import get_redis, use_redis
+from app.users import jwt_token
 from app.users.models import User
 from app.ws.routers import get_db_session_websocket
 from tests.db_utils import alembic_config_from_url, tmp_database

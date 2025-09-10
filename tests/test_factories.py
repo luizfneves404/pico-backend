@@ -1,10 +1,11 @@
-from sqlalchemy.ext.asyncio import AsyncSession
+import pytest
 
 from app.users.models import User
 from app.users.service import verify_password
 
 
-async def test_create_user(session: AsyncSession, user: User) -> None:
+@pytest.mark.usefixtures("session")
+async def test_create_user(user: User) -> None:
     """Test creating a user with the factory."""
     # Verify the user was created with default values
     assert user.username.startswith("user")

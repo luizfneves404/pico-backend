@@ -24,7 +24,7 @@ from faker import Faker
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_scoped_session
 
-import app.database as database
+from app import database
 from app.base import Base
 from app.community.models import Community
 from app.countries.models import Country

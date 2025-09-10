@@ -15,8 +15,7 @@ from arq.cron import CronJob, cron
 from arq.typing import SecondsTimedelta, StartupShutdown, WorkerCoroutine
 from arq.worker import Function
 
-import app.arq_client as arq_client
-import app.redis_client as redis_client
+from app import arq_client, redis_client
 from app.config import settings
 from app.database import SessionFactory, db_manager
 from app.education.tasks import (

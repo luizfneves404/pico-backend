@@ -4,6 +4,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import jwt
+import pytest
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from geoalchemy2.functions import ST_AsText
 from httpx import AsyncClient
@@ -2027,10 +2028,10 @@ class TestUserRankingAPI:
             if education["stage_id"] is not None:
                 assert isinstance(education["stage_id"], int)
 
+    @pytest.mark.usefixtures("user")
     async def test_get_user_ranking_multiple_filters_combined(
         self,
         user_client: AsyncClient,
-        user: User,
         session: AsyncSession,
         education_level: EducationLevel,
     ):

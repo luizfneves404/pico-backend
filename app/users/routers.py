@@ -6,7 +6,6 @@ from fastapi.requests import Request
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
 
-import app.users.jwt_token as jwt_token
 import app.ws.service as ws_service
 from app.deps import CurrentUserAnnotated, CurrentUserDep, DBSessionAnnotated
 from app.pagination import (
@@ -17,7 +16,7 @@ from app.pagination import (
 )
 from app.shared.validation import PasswordStr
 from app.templating import templates
-from app.users import service
+from app.users import jwt_token, service
 from app.users.jwt_token import TokenError
 from app.users.schemas import (
     AppleAuthRequest,

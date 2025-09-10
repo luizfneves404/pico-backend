@@ -51,7 +51,7 @@ class Base(MappedAsDataclass, DeclarativeBase, kw_only=True):
     metadata = MetaData(
         naming_convention={
             "all_column_names": lambda constraint, table: "_".join(
-                [str(column.name) for column in cast(Any, constraint).columns]
+                [str(column.name) for column in cast("Any", constraint).columns]
             ),
             "ix": "ix__%(table_name)s__%(all_column_names)s",
             "uq": "uq__%(table_name)s__%(all_column_names)s",
@@ -90,13 +90,13 @@ def register_rollback_action(session: AsyncSession, action: Callable[[], None]) 
     if "rollback_actions" not in session.info:
         session.info["rollback_actions"] = []
     # Use cast to make the type checker happy
-    cast(list[Callable[[], None]], session.info["rollback_actions"]).append(action)
+    cast("list[Callable[[], None]]", session.info["rollback_actions"]).append(action)
 
 
 def handle_after_soft_rollback(
     session: AsyncSession, previous_transaction: SessionTransaction
 ) -> None:
-    actions = cast(list[Callable[[], None]], session.info.pop("rollback_actions", []))
+    actions = cast("list[Callable[[], None]]", session.info.pop("rollback_actions", []))
     for action in actions:
         try:
             action()

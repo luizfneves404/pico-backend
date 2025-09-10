@@ -14,7 +14,6 @@ from fastapi import Request
 from jinja2 import Template
 from pydantic import BaseModel
 
-import app.mail as mail
 from app.arq_client import enqueue_job
 from app.config import Environment, settings
 from app.files.storage import storage
@@ -202,7 +201,7 @@ async def send_bulk_email(
     html_string: str,
     id_zero_padding: int = 0,
 ) -> None:
-    messages: list[mail.EmailMessage] = []
+    messages: list[EmailMessage] = []
     for user in users:
         # Replace template markers with user data
         personalized_html = (
@@ -218,13 +217,13 @@ async def send_bulk_email(
             .replace("%%email%%", user.email)
         )
         messages.append(
-            mail.EmailMessage(
+            EmailMessage(
                 subject=subject,
                 body_html=personalized_html,
                 to_emails=[user.email],
             )
         )
-    await mail.enqueue_email(messages)
+    await enqueue_email(messages)
     logger.info(f"Sent bulk email to {len(users)} users")
 
 

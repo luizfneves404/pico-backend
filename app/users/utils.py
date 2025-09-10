@@ -1,6 +1,6 @@
 import datetime
 
-import app.timezone as timezone
+from app import timezone
 
 
 def get_streak_info(answer_timestamps: list[datetime.datetime]) -> tuple[bool, int]:
@@ -50,12 +50,11 @@ def get_streak_info(answer_timestamps: list[datetime.datetime]) -> tuple[bool, i
                 streak += 1
             else:
                 break
+        elif current_date == today - datetime.timedelta(
+            days=streak + 1 if not done_today else streak
+        ):
+            streak += 1
         else:
-            if current_date == today - datetime.timedelta(
-                days=streak + 1 if not done_today else streak
-            ):
-                streak += 1
-            else:
-                break
+            break
 
     return done_today, streak
