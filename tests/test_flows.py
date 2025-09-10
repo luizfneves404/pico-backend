@@ -3,6 +3,7 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,7 @@ from tests.factories import (
     FlowFactory,
     FlowQuestionFactory,
     OfficialQuestionSourceFactory,
+    QuestionAreaFactory,
     UserFactory,
 )
 
@@ -828,8 +830,9 @@ async def test_submit_flow_question_answer_question_not_in_flow(
     assert "Flow element not found" in response.json()["detail"]
 
 
+@pytest.mark.usefixtures("user", "session")
 async def test_submit_flow_question_answer_nonexistent_flow(
-    user_client: AsyncClient, session: AsyncSession, user: User
+    user_client: AsyncClient,
 ):
     """Test submitting an answer to a non-existent flow returns 404"""
     answer_data = {
@@ -1490,9 +1493,8 @@ async def test_community_feed_empty_community(
     assert response_data["items"] == []
 
 
-async def test_community_feed_nonexistent_community(
-    user_client: AsyncClient, session: AsyncSession, user: User
-):
+@pytest.mark.usefixtures("session", "user")
+async def test_community_feed_nonexistent_community(user_client: AsyncClient):
     """Test community feed with non-existent community ID"""
     # Try to get feed for non-existent community
     response = await user_client.get("/api/flows/community-feed/99999")
@@ -1503,8 +1505,10 @@ async def test_community_feed_nonexistent_community(
     assert response_data["items"] == []
 
 
+@pytest.mark.usefixtures("user")
 async def test_community_feed_user_not_in_community(
-    user_client: AsyncClient, session: AsyncSession, user: User
+    user_client: AsyncClient,
+    session: AsyncSession,
 ):
     """Test that community feed works even if requesting user is not in the community"""
 
@@ -1755,8 +1759,6 @@ async def test_list_exams_empty_result(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
     """Test listing exams when no exams match user's education info"""
-    from tests.factories import CountryFactory, EducationLevelFactory, ExamFactory
-
     # Ensure user has education info
     assert user.current_education is not None
     assert user.current_education.level is not None
@@ -1795,8 +1797,6 @@ async def test_list_exams_empty_result(
 async def test_list_areas(user_client: AsyncClient, session: AsyncSession, user: User):
     """Test listing question areas filters by user's country, education level, and
     course"""
-    from tests.factories import QuestionAreaFactory
-
     # Ensure user has education info
     assert user.current_education is not None
     assert user.current_education.level is not None
@@ -1822,7 +1822,6 @@ async def test_list_areas(user_client: AsyncClient, session: AsyncSession, user:
         )
 
         # Create area that doesn't match the user's country
-        from tests.factories import CountryFactory
 
         other_country = await CountryFactory.create(session=session)
         await QuestionAreaFactory.create(
@@ -1834,7 +1833,6 @@ async def test_list_areas(user_client: AsyncClient, session: AsyncSession, user:
         )
 
         # Create area that doesn't match the user's education level
-        from tests.factories import EducationLevelFactory
 
         other_level = await EducationLevelFactory.create(session=session)
         await QuestionAreaFactory.create(
@@ -1869,12 +1867,6 @@ async def test_list_areas_empty_result(
     user_client: AsyncClient, session: AsyncSession, user: User
 ):
     """Test listing question areas when no areas match user's education info"""
-    from tests.factories import (
-        CountryFactory,
-        EducationLevelFactory,
-        QuestionAreaFactory,
-    )
-
     # Ensure user has education info
     assert user.current_education is not None
     assert user.current_education.level is not None

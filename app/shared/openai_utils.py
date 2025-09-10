@@ -2,21 +2,16 @@ import copy
 import logging
 from collections.abc import Generator
 from typing import (
+    TYPE_CHECKING,
     Literal,
-    TypeVar,
     cast,
     overload,
 )
 
 import tiktoken
-from openai.types.chat import (
-    ChatCompletionMessageParam,
-)
 from openai.types.responses import (
     ResponseInputParam,
 )
-from openai.types.shared_params.reasoning import Reasoning
-from pydantic import BaseModel
 
 from app.shared.openai_service import openai_service
 
@@ -24,27 +19,17 @@ from .constants import (
     SYSTEM_MESSAGE_GENERATE_TRANSCRIPTION_FROM_IMAGE,
 )
 
+if TYPE_CHECKING:
+    from openai.types.chat import (
+        ChatCompletionMessageParam,
+    )
+
 EMBEDDING_MODEL = "text-embedding-3-large"
 NUMBER_OF_EMBEDDING_DIMENSIONS = 1024
 MAX_CHARS_FOR_EMBEDDING_MODEL = 500000
 EMBEDDING_BATCH_SIZE = 2048
-JSONIFY_INFO_MODEL = "gpt-4o-mini"
-JSONIFY_INFO_SYSTEM_MESSAGE = "Extraia a informação '{info}' do texto a seguir e "
-"responda com um JSON contendo a chave '{json_key}' com o valor correspondente. "
-"Se não houver {info}, ou por outro motivo não faça sentido extraí-la, "
-"responda com o valor null para a chave."
-DELATEXIFY_MODEL = "gpt-4o-mini"
-
-# Models that support reasoning_effort parameter
-REASONING_EFFORT_MODELS = ["o3-mini", "o3", "o4-mini", "gpt-5-mini", "gpt-5"]
 
 logger = logging.getLogger(__name__)
-
-ModelT = TypeVar("ModelT", bound=BaseModel)
-
-FEEDBACK_MODEL = "gpt-4o"
-
-FEEDBACK_TIMEOUT = 90
 
 # i wanted to use Pydantic AI (which has a testmodel implementation),
 # but it does not support embeddings yet, so i built this to mock the real client
@@ -103,7 +88,7 @@ async def transcribe_image(image_url: str) -> str:
             ],
         },
     ]
-    input_param: ResponseInputParam = cast(ResponseInputParam, messages)
+    input_param: ResponseInputParam = cast("ResponseInputParam", messages)
     result = await openai_service.text(
         model="gpt-5-nano",
         input=input_param,
@@ -158,28 +143,27 @@ async def compute_embedding(text: str | list[str]) -> list[float] | list[list[fl
             total.extend(response)
         logger.debug("Successfully computed embeddings for text list")
         return total
-    else:
-        logger.info(
-            "Async computing embedding for single text with model=%s. "
-            "The first 100 characters of the text are: %s",
-            EMBEDDING_MODEL,
-            text[:100],
-        )
-        validate_input(text)
-        result = await openai_service.embed(
-            model=EMBEDDING_MODEL,
-            input=text,
-            dimensions=NUMBER_OF_EMBEDDING_DIMENSIONS,
-        )
-        logger.debug("Successfully computed embedding for single text")
-        return result
+    logger.info(
+        "Async computing embedding for single text with model=%s. "
+        "The first 100 characters of the text are: %s",
+        EMBEDDING_MODEL,
+        text[:100],
+    )
+    validate_input(text)
+    result = await openai_service.embed(
+        model=EMBEDDING_MODEL,
+        input=text,
+        dimensions=NUMBER_OF_EMBEDDING_DIMENSIONS,
+    )
+    logger.debug("Successfully computed embedding for single text")
+    return result
 
 
 def validate_input(input_item: str):
     num_chars = len(input_item)
     if num_chars > MAX_CHARS_FOR_EMBEDDING_MODEL:
         raise ValueError(
-            f"Input text exceeds the max token limit of {MAX_CHARS_FOR_EMBEDDING_MODEL}"
+            f"Input text exceeds the max chars limit of {MAX_CHARS_FOR_EMBEDDING_MODEL}"
         )
 
 
@@ -246,40 +230,9 @@ async def generate_image(
     quality: Literal["low", "medium", "high", "auto"] = "low",
     image_format: Literal["png", "jpeg", "webp"] = "jpeg",
 ) -> str:
-    result = await openai_service.generate_image(
+    return await openai_service.generate_image(
         prompt=prompt,
         size=size,
         quality=quality,
         image_format=image_format,
-    )
-    return result
-
-
-async def get_completion(
-    model: str,
-    input: ResponseInputParam,  # noqa: A002
-    reasoning: Reasoning | None = None,
-    temperature: float | None = None,
-) -> str:
-    return await openai_service.text(
-        model=model,
-        temperature=temperature,
-        input=input,
-        reasoning=reasoning,
-    )
-
-
-async def get_completion_parsed(  # noqa: UP047
-    model: str,
-    input: ResponseInputParam,  # noqa: A002
-    response_format: type[ModelT],
-    reasoning: Reasoning | None = None,
-    temperature: float | None = None,
-) -> ModelT:
-    return await openai_service.structured(
-        model=model,
-        input=input,
-        reasoning=reasoning,
-        temperature=temperature,
-        response_model=response_format,
     )

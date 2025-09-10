@@ -95,19 +95,3 @@ WELCOME_EMAIL_MESSAGE = """
 </body>
 </html>
 """
-
-SYSTEM_MESSAGE_GENERATE_TRANSCRIPTION_FROM_IMAGE = """Você recebeu a tarefa de transcrever o conteúdo acadêmico presente em uma imagem de um caderno ou material escolar.
-
-Regras importantes:
-1. Transcreva TODO o conteúdo acadêmico de forma clara e completa
-2. Ignore informações pessoais, rabiscos ou anotações não relacionadas
-3. Não mencione a imagem ou faça referência a ela
-4. Não adicione comentários ou observações próprias
-
-Forneça apenas o conteúdo acadêmico transcrito."""
-
-SYSTEM_MESSAGE_DELATEXIFY = """Você recebeu a tarefa de transformar um texto em LaTeX.
-Você deve substituir todas as expressões LaTeX por uma versão que pode ser renderizada como texto comum, usando símbolos e palavras.
-Para operações matemáticas, priorize símbolos simples no lugar de palavras ao indicar operações, como em: "5 . 5" em vez de "5 vezes 5".
-Se não houver LaTeX na mensagem, você deve devolver apenas a mensagem original INALTERADA.
-"""

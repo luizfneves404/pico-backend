@@ -7,6 +7,7 @@ This file contains tests for the education API endpoints:
 - Courses
 """
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,8 +16,9 @@ from app.education.models import EducationLevel
 from app.education.service import create_course, create_institution
 
 
+@pytest.mark.usefixtures("session")
 async def test_list_levels(
-    client: AsyncClient, session: AsyncSession, education_level: EducationLevel
+    client: AsyncClient, education_level: EducationLevel
 ) -> None:
     """Test listing education levels."""
     response = await client.get("/api/education/levels")
@@ -29,10 +31,9 @@ async def test_list_levels(
     assert education_level.name_i18n in level_names
 
 
+@pytest.mark.usefixtures("session", "education_level")
 async def test_list_levels_with_country_filter(
     client: AsyncClient,
-    session: AsyncSession,
-    education_level: EducationLevel,
     country: Country,
 ) -> None:
     """Test listing education levels with country filter."""

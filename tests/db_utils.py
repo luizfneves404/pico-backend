@@ -1,5 +1,4 @@
 import contextlib
-import os
 import uuid
 from argparse import Namespace
 from collections.abc import AsyncIterator
@@ -158,7 +157,7 @@ async def drop_database_async(url: str) -> None:
 
     if dialect_name == "sqlite" and database != ":memory:":
         if database:
-            os.remove(database)
+            Path(database).unlink()
     elif dialect_name == "postgresql":
         async with engine.begin() as conn:
             # Disconnect all users from the database we are dropping.

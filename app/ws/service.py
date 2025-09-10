@@ -112,12 +112,10 @@ async def get_online_info(
     }
 
     # Fill in missing users (i.e., users never logged in)
-    full_info = {
+    return {
         user_id: partial_info.get(
             user_id,
             OnlineInfo(id=user_id, is_online=False, last_online=None),
         )
         for user_id in user_ids
     }
-
-    return full_info

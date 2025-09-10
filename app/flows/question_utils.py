@@ -10,16 +10,13 @@ import operator
 from collections import Counter
 from typing import Any
 
-from openai.types.responses import (
-    ResponseInputMessageContentListParam,
-    ResponseInputParam,
-)
 from pydantic import BaseModel
 from sqlalchemy import Text, func, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+import app.flows.prompts as flow_prompts
 from app.database import get_db_session_for_worker
 from app.files.models import File
 from app.flows.db_types import (
@@ -32,6 +29,7 @@ from app.flows.models import (
     ENEM_AREAS,
     Exam,
     Flow,
+    FlowQuestion,
     OfficialQuestionSource,
     Question,
     QuestionSourceType,
@@ -65,97 +63,6 @@ class AnswerGeneration(BaseModel):
     """Response model for answer generation."""
 
     answer_text: str
-
-
-# System messages adapted from original utils.py
-SYSTEM_MESSAGE_MINOR_TAGS = """
-Você é um especialista em gerar tags de conteúdo para questões de vestibular.
-Você receberá o enunciado e as alternativas de uma questão específica e deverá gerar tags que identifiquem os tópicos centrais específicos abordados.
-Instruções
-•	Analise cuidadosamente enunciado e alternativas; não invente temas não sustentados pelo texto.
-•	Escolha de 1 a 3 tags que melhor representem os tópicos centrais (evite temas periféricos).
-•	Seja específico (prefira "Porcentagem", "Citologia", "Leitura de gráfico" a termos muito amplos como "Matemática", "Biologia", "Interpretação").
-•	Evite redundância: não repita tags nem use sinônimos muito próximos na mesma resposta.
-•	Use termos curtos e canônicos (1-3 palavras por tag)
-•	Idioma das tags: produza-as no mesmo idioma do enunciado da questão.
-•	Se o insumo estiver incompleto, assuma o mínimo necessário e escolha a(s) tag(s) mais geral(is) possível(is) que ainda representem o conteúdo; não invente detalhes.
-
-Formato de resposta obrigatório
-•	Retorne APENAS as tags separadas por vírgula (ex.: Tag1, Tag2, Tag3).
-•	De 1 a 3 tags por questão.
-•	Sem pontuação adicional, aspas, explicações ou qualquer texto extra.
-"""
-
-SYSTEM_MESSAGE_MAJOR_TAG = """
-Você é um professor especializado em vestibulares e deve classificar a matéria da questão recebida.
-A mensagem incluirá:
-•	Enunciado
-•	Texto extraído (opcional, pode estar em branco)
-•	Quatro ou cinco alternativas, com indicações se são corretas ou incorretas
-
-Tarefa:
-•	Com base nessas informações, determine em qual matéria a questão se enquadra, considerando as competências centrais necessárias para resolvê-la (conceitos, métodos, habilidades).
-•	Escolha apenas uma matéria dentre a lista fornecida em {subjects}.
-•	Se a questão for interdisciplinar, selecione a matéria predominante (a que mais dirige a resolução).
-•	Se houver matérias semelhantes na lista, escolha a opção exatamente como aparece na lista (mesma grafia e acentuação).
-
-Formato de resposta obrigatório:
-•	Responda apenas com o nome da matéria escolhido exatamente como ele aparece na lista.
-•	Sem aspas, sem comentários, sem linhas extras, sem espaços antes/depois.
-Matérias disponíveis:
-{subjects}
-"""
-
-SYSTEM_MESSAGE_IS_QUANTITATIVE = """
-Você é um assistente que classifica questões de vestibular quanto à necessidade de usar papel para a resolução.
-Objetivo Decidir se a questão PRECISA DE PAPEL PARA SER RESOLVIDA por um candidato típico do ensino médio, sem calculadora.
-
-Como decidir (considere o caminho correto mais simples disponível): PRECISA DE PAPEL (true) quando houver pelo menos um dos seguintes:
-•	Cálculos aritméticos de múltiplas etapas ou pesados (ex.: multiplicações/divisões com 3+ dígitos; somas de várias frações com denominadores distintos; potências/raízes não triviais; sistemas de equações; equações quadráticas não fatoráveis de imediato; probabilidades com várias combinações).
-•	Manipulação algébrica, geométrica ou trigonométrica extensa (várias transformações, isolamentos, substituições ou identidades).
-•	Necessidade de construir desenhos, gráficos, esquemas ou tabelas auxiliares para organizar casos/valores (árvores de probabilidade, diagramas auxiliares, esboços geométricos, tabelas).
-•	Conferência de alternativas que exige contas extensas em mais de uma opção.
-•	Extração de dados de gráficos/tabelas que demande cálculos precisos ou interpolação não trivial.
-NÃO PRECISA DE PAPEL (false) quando:
-•	A questão é conceitual/teórica ou de definição/identificação direta.
-•	Exige apenas contas mentais curtas e estáveis (somas/subtrações simples; multiplicações pequenas; percentuais imediatos; comparação de ordens de grandeza; estimativas rápidas, Bhaskara resolvível com números inteiros e método de soma e produto).
-•	É de interpretação de texto e/ou leitura de gráficos/figuras já fornecidos sem cálculos não triviais.
-•	A eliminação/validação das alternativas pode ser feita por raciocínio qualitativo ou por uma única verificação numérica simples.
-Regras gerais
-•	Considere um estudante médio, sem calculadora ou ferramentas externas.
-•	Baseie-se unicamente no enunciado fornecido; não invente dados, métodos ou passos não indicados/necessários.
-•	Se houver mais de uma abordagem, adote a solução correta mentalmente mais viável; não imponha métodos mais difíceis do que o necessário.
-•	Não mencione, cite ou reproduza o enunciado ou qualquer fonte interna; use-o apenas como base.
-Saída: Responda APENAS "true" se precisa de papel ou "false" caso contrário. Não inclua explicações ou comentários adicionais. Uma única palavra em minúsculas, em linha única.
-"""
-
-SYSTEM_MESSAGE_GENERATE_ANSWER = """
-
-Você é um professor especializado na correção de vestibulares e deve escrever resoluções comentadas das questões enviadas para você.
-
-A entrada sempre conterá:
-•	Um enunciado.
-•	Opcionalmente, uma ou mais imagens que complementam o enunciado.
-•	Quatro ou cinco alternativas, cada uma com indicação se é correta ou incorreta.
-
-Sua tarefa é produzir uma explicação direta e concisa que:
-•	Justifique por que a alternativa marcada como correta está correta.
-•	Explique por que cada alternativa marcada como incorreta está errada, comentando individualmente cada uma e apontando o erro específico (conceito equivocado, dado contraditório, condição ausente, interpretação inválida etc.).
-
-Diretrizes:
-•	Utilize as informações do enunciado e da imagem; não invente fatos.
-•	Se houver imagem, integre as evidências relevantes mencionadas na descrição para sustentar a análise, sem copiar a descrição literalmente.
-•	Utilize conteúdo a nível de ensino médio e faculdade para justificar as respostas, considerando o que é sabido acerca dos temas abordados na questão.
-•	Siga rigorosamente as indicações de correta/incorreta fornecidas; não altere o gabarito. Se houver inconsistência clara entre o enunciado e as marcações, sinalize brevemente e adote a interpretação mais plausível.
-•	Seja específico: aponte trechos, ideias ou condições nas alternativas que justificam o acerto/erro; evite generalidades.
-•	Mantenha objetividade: em geral, 1 parágrafo para a correta e 1-2 frases para cada incorreta, detalhando mais apenas quando necessário.
-•	Em questões com cálculo, apresente o raciocínio essencial (fórmulas e passos mínimos) sem usar Latex, declare unidades e critérios de arredondamento quando aplicáveis, evitando derivações longas.
-•	Se algum dado indispensável estiver ausente, explicite a suposição mínima necessária, sem inventar informações não suportadas.
-
-Estrutura sugerida da resposta:
-•	Correta(s): explique por que está(ão) correta(s).
-•	Incorretas: comente cada alternativa incorreta separadamente (A, B, C, D, E), mantendo as letras originais.
-"""
 
 
 async def categorize_minor_tags(
@@ -244,55 +151,18 @@ async def generate_answer(
     # Get question image URLs
     image_urls = await get_question_image_urls(db_session, question)
 
-    # Simple message - let the model use its full reasoning
-    user_message = f"""
-{question_text}
-
-Alternativa correta: {correct_choice_letter}
-"""
-
-    # Build messages with images if available
-    if image_urls:
-        user_content: ResponseInputMessageContentListParam = [
-            {"type": "input_text", "text": user_message}
-        ]
-        user_content.extend(
-            [
-                {
-                    "type": "input_image",
-                    "image_url": image_url,
-                    "detail": "high",
-                }
-                for image_url in image_urls
-            ]
-        )
-
-        messages: ResponseInputParam = [
-            {"role": "system", "content": SYSTEM_MESSAGE_GENERATE_ANSWER},
-            {"role": "user", "content": user_content},
-        ]
-    else:
-        messages: ResponseInputParam = [
-            {"role": "system", "content": SYSTEM_MESSAGE_GENERATE_ANSWER},
-            {"role": "user", "content": user_message},
-        ]
-
-    # Use gpt-5 model with reasoning effort for better quality
-    response = await openai_utils.get_completion(
-        model="gpt-5",
-        temperature=None,
-        input=messages,
-        reasoning={"effort": "high"},
+    response = await flow_prompts.GenerateAnswer().text(
+        question_text_with_choices=question_text,
+        correct_choice_letter=correct_choice_letter,
+        image_urls=image_urls,
     )
 
     # Use the complete response as the answer (simplified approach)
     content = response.strip()
 
-    result = AnswerGeneration(
+    return AnswerGeneration(
         answer_text=content,
     )
-
-    return result
 
 
 async def is_quantitative(
@@ -312,38 +182,9 @@ async def is_quantitative(
     if image_urls is None:
         image_urls = []
 
-    # Build messages with images if available
-    if image_urls:
-        user_content: ResponseInputMessageContentListParam = [
-            {"type": "input_text", "text": question_text_with_choices}
-        ]
-        user_content.extend(
-            [
-                {
-                    "type": "input_image",
-                    "image_url": image_url,
-                    "detail": "high",
-                }
-                for image_url in image_urls
-            ]
-        )
-
-        messages: ResponseInputParam = [
-            {"role": "system", "content": SYSTEM_MESSAGE_IS_QUANTITATIVE},
-            {"role": "user", "content": user_content},
-        ]
-    else:
-        messages: ResponseInputParam = [
-            {"role": "system", "content": SYSTEM_MESSAGE_IS_QUANTITATIVE},
-            {"role": "user", "content": question_text_with_choices},
-        ]
-
-    # Use gpt-5 with high reasoning effort
-    response = await openai_utils.get_completion(
-        model="gpt-5",
-        temperature=None,
-        input=messages,
-        reasoning={"effort": "high"},
+    response = await flow_prompts.IsQuantitative().text(
+        question_text_with_choices=question_text_with_choices,
+        image_urls=image_urls,
     )
 
     # Parse the simple true/false response
@@ -447,43 +288,13 @@ async def _classify_question_subject(
     """
     image_urls = image_urls or []
 
-    user_message = f"""
-Texto extraído: 
-
-{question_text_with_choices}
-"""
-
-    def build_messages(system_message: str) -> ResponseInputParam:
-        """Helper to build messages with optional images."""
-        if image_urls:
-            user_content: ResponseInputMessageContentListParam = [
-                {"type": "input_text", "text": user_message}
-            ]
-            for image_url in image_urls:
-                user_content.append(
-                    {"type": "input_image", "image_url": image_url, "detail": "low"}
-                )
-            return [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_content},
-            ]
-        else:
-            return [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message},
-            ]
-
     try:
         # First pass: try area by area
         for subjects in ENEM_AREAS.values():
-            system_message = SYSTEM_MESSAGE_MAJOR_TAG.format(
-                subjects="\n".join(subjects)
-            )
-
-            response = await openai_utils.get_completion(
-                model="gpt-5-mini",
-                input=build_messages(system_message),
-                reasoning={"effort": "medium"},
+            response = await flow_prompts.ClassifyQuestionSubject().text(
+                subjects=subjects,
+                question_text_with_choices=question_text_with_choices,
+                image_urls=image_urls,
             )
 
             response_text = response.strip()
@@ -492,25 +303,21 @@ Texto extraído:
 
         # Fallback: try all subjects at once
         all_subjects = functools.reduce(operator.iadd, ENEM_AREAS.values(), [])
-        system_message = SYSTEM_MESSAGE_MAJOR_TAG.format(
-            subjects="\n".join(all_subjects)
-        )
 
-        response = await openai_utils.get_completion(
-            model="gpt-5-mini",
-            input=build_messages(system_message),
-            reasoning={"effort": "medium"},
+        response = await flow_prompts.ClassifyQuestionSubject().text(
+            subjects=all_subjects,
+            question_text_with_choices=question_text_with_choices,
+            image_urls=image_urls,
         )
 
         response_text = response.strip()
         if response_text in all_subjects:
             return response_text
 
-        # Final fallback
+    except Exception:
+        logger.exception("Error classifying question subject")
         return "Conhecimentos Gerais"
-
-    except Exception as e:
-        logger.error(f"Error classifying question subject: {e!s}")
+    else:
         return "Conhecimentos Gerais"
 
 
@@ -523,40 +330,9 @@ async def _generate_minor_tags(
         image_urls = []
 
     try:
-        system_message = SYSTEM_MESSAGE_MINOR_TAGS
-
-        user_message = f"""
-Questão completa:
-{question_text_with_choices}
-
-Analise a questão e identifique as tags mais apropriadas.
-"""
-
-        # Build message content with images if available
-        messages: ResponseInputParam = [{"role": "system", "content": system_message}]
-
-        if image_urls:
-            user_content: ResponseInputMessageContentListParam = [
-                {"type": "input_text", "text": user_message}
-            ]
-            for image_url in image_urls:
-                user_content.append(
-                    {
-                        "type": "input_image",
-                        "image_url": image_url,
-                        "detail": "low",
-                    }
-                )
-
-            messages.append({"role": "user", "content": user_content})
-        else:
-            messages.append({"role": "user", "content": user_message})
-
-        response = await openai_utils.get_completion(
-            model="gpt-5-mini",
-            temperature=None,
-            input=messages,
-            reasoning={"effort": "medium"},
+        response = await flow_prompts.GenerateMinorTagsFromQuestion().text(
+            question_text_with_choices=question_text_with_choices,
+            image_urls=image_urls,
         )
 
         # Parse the response to extract tags
@@ -566,13 +342,13 @@ Analise a questão e identifique as tags mais apropriadas.
         if "," in content:
             tags = [tag.strip() for tag in content.split(",")]
             return tags[:5]  # Max 5 minor tags
-        else:
-            # Single tag response
-            return [content] if content else []
+        # Single tag response
 
-    except Exception as e:
-        logger.error(f"Error generating minor tags: {e!s}")
+    except Exception:
+        logger.exception("Error generating minor tags")
         return []
+    else:
+        return [content] if content else []
 
 
 # =============================================================================
@@ -624,8 +400,8 @@ async def task_categorize_minor_tags(
                     f"Categorized question {question.id} with tags: {categorization.minor_tags}"
                 )
 
-            except Exception as e:
-                logger.error(f"Error categorizing question {question.id}: {e!s}")
+            except Exception:
+                logger.exception(f"Error categorizing question {question.id}")
                 continue
 
         logger.info(
@@ -677,8 +453,8 @@ async def task_categorize_major_tags(
                     f"Classified question {question.id} with major tag: {categorization.major_tag}"
                 )
 
-            except Exception as e:
-                logger.error(f"Error classifying question {question.id}: {e!s}")
+            except Exception:
+                logger.exception(f"Error classifying question {question.id}")
                 continue
 
         logger.info(
@@ -750,10 +526,8 @@ async def task_generate_question_answers(
 
                 logger.info(f"Generated answer for question {question.id}")
 
-            except Exception as e:
-                logger.error(
-                    f"Error generating answer for question {question.id}: {e!s}"
-                )
+            except Exception:
+                logger.exception(f"Error generating answer for question {question.id}")
                 continue
 
         logger.info(f"Completed answer generation for {len(questions)} questions")
@@ -816,8 +590,8 @@ async def task_analyze_question_quantitativeness(
                     f"Analyzed question {question.id}: requires_paper={analysis.requires_paper}"
                 )
 
-            except Exception as e:
-                logger.error(f"Error analyzing question {question.id}: {e!s}")
+            except Exception:
+                logger.exception(f"Error analyzing question {question.id}")
                 continue
 
         logger.info(f"Completed quantitative analysis for {len(questions)} questions")
@@ -1080,8 +854,8 @@ async def task_categorize_questions(
                     f"Categorized question {question.id}: major={major_tag}, minor={minor_tags}"
                 )
 
-            except Exception as e:
-                logger.error(f"Error categorizing question {question.id}: {e!s}")
+            except Exception:
+                logger.exception(f"Error categorizing question {question.id}")
                 continue
 
         logger.info(f"Categorized {categorized_count} questions")
@@ -1102,9 +876,6 @@ async def task_consolidate_flow_tags(
         if not flow:
             logger.error(f"Flow {flow_id} not found")
             return
-
-        # Get all questions in the flow
-        from app.flows.models import FlowQuestion
 
         stmt = (
             select(Question)

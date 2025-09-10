@@ -72,7 +72,6 @@ class TestCreateUserByPassword:
     async def test_create_user_with_referral(
         self,
         session: AsyncSession,
-        dummy_ses_client: DummySESClient,
         arq_worker: Worker,
     ) -> None:
         """Test user creation with valid referral."""
@@ -188,10 +187,10 @@ class TestCreateUserByPassword:
             ("José-António", "joseantonio"),  # Hyphen removed, accents removed
         ],
     )
+    @pytest.mark.usefixtures("dummy_ses_client")
     async def test_username_normalization(
         self,
         session: AsyncSession,
-        dummy_ses_client: DummySESClient,
         arq_worker: Worker,
         name: str,
         expected_username_base: str,
@@ -219,10 +218,10 @@ class TestCreateUserByPassword:
         expected_pattern = rf"^{re.escape(expected_username_base)}\d{{4}}$"
         assert re.match(expected_pattern, user.username)
 
+    @pytest.mark.usefixtures("dummy_ses_client")
     async def test_create_user_different_signup_sources(
         self,
         session: AsyncSession,
-        dummy_ses_client: DummySESClient,
         arq_worker: Worker,
     ) -> None:
         """Test user creation with different signup sources."""
@@ -258,10 +257,10 @@ class TestCreateUserByPassword:
         # Process email queue for all users
         await arq_worker.async_run()
 
+    @pytest.mark.usefixtures("dummy_ses_client")
     async def test_create_user_database_persistence(
         self,
         session: AsyncSession,
-        dummy_ses_client: DummySESClient,
         arq_worker: Worker,
     ) -> None:
         """Test that created user persists in database correctly."""
@@ -330,10 +329,10 @@ class TestCreateUserByPassword:
         email_body = sent_email["Message"]["Body"]["Html"]["Data"]  # type: ignore
         assert user.username in email_body
 
+    @pytest.mark.usefixtures("dummy_ses_client")
     async def test_create_user_referrals_refresh(
         self,
         session: AsyncSession,
-        dummy_ses_client: DummySESClient,
         arq_worker: Worker,
     ) -> None:
         """Test that user referrals are properly refreshed after creation."""
@@ -360,10 +359,10 @@ class TestCreateUserByPassword:
         assert user.referrals is not None
         assert len(user.referrals) == 0
 
+    @pytest.mark.usefixtures("dummy_ses_client")
     async def test_create_user_default_values(
         self,
         session: AsyncSession,
-        dummy_ses_client: DummySESClient,
         arq_worker: Worker,
     ) -> None:
         """Test that users are created with correct default values."""

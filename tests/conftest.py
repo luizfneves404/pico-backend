@@ -69,7 +69,7 @@ def pytest_configure():
 
 
 def pytest_exception_interact(
-    node: pytest.Item | pytest.Collector,
+    node: pytest.Item | pytest.Collector,  # noqa: ARG001
     call: pytest.CallInfo[Any],
     report: pytest.TestReport,
 ) -> None:
@@ -138,7 +138,7 @@ async def migrated_postgres_template(pg_url: str) -> AsyncGenerator[str, None]:
         alembic_config = alembic_config_from_url(tmp_url)
         upgrade(alembic_config, "head")
 
-        from app.migration_state import get_migration_task
+        from app.migration_state import get_migration_task  # noqa: PLC0415
 
         await get_migration_task()
 

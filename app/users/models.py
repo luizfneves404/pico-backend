@@ -189,14 +189,12 @@ class User(Base, kw_only=True):
         ReferredUser = aliased(User, name="referred_users")
 
         # Build the subquery with explicit FROM clause and correlation
-        referral_count = (
+        return (
             select(func.count())
             .select_from(ReferredUser)
             .where(ReferredUser.referred_by_id == cls.id)
             .scalar_subquery()
         )
-
-        return referral_count
 
     def __str__(self):
         return self.username

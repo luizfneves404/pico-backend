@@ -456,8 +456,6 @@ class TestSocialAuthentication:
         self, mock_verify_google: AsyncMock, client: AsyncClient, session: AsyncSession
     ):
         """Test Google authentication with existing user that already has Google ID."""
-        from app.users.external_auth import GoogleIdToken
-
         # Create a user with Google ID
         async with session.begin():
             existing_user = await UserFactory.create(
@@ -808,7 +806,6 @@ class TestSocialAuthentication:
         }
 
         # Mock JWT operations
-        from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 
         mock_public_key = Mock(spec=RSAPublicKey)
 
@@ -1200,8 +1197,9 @@ class TestUserRetrieval:
         assert response_data["xp_score"] == 0
         assert response_data["social_score"] == 0
 
+    @pytest.mark.usefixtures("user")
     async def test_retrieve_other_user(
-        self, user_client: AsyncClient, user: User, session: AsyncSession
+        self, user_client: AsyncClient, session: AsyncSession
     ):
         """Test retrieving other user's public information."""
         async with session.begin():
@@ -1241,7 +1239,8 @@ class TestUserRetrieval:
 class TestUserUpdates:
     """Test user update operations."""
 
-    async def test_update_basic_fields(self, user_client: AsyncClient, user: User):
+    @pytest.mark.usefixtures("user")
+    async def test_update_basic_fields(self, user_client: AsyncClient):
         """Test updating basic user fields that don't require password."""
         # Note: Currently all updates seem to require password, but testing the pattern
         data = {"updates": {"name": "new name"}, "current_password": "defaultpassword"}
@@ -1476,9 +1475,8 @@ class TestUserUpdates:
             ).scalar_one()
             assert location_wkt == "POINT(12.3456789 12.3456789)"
 
-    async def test_update_instagram_account(
-        self, user_client: AsyncClient, user: User, session: AsyncSession
-    ):
+    @pytest.mark.usefixtures("user", "session")
+    async def test_update_instagram_account(self, user_client: AsyncClient):
         """Test updating user instagram account."""
         data = {"updates": {"instagram_account": "new_instagram_account"}}
         response = await user_client.patch("/api/users/me", json=data)
@@ -1791,12 +1789,12 @@ class TestUserRankingAPI:
         assert ranking[2]["score"] == 0
         assert ranking[2]["rank"] == 3
 
+    @pytest.mark.usefixtures("education_level")
     async def test_get_user_ranking_filter_by_institution(
         self,
         user_client: AsyncClient,
         user: User,
         session: AsyncSession,
-        education_level: EducationLevel,
     ):
         """Test filtering ranking by institution."""
         async with session.begin():
@@ -1841,12 +1839,12 @@ class TestUserRankingAPI:
         assert user.id in user_ids
         assert user_inst2.id not in user_ids
 
+    @pytest.mark.usefixtures("education_level")
     async def test_get_user_ranking_filter_by_course(
         self,
         user_client: AsyncClient,
         user: User,
         session: AsyncSession,
-        education_level: EducationLevel,
     ):
         """Test filtering ranking by course."""
         async with session.begin():
@@ -1889,8 +1887,9 @@ class TestUserRankingAPI:
         assert user.id in user_ids
         assert user_math.id not in user_ids
 
+    @pytest.mark.usefixtures("user")
     async def test_get_user_ranking_filter_by_education_level(
-        self, user_client: AsyncClient, user: User, session: AsyncSession
+        self, user_client: AsyncClient, session: AsyncSession
     ):
         """Test filtering ranking by education level."""
         async with session.begin():
@@ -1973,8 +1972,9 @@ class TestUserRankingAPI:
         response = await client.get("/api/users/ranking?score_type=xp")
         assert response.status_code == 401
 
+    @pytest.mark.usefixtures("user")
     async def test_get_user_ranking_with_tied_scores(
-        self, user_client: AsyncClient, user: User, session: AsyncSession
+        self, user_client: AsyncClient, session: AsyncSession
     ):
         """Test ranking behavior with tied scores."""
         async with session.begin():
@@ -1999,8 +1999,9 @@ class TestUserRankingAPI:
         unique_user = next(r for r in ranking if r["score"] == 300)
         assert unique_user["rank"] == 2
 
+    @pytest.mark.usefixtures("session")
     async def test_get_user_ranking_response_schema(
-        self, user_client: AsyncClient, user: User, session: AsyncSession
+        self, user_client: AsyncClient, user: User
     ):
         """Test that ranking response matches expected schema."""
         response = await user_client.get("/api/users/ranking?score_type=xp")

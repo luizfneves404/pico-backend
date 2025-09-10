@@ -1,6 +1,7 @@
 import logging
 from typing import Annotated
 
+import pytest
 from fastapi import (
     APIRouter,
     Depends,
@@ -116,10 +117,10 @@ async def websocket_endpoint(
             )
 
 
+@pytest.mark.usefixtures("user")
 async def handle_websocket_message(
     websocket: WebSocket,
     message: WebsocketMessage,
-    user: User,
 ):
     """Handle a message from the websocket."""
     match message.message_type:

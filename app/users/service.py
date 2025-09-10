@@ -153,11 +153,11 @@ async def _set_education_field(
         except IntegrityError as e:
             if "level_id" in str(e.orig):
                 raise InvalidLevelIdError from e
-            elif "stage_id" in str(e.orig):
+            if "stage_id" in str(e.orig):
                 raise InvalidStageIdError from e
-            elif "institution_id" in str(e.orig):
+            if "institution_id" in str(e.orig):
                 raise InvalidInstitutionIdError from e
-            elif "course_id" in str(e.orig):
+            if "course_id" in str(e.orig):
                 raise InvalidCourseIdError from e
         await db_session.refresh(education_info)
     else:
@@ -171,11 +171,11 @@ async def _set_education_field(
         except IntegrityError as e:
             if "level_id" in str(e.orig):
                 raise InvalidLevelIdError from e
-            elif "stage_id" in str(e.orig):
+            if "stage_id" in str(e.orig):
                 raise InvalidStageIdError from e
-            elif "institution_id" in str(e.orig):
+            if "institution_id" in str(e.orig):
                 raise InvalidInstitutionIdError from e
-            elif "course_id" in str(e.orig):
+            if "course_id" in str(e.orig):
                 raise InvalidCourseIdError from e
 
     logger.info(f"User {user.id} updated their {field_name}")
@@ -270,10 +270,9 @@ async def _create_user(
         error_msg = str(e.orig)
         if "username" in error_msg:
             raise UsernameAlreadyExists from e
-        elif "email" in error_msg:
+        if "email" in error_msg:
             raise EmailAlreadyExists from e
-        else:
-            raise
+        raise
 
     if referred_by_id:
         await db_session.execute(
@@ -382,10 +381,11 @@ async def validate_username(
     try:
         username_adapter: TypeAdapter[UsernameStr] = TypeAdapter(UsernameStr)
         validated_username = username_adapter.validate_python(username)
-        user = await get_user(db_session, username=validated_username)
-        return user is None, validated_username
     except ValueError:
         return False, None
+    else:
+        user = await get_user(db_session, username=validated_username)
+        return user is None, validated_username
 
 
 async def validate_email(
@@ -394,10 +394,11 @@ async def validate_email(
     try:
         email_adapter: TypeAdapter[LowercaseEmailStr] = TypeAdapter(LowercaseEmailStr)
         validated_email = email_adapter.validate_python(email)
-        user = await get_user(db_session, email=validated_email)
-        return user is None, validated_email
     except ValueError:
         return False, None
+    else:
+        user = await get_user(db_session, email=validated_email)
+        return user is None, validated_email
 
 
 async def validate_phone_number(
@@ -405,10 +406,11 @@ async def validate_phone_number(
 ) -> tuple[bool, str | None]:
     try:
         validated_phone_number = phone_number_adapter.validate_python(phone_number)
-        user = await get_user(db_session, phone_number=validated_phone_number)
-        return user is None, validated_phone_number
     except ValidationError:
         return False, None
+    else:
+        user = await get_user(db_session, phone_number=validated_phone_number)
+        return user is None, validated_phone_number
 
 
 async def validate_user_field(
@@ -418,10 +420,11 @@ async def validate_user_field(
 ) -> tuple[bool, str | None]:
     if field_name == "username":
         return await validate_username(db_session, field_value)
-    elif field_name == "email":
+    if field_name == "email":
         return await validate_email(db_session, field_value)
-    elif field_name == "phone_number":
+    if field_name == "phone_number":
         return await validate_phone_number(db_session, field_value)
+    raise ValueError(f"Invalid field name: {field_name}")
 
 
 async def update_user_fields(
@@ -638,10 +641,9 @@ async def authenticate_user_by_google(
                 )
             )  # needs to be one query so as not to fail the constraint
             return existing_user
-        else:
-            # you're going to have to do more to convince me that this email on
-            # your google account is yours
-            raise AccountExistsError
+        # you're going to have to do more to convince me that this email on
+        # your google account is yours
+        raise AccountExistsError
 
     # there is no user with the same email nor google_id
 
@@ -700,10 +702,9 @@ async def authenticate_user_by_apple(
                 )
             )  # needs to be one query so as not to fail the constraint
             return existing_user
-        else:
-            # you're going to have to do more to convince me that
-            # this email on your apple account is yours
-            raise AccountExistsError
+        # you're going to have to do more to convince me that
+        # this email on your apple account is yours
+        raise AccountExistsError
     # Keep original logic - require name, but provide fallback for deleted users
     if name is None:
         # This is the original error case - but let's try to recover for deleted users
@@ -786,8 +787,7 @@ def _normalize_username(raw_name: str) -> str:
     no_accents = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
     no_spaces = no_accents.replace(" ", "_")
     only_alnum = re.sub(r"[^a-zA-Z0-9_]", "", no_spaces)
-    username = only_alnum.lower()
-    return username
+    return only_alnum.lower()
 
 
 async def get_user(
@@ -842,8 +842,7 @@ async def get_user(
     if exclude_sentinel:
         stmt = stmt.where(~User.username.in_(SENTINEL_USERNAMES))
 
-    user = (await db_session.scalars(stmt)).first()
-    return user
+    return (await db_session.scalars(stmt)).first()
 
 
 async def create_user_by_password(
@@ -954,8 +953,7 @@ async def to_other_user_out(
             selectinload(User.intended_education),
         )
     )
-    users = list(result.all())
-    return users
+    return list(result.all())
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -971,9 +969,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     ph = PasswordHasher()
     try:
         ph.verify(hashed_password, plain_password)
-        return True
     except VerifyMismatchError:
         return False
+    else:
+        return True
 
 
 def get_password_hash(password: str) -> str:

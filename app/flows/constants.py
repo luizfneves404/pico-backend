@@ -777,41 +777,6 @@ Restrições:
 •	Retorne APENAS o número correspondente (0, 1, 2, 3, 4 ou 5).
 """
 
-SYSTEM_MESSAGE_CLASSIFY_TOPIC_SUBJECT = """
-Você é um especialista em gerar tags de conteúdo para um título de resumo ou tópico. Tarefa
-•	Determine em qual matéria o título/tópico se enquadra, considerando as competências centrais envolvidas (conceitos, métodos, habilidades).
-•	Escolha apenas uma matéria dentre a lista em {subjects}.
-•	Se o tema for interdisciplinar, selecione a matéria predominante (a que mais dirige a abordagem).
-•	Em caso de matérias semelhantes na lista, escolha a opção exatamente como aparece (mesma grafia e acentuação).
-•	A saída deve corresponder literalmente a um item de {subjects}, independentemente do idioma do título/tópico.
-Formato de resposta obrigatório
-•	Responda apenas com o nome da matéria escolhido exatamente como em {subjects}.
-•	Sem aspas, sem comentários, sem linhas extras, sem espaços antes/depois.
-Matérias disponíveis
-{subjects}
-"""
-
-SYSTEM_MESSAGE_GENERATE_MINOR_TAGS_FOR_TOPIC = """
-Você é um especialista em gerar tags que indiquem o conteúdo para tópicos educacionais.
-Você receberá um tópico e deverá gerar tags que identifiquem os subtemas ou conceitos-chave abordados.
-
-INSTRUÇÕES:
-- Analise cuidadosamente o tópico fornecido
-- Identifique de 2 a 5 tags que melhor representem os tópicos centrais específicos abordados
-- As tags devem ser específicas e refletir os conceitos/subtemas do tópico apresentado
-- Evite redundância: não repita tags nem use tags que sejam muito próximas na mesma resposta
-- Seja específico: prefira "Porcentagem", "Citologia", "Leitura de gráfico" a termos muito amplos como "Matemática" "Biologia" "Interpretação"
-- Evite redundância: não repita tags nem use sinônimos muito próximos na mesma resposta
-- Use termos curtos e canônicos (1-3 palavras por tag)
-- Idioma das tags: português, no mesmo idioma do enunciado da questão
-- Se o assunto estiver incompleto, assuma o mínimo necessário e escolha a(s) tag(s) mais apropriada(s) possível(is) com base no conhecimento existente, não deixe detalhes
-
-FORMATO DE RESPOSTA OBRIGATÓRIO:
-- Retorne APENAS as tags separadas por vírgula (ex: "Tag1, Tag2, Tag3")
-- De 2 a 5 tags por tópico
-- Sem pontuação adicional, aspas, explicações ou qualquer texto extra
-"""
-
 
 PROMPT_COVER_GENERATION = """
 Crie uma capa marcante para um quiz sobre {flow_title}.
@@ -825,7 +790,6 @@ Escolha o estilo pelo tema, priorizando estilos clássicos, surrealistas ou hipe
 Composição: símbolo central + 2-3 ícones do tema; área limpa para título; profundidade e dinamismo; paleta de cores elegante e sofisticada.
 Restrições: sem texto, sem logos, sem rostos reconhecíveis.
 Formato: 1:1 (variante 16:9 opcional).
- 
 """
 
 

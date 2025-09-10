@@ -12,14 +12,9 @@ import logging
 import operator
 import random
 from collections import Counter
-from collections.abc import Coroutine
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from fastapi import UploadFile
-from openai.types.responses import (
-    ResponseInputMessageContentListParam,
-    ResponseInputParam,
-)
 from pylatexenc.latex2text import (
     LatexNodes2Text,
 )
@@ -32,20 +27,10 @@ from app.arq_client import enqueue_job
 from app.database import db_manager
 from app.files.models import File
 from app.files.service import create_file
+from app.flows import prompts
 from app.flows.constants import (
     PROMPT_COVER_GENERATION,
-    SYSTEM_MESSAGE_BLOCK_TITLE,
-    SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT,
-    SYSTEM_MESSAGE_CLASSIFY_TOPIC_SUBJECT,
-    SYSTEM_MESSAGE_GENERATE_MINOR_TAGS_FOR_TOPIC,
-    SYSTEM_MESSAGE_GENERATE_TITLE_FROM_TRANSCRIPTIONS,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_THEME,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_THEME_MATH,
-    SYSTEM_MESSAGE_QUESTION_PERTINENCE_TO_TOPIC,
     QuestionInstance,
-    QuestionSet,
 )
 from app.flows.db_types import RichText, TextBlock
 from app.flows.models import (
@@ -64,6 +49,13 @@ from app.flows.models import (
 )
 from app.flows.schemas import PromptType
 from app.shared import ai_utils, gemini_utils, openai_utils
+
+if TYPE_CHECKING:
+    from collections.abc import Coroutine
+
+    from openai.types.responses import (
+        ResponseInputMessageContentListParam,
+    )
 
 logger = logging.getLogger(__name__)
 TOKENS_PER_BLOCK = 300
@@ -466,18 +458,8 @@ async def check_if_titles_involve_math_calculations(block_titles: list[str]) -> 
     """
     Check if the block titles involve math calculations using openai.
     """
-    messages: ResponseInputParam = [
-        {"role": "system", "content": SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT},
-        {
-            "role": "user",
-            "content": f"Verifique se os seguintes títulos envolvem cálculos matemáticos: {block_titles}",
-        },
-    ]
-    response = await openai_utils.get_completion(
-        model="gpt-5-mini",
-        temperature=None,
-        input=messages,
-        reasoning={"effort": "medium"},
+    response = await prompts.CheckMathInvolvementFromTitlesOrTopic().text(
+        block_titles=block_titles,
     )
 
     return response.strip().upper() == "SIM"
@@ -498,18 +480,7 @@ async def generate_tags_for_topic(topic: str) -> tuple[list[str], list[str]]:
         major_tag = await _classify_topic_subject(topic)
 
         # Generate minor tags (specific topics)
-        minor_tags_response = await openai_utils.get_completion(
-            model="gpt-5-mini",
-            temperature=None,
-            input=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_MESSAGE_GENERATE_MINOR_TAGS_FOR_TOPIC,
-                },
-                {"role": "user", "content": f"Tópico: {topic}"},
-            ],
-            reasoning={"effort": "medium"},
-        )
+        minor_tags_response = await prompts.GenerateMinorTagsForTopic().text(topic)
 
         minor_tags_text = minor_tags_response.strip()
         minor_tags = [tag.strip() for tag in minor_tags_text.split(",") if tag.strip()]
@@ -529,21 +500,8 @@ async def _classify_topic_subject(topic: str) -> str:
     try:
         # Get all subjects from ENEM_AREAS
         all_subjects = functools.reduce(operator.iadd, ENEM_AREAS.values(), [])
-        system_message = SYSTEM_MESSAGE_CLASSIFY_TOPIC_SUBJECT.format(
-            subjects=chr(10).join(all_subjects)
-        )
 
-        messages: ResponseInputParam = [
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": f"Tópico: {topic}"},
-        ]
-
-        response = await openai_utils.get_completion(
-            model="gpt-5-mini",
-            temperature=None,
-            input=messages,
-            reasoning={"effort": "medium"},
-        )
+        response = await prompts.ClassifyTopicSubject().text(all_subjects, topic)
 
         response_text = response.strip()
         if response_text in all_subjects:
@@ -585,26 +543,11 @@ async def get_topic_user_generated_questions(
             f"Generated tags for flow {flow.id}: major={major_tags}, minor={minor_tags}"
         )
 
-    system_message = (
-        SYSTEM_MESSAGE_QUESTION_GENERATION_THEME_MATH
-        if requires_math
-        else SYSTEM_MESSAGE_QUESTION_GENERATION_THEME
-    )
-    user_message = f"Crie {n_questions} questões sobre: {flow.input_topic}"
-
-    if extra_instructions:
-        user_message += f"\n\nInstruções adicionais: {extra_instructions}"
-
-    messages: ResponseInputParam = [
-        {"role": "system", "content": system_message},
-        {"role": "user", "content": user_message},
-    ]
-    response = await openai_utils.get_completion_parsed(
-        model="gpt-5",
-        input=messages,
-        response_format=QuestionSet,
-        temperature=None,
-        reasoning={"effort": "medium"},
+    response = await prompts.GenerateQuestionsFromTopic().structured(
+        requires_math=requires_math,
+        n_questions=n_questions,
+        topic=flow.input_topic or "",
+        extra_instructions=extra_instructions,
     )
 
     questions_data = response
@@ -751,32 +694,12 @@ async def get_files_user_generated_questions(
             logger.warning(f"Block {block_index + 1} is empty, skipping")
             return []
 
-        system_message = (
-            SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH
-            if requires_math
-            else SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION
-        )
-        # Create user message for this specific block
-        user_message = f"Com base no seguinte conteúdo, crie {n_questions} questões:\n\n{block_text}"
-
-        if extra_instructions:
-            user_message += f"\n\nInstruções adicionais: {extra_instructions}"
-
-        messages: ResponseInputParam = [
-            {
-                "role": "system",
-                "content": system_message,
-            },
-            {"role": "user", "content": user_message},
-        ]
-
         try:
-            response = await openai_utils.get_completion_parsed(
-                model="gpt-5",
-                input=messages,
-                response_format=QuestionSet,
-                temperature=None,
-                reasoning={"effort": "medium"},
+            response = await prompts.GenerateQuestionsFromBlock().structured(
+                requires_math=requires_math,
+                block_text=block_text,
+                n_questions=n_questions,
+                extra_instructions=extra_instructions,
             )
 
             questions_data = response
@@ -818,88 +741,85 @@ async def get_files_user_generated_questions(
         if isinstance(block_questions, BaseException):
             logger.error(f"Exception in block {block_index + 1}: {block_questions}")
             continue
-        else:
-            for block_question in block_questions:
-                question_data = block_question["question_data"]
-                question_text = block_question["question_text"]
+        for block_question in block_questions:
+            question_data = block_question["question_data"]
+            question_text = block_question["question_text"]
 
-                text_block = TextBlock(
-                    block_type="text",
-                    style="paragraph",
-                    content=[
-                        RichText(
-                            text=question_text,
-                            bold=False,
-                            italic=False,
-                            underline=False,
-                            strikethrough=False,
-                            link=None,
-                        )
-                    ],
-                )
-                question = Question(
-                    is_active=False,
-                    content_blocks=[text_block],
-                    is_quantitative=requires_math,
-                    answer_type=QuestionAnswerType.MULTIPLE_CHOICE,
-                    source_type=QuestionSourceType.AI_GENERATED,
-                    source_user_id=flow.created_by_id,
-                    difficulty=QuestionDifficulty.MEDIUM,
-                    major_tags=[],
-                    minor_tags=[],
-                    answer_content_blocks=[],
-                )
-                db_session.add(question)
-                await db_session.flush()
-
-                choices: list[Choice] = []
-                correct_choice_letter = (
-                    question_data.correct_choice
-                )  # "A", "B", "C", "D"
-                correct_choice_index = ord(correct_choice_letter.upper()) - ord("A")
-
-                # Create list of choice data with correctness flags
-                class ChoiceData(TypedDict):
-                    text: str
-                    is_correct: bool
-                    original_order: int
-
-                choice_data_list: list[ChoiceData] = []
-                for choice_order, choice_text in enumerate(question_data.choices):
-                    # Apply delatexify for math subjects
-                    delatexified_choice_text = choice_text
-                    if requires_math:
-                        delatexified_choice_text = latex_to_text(choice_text)
-
-                    is_correct = choice_order == correct_choice_index
-                    choice_data_list.append(
-                        {
-                            "text": delatexified_choice_text,
-                            "is_correct": is_correct,
-                            "original_order": choice_order,
-                        }
+            text_block = TextBlock(
+                block_type="text",
+                style="paragraph",
+                content=[
+                    RichText(
+                        text=question_text,
+                        bold=False,
+                        italic=False,
+                        underline=False,
+                        strikethrough=False,
+                        link=None,
                     )
+                ],
+            )
+            question = Question(
+                is_active=False,
+                content_blocks=[text_block],
+                is_quantitative=requires_math,
+                answer_type=QuestionAnswerType.MULTIPLE_CHOICE,
+                source_type=QuestionSourceType.AI_GENERATED,
+                source_user_id=flow.created_by_id,
+                difficulty=QuestionDifficulty.MEDIUM,
+                major_tags=[],
+                minor_tags=[],
+                answer_content_blocks=[],
+            )
+            db_session.add(question)
+            await db_session.flush()
 
-                # Shuffle the choices to randomize the order
-                random.shuffle(choice_data_list)
+            choices: list[Choice] = []
+            correct_choice_letter = question_data.correct_choice  # "A", "B", "C", "D"
+            correct_choice_index = ord(correct_choice_letter.upper()) - ord("A")
 
-                for new_order, choice_data in enumerate(choice_data_list):
-                    choice = Choice(
-                        question_id=question.id,
-                        text=choice_data["text"],
-                        is_correct=choice_data["is_correct"],
-                        order=new_order,
-                    )
-                    choices.append(choice)
+            # Create list of choice data with correctness flags
+            class ChoiceData(TypedDict):
+                text: str
+                is_correct: bool
+                original_order: int
 
-                db_session.add_all(choices)
-                await db_session.flush()  # Flush to ensure choices are saved
+            choice_data_list: list[ChoiceData] = []
+            for choice_order, choice_text in enumerate(question_data.choices):
+                # Apply delatexify for math subjects
+                delatexified_choice_text = choice_text
+                if requires_math:
+                    delatexified_choice_text = latex_to_text(choice_text)
 
-                logger.info(
-                    f"Flow {flow.id}: Created {len(choices)} choices for question {question.id}"
+                is_correct = choice_order == correct_choice_index
+                choice_data_list.append(
+                    {
+                        "text": delatexified_choice_text,
+                        "is_correct": is_correct,
+                        "original_order": choice_order,
+                    }
                 )
 
-                all_questions.append(question)
+            # Shuffle the choices to randomize the order
+            random.shuffle(choice_data_list)
+
+            for new_order, choice_data in enumerate(choice_data_list):
+                choice = Choice(
+                    question_id=question.id,
+                    text=choice_data["text"],
+                    is_correct=choice_data["is_correct"],
+                    order=new_order,
+                )
+                choices.append(choice)
+
+            db_session.add_all(choices)
+            await db_session.flush()  # Flush to ensure choices are saved
+
+            logger.info(
+                f"Flow {flow.id}: Created {len(choices)} choices for question {question.id}"
+            )
+
+            all_questions.append(question)
 
         # Enqueue background task for tag generation if we have questions
     if all_questions:
@@ -1211,14 +1131,8 @@ async def add_questions_to_flow(
 async def _generate_block_title(block_text: str) -> str:
     """Generate a concise title/query for a transcription block."""
     try:
-        response = await openai_utils.get_completion(
-            model="gpt-5-mini",
-            temperature=None,
-            input=[
-                {"role": "system", "content": SYSTEM_MESSAGE_BLOCK_TITLE},
-                {"role": "user", "content": block_text},
-            ],
-            reasoning={"effort": "medium"},
+        response = await prompts.GenerateBlockTitle().text(
+            block_text=block_text,
         )
         return response.strip()
     except Exception as e:
@@ -1241,20 +1155,8 @@ async def generate_flow_title_from_block_titles(
         return "Material de Estudo"
 
     try:
-        result = await openai_utils.get_completion(
-            model="gpt-5-mini",
-            temperature=None,
-            input=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_MESSAGE_GENERATE_TITLE_FROM_TRANSCRIPTIONS,
-                },
-                {
-                    "role": "user",
-                    "content": f"Títulos das transcrições:\n{titles_text}",
-                },
-            ],
-            reasoning={"effort": "medium"},
+        result = await prompts.GenerateTitleFromTranscriptions().text(
+            titles_text=titles_text,
         )
 
         title = result.strip()
@@ -1344,23 +1246,14 @@ async def verify_question_pertinence_to_topic(
                 except Exception as e:
                     logger.warning(f"Failed to get URL for image {image_file.id}: {e}")
 
-        # Use gpt-5-mini for all cases (supports both text and images)
-        messages: ResponseInputParam = [
-            {
-                "role": "system",
-                "content": SYSTEM_MESSAGE_QUESTION_PERTINENCE_TO_TOPIC,
-            },
-            {
-                "role": "user",
-                "content": user_message_content,
-            },
-        ]
-
-        response = await openai_utils.get_completion(
-            model="gpt-5-mini",
-            temperature=None,
-            input=messages,
-            reasoning={"effort": "medium"},
+        response = await prompts.VerifyQuestionPertinenceToTopic().text(
+            topic=topic,
+            question_text_with_choices=question_text_with_choices,
+            image_urls=[
+                part.get("image_url")
+                for part in user_message_content
+                if part.get("type") == "input_image"
+            ],  # pyright: ignore[reportArgumentType]
         )
 
         # Extract the numeric score from the response
@@ -1370,11 +1263,10 @@ async def verify_question_pertinence_to_topic(
             # Ensure score is within valid range
             if 0 <= score <= 5:
                 return score
-            else:
-                logger.warning(
-                    f"Invalid pertinence score {score} for question {question_id}, flow {flow_id}. Using default score 0."
-                )
-                return 0
+            logger.warning(
+                f"Invalid pertinence score {score} for question {question_id}, flow {flow_id}. Using default score 0."
+            )
+            return 0
         except ValueError:
             logger.warning(
                 f"Could not parse pertinence score '{score_str}' for question {question_id}, flow {flow_id}. Using default score 0."

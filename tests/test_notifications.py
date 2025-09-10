@@ -1,3 +1,4 @@
+import pytest
 from arq import Worker
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -23,9 +24,8 @@ from tests.factories import (
 )
 
 
-async def test_list_notifications_empty(
-    user_client: AsyncClient, user: User, session: AsyncSession
-):
+@pytest.mark.usefixtures("user", "session")
+async def test_list_notifications_empty(user_client: AsyncClient):
     """Test listing notifications when user has none."""
     response = await user_client.get("/api/in-app-notifications/list")
     assert response.status_code == 200
@@ -472,8 +472,6 @@ async def test_notify_communities_flow_posted_via_add_questions_official(
     users, clients = await user_client_factory(2)
     # Setup: Create flow and community with users
     async with session.begin():
-        from app.community.models import CommunityUser
-
         # Create community with multiple users
         community = await CommunityFactory.create(session=session)
 

@@ -4,9 +4,9 @@
 
 import functools
 import logging
-import os
 import tempfile
 import uuid
+from pathlib import Path
 from typing import Any, TypeVar
 
 from factory.alchemy import SQLAlchemyOptions
@@ -167,7 +167,7 @@ def create_file_data() -> dict[str, Any]:
         return {"file_id": file_id, "original_name": original_name, "size": size}
     finally:
         # Clean up temporary file
-        os.unlink(temp_path)
+        Path(temp_path).unlink()
 
 
 def get_file_id() -> str:

@@ -20,10 +20,7 @@ from sqlalchemy.orm import selectinload
 from app.arq_client import enqueue_job
 from app.community.models import CommunityUser
 from app.files.service import create_files
-from app.flows import question_service
-from app.flows.constants import (
-    SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT,
-)
+from app.flows import prompts, question_service
 from app.flows.models import (
     Choice,
     Flow,
@@ -51,7 +48,6 @@ from app.notifications.service import (
     notify_user_flow_question_done,
 )
 from app.pagination import PaginationParams, paginate_query
-from app.shared.openai_utils import get_completion
 from app.users.models import User
 
 NUM_ELEMENTS_TO_LOAD_IN_FEED = 5
@@ -646,10 +642,9 @@ async def submit_answer_multiple_choice(
 def get_question_xp() -> int:
     if random.random() < 0.02:
         return 50
-    else:
-        # Draw from N(30, 5) and clamp to [20, 40]
-        xp = random.gauss(mu=30, sigma=5)
-        return min(40, max(20, round(xp)))
+    # Draw from N(30, 5) and clamp to [20, 40]
+    xp = random.gauss(mu=30, sigma=5)
+    return min(40, max(20, round(xp)))
 
 
 async def delete_flow(
@@ -984,21 +979,13 @@ def parse_topic_string(topic_string: str) -> str:
     if not topic_string.strip():
         return topic_string
 
-    try:
-        # Match "topic": "anything" (handling escaped quotes)
-        pattern = r'"topic"\s*:\s*"([^"]*)"'
-        match = re.search(pattern, topic_string)
+    # Match "topic": "anything" (handling escaped quotes)
+    pattern = r'"topic"\s*:\s*"([^"]*)"'
+    match = re.search(pattern, topic_string)
 
-        if match:
-            return match.group(1)  # Return the content inside quotes
-        else:
-            # If no pattern found, return original string (backward compatibility)
-            return topic_string
-
-    except Exception as e:
-        logger.warning(f"Error parsing topic string '{topic_string}': {e}")
-        # Return original string as fallback
-        return topic_string
+    if match:
+        return match.group(1)  # Return the content inside quotes
+    return topic_string
 
 
 async def check_if_topic_involves_math_calculations(topic: str) -> bool:
@@ -1007,22 +994,16 @@ async def check_if_topic_involves_math_calculations(topic: str) -> bool:
         return False
 
     try:
-        result = await get_completion(
-            model="gpt-5-mini",
-            temperature=None,
-            input=[
-                {"role": "system", "content": SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT},
-                {"role": "user", "content": topic},
-            ],
-            reasoning={"effort": "medium"},
+        result = await prompts.CheckMathInvolvementFromTitlesOrTopic().text(
+            block_titles=[topic],
         )
 
+    except Exception:
+        logger.exception(f"Error checking math involvement for topic '{topic}'")
+        return False  # Default to False if there's an error
+    else:
         response = result.strip().upper()
         return response == "SIM"
-
-    except Exception as e:
-        logger.error(f"Error checking math involvement for topic '{topic}': {e}")
-        return False  # Default to False if there's an error
 
 
 def get_flow_loader(num_elements: int | None):
