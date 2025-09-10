@@ -26,6 +26,8 @@ relationship(
 
 Remember to add ondelete="CASCADE" *to the child foreign key*, e.g. ForeignKey("parent.id", ondelete="CASCADE")
 
+- When you want to define a weaker relationship, where a child's foreign key should just be set to None if the parent is deleted, only add ondelete="SET NULL" to the ForeignKey on the child, leaving the parent relationship as is.
+
 - ~~if you add a geoalchemy2 column, you may have to remove from the migration file the "create_index", because the column definition may already create the index~~. This is not needed anymore, since we are using the env.py file to skip the creation of those indexes.
 - If you want to use a default value that is a list, use insert_default=list instead of default_factory=list. This is because sqladmin cannot handle default_factory=list well, it renders the field as required on the form.
 

@@ -89,8 +89,12 @@ lint.select = [
     "PTH", # use pathlib
     "PL", # pylint
     "TC", # type checking
+    "TRY", # tryceratops
+    "DTZ", # datetimezone
+    "LOG", # logging
+    "RET", # return statements
 ]
-lint.ignore = ["E501", "PLR2004", "PLW0603", "PLR0912", "PLR0913", "PLR0915"]
+lint.ignore = ["E501", "PLR2004", "PLW0603", "PLR0912", "PLR0913", "PLR0915", "TRY003", "RET506", "RET505"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends", "fastapi.Query", "fastapi.params.Query", "fastapi.Form", "fastapi.File"]

@@ -531,7 +531,6 @@ class TestCommunityRankingAPI:
                     session=session,
                     xp_score=1000 * i,
                     country=country,
-                    username=f"user{i}",
                 )
                 for i in range(1, 13)
             ]

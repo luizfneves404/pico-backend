@@ -152,7 +152,7 @@ class EducationInfo(Base, kw_only=True):
     )
 
     institution_id: Mapped[int | None] = mapped_column(
-        ForeignKey("institution.id"), default=None
+        ForeignKey("institution.id", ondelete="SET NULL"), default=None
     )
     institution: Mapped["Institution | None"] = relationship(
         lazy="raise_on_sql",

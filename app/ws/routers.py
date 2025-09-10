@@ -1,7 +1,6 @@
 import logging
 from typing import Annotated
 
-import pytest
 from fastapi import (
     APIRouter,
     Depends,
@@ -83,7 +82,7 @@ async def websocket_endpoint(
 
             message = WebsocketMessage.model_validate(data)
 
-            await handle_websocket_message(websocket, message, current_user)
+            await handle_websocket_message(websocket, message)
 
     except WebSocketDisconnect:
         logger.info(
@@ -102,7 +101,7 @@ async def websocket_endpoint(
                 code=status.WS_1011_INTERNAL_ERROR,
                 reason="Internal server error",
             )
-            logger.warning(
+            logger.exception(
                 f"WebSocket disconnected with error for user {current_user.id}"
                 " ({current_user.username})"
             )
@@ -117,7 +116,6 @@ async def websocket_endpoint(
             )
 
 
-@pytest.mark.usefixtures("user")
 async def handle_websocket_message(
     websocket: WebSocket,
     message: WebsocketMessage,
