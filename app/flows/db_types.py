@@ -54,18 +54,20 @@ class ContentBlockListType(TypeDecorator[list[ContentBlockDB]]):
     impl = JSON
     cache_ok = True
 
-    def process_bind_param(self, value: Any, dialect: Any) -> Any:
+    def process_bind_param(self, value: Any, dialect: Any) -> Any:  # noqa: ARG002
         if value is None:
             return None
         content_blocks = validate_content_block_list(value)
         return [block.model_dump(mode="json") for block in content_blocks]
 
     def process_result_value(
-        self, value: Any, dialect: Any
+        self,
+        value: Any,
+        dialect: Any,  # noqa: ARG002
     ) -> list[ContentBlockDB] | None:
         if value is None:
             return None
         return validate_content_block_list(value)
 
     def coerce_compared_value(self, op: OperatorType | None, value: Any) -> Any:
-        return self.impl.coerce_compared_value(op, value)  # type: ignore
+        return self.impl.coerce_compared_value(op, value)  # pyright: ignore[reportCallIssue, reportUnknownVariableType]

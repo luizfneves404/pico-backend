@@ -358,7 +358,7 @@ async def read_users_me(
 
 @user_authenticated_router.get("/other/{user_id}", response_model=UserOut)
 async def read_other_user(
-    user_id: int, current_user: CurrentUserAnnotated, db_session: DBSessionAnnotated
+    user_id: int, _: CurrentUserAnnotated, db_session: DBSessionAnnotated
 ) -> OtherUserOut:
     user = await service.get_user(db_session, id=user_id)
     if not user:

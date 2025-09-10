@@ -94,7 +94,7 @@ lint.select = [
     "LOG", # logging
     "RET", # return statements
 ]
-lint.ignore = ["E501", "PLR2004", "PLW0603", "PLR0912", "PLR0913", "PLR0915", "TRY003", "RET506", "RET505"]
+lint.ignore = ["E501", "PLR2004", "PLW0603", "PLR0912", "PLR0913", "PLR0915", "PLR0911","TRY003", "RET506", "RET505"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends", "fastapi.Query", "fastapi.params.Query", "fastapi.Form", "fastapi.File"]

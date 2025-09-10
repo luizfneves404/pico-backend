@@ -101,8 +101,7 @@ class RealOpenAIService(AbstractOpenAIService):
             temperature=temperature,
             reasoning=reasoning,
         )
-        content = response.output_text
-        return content
+        return response.output_text
 
     async def text_stream(
         self,
@@ -212,7 +211,7 @@ class MockOpenAIService(AbstractOpenAIService):
         model: str,
         input: ResponseInputParam,  # noqa: A002
         temperature: float | NotGiven | None,
-        reasoning: Reasoning | NotGiven | None,
+        reasoning: Reasoning | NotGiven | None,  # noqa: ARG002
     ) -> str:
         mock_id = f"mock_{model}_{temperature}_{hash(str(input))}"
         return f"Mocked response for {mock_id}"
@@ -223,7 +222,7 @@ class MockOpenAIService(AbstractOpenAIService):
         model: str,
         input: ResponseInputParam,  # noqa: A002
         temperature: float | NotGiven | None,
-        reasoning: Reasoning | NotGiven | None,
+        reasoning: Reasoning | NotGiven | None,  # noqa: ARG002
     ) -> AsyncGenerator[str, None]:
         mock_id = f"mock_stream_{model}_{temperature}_{hash(str(input))}"
         for i in range(1, 6):
@@ -232,11 +231,11 @@ class MockOpenAIService(AbstractOpenAIService):
     async def structured(
         self,
         *,
-        model: str,
-        input: ResponseInputParam,  # noqa: A002
+        model: str,  # noqa: ARG002
+        input: ResponseInputParam,  # noqa: A002, ARG002
         response_model: type[ModelT],
-        temperature: float | NotGiven | None,
-        reasoning: Reasoning | NotGiven | None,
+        temperature: float | NotGiven | None,  # noqa: ARG002
+        reasoning: Reasoning | NotGiven | None,  # noqa: ARG002
     ) -> ModelT:
         def mock_value(field_info: Any) -> Any:
             annotation = field_info.annotation
@@ -276,7 +275,7 @@ class MockOpenAIService(AbstractOpenAIService):
     async def embed(
         self,
         *,
-        model: str,
+        model: str,  # noqa: ARG002
         input: str | list[str],  # noqa: A002
         dimensions: int,
     ) -> list[float] | list[list[float]]:

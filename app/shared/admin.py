@@ -250,10 +250,7 @@ class AdminWithImport(SQLAdminAdmin):
                 # Validate and process using the schema
         try:
             validated_data = import_schema.model_validate(form_data)
-            result = await model_view.import_file_data(
-                [validated_data], dry_run=dry_run
-            )
-            return result
+            return await model_view.import_file_data([validated_data], dry_run=dry_run)
         except ValidationError as e:
             # Convert validation errors to ImportResult format
             result = ImportResult(
@@ -314,8 +311,8 @@ class CustomFormConverter(ModelConverter):
     @converts("geoalchemy2.types.Geography")
     def conv_location(
         self,
-        model: type,
-        prop: ColumnProperty[Geography],
+        _model: type,
+        _prop: ColumnProperty[Geography],
         kwargs: dict[str, Any],
     ) -> LocationField:
         return LocationField(**kwargs)
@@ -412,7 +409,7 @@ class CustomModelView(ModelView):
 
     column_type_formatters: ClassVar[dict[type, Callable[[Any], Any]]] = {
         bool: bool_formatter,
-        type(None): lambda value: "[NONE]",
+        type(None): lambda _: "[NONE]",
         str: lambda value: value if value else "[EMPTY STRING]",
     }
 

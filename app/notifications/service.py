@@ -30,8 +30,7 @@ async def list_notifications(
         .order_by(InAppNotification.created_at.desc(), InAppNotification.id.desc())
     )
     result = await db_session.execute(query)
-    notifications = list(result.scalars())
-    return notifications  # type: ignore # i don't know how to do the correct type hints
+    return list(result.scalars())  # type: ignore # i don't know how to do the correct type hints
 
 
 async def count_unseen_notifications_for_user(

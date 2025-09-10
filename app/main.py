@@ -144,6 +144,9 @@ async def health_check_middleware(
     return await call_next(request)
 
 
+# docs URL and OpenAPI url
+
+
 @fastapi_app.get(
     settings.docs_url,
     tags=["documentation"],
@@ -162,7 +165,7 @@ async def docs() -> HTMLResponse:
     tags=["documentation"],
     include_in_schema=False,
 )
-async def openapi(request: Request) -> dict[str, Any]:
+async def openapi() -> dict[str, Any]:
     return get_openapi(title="FastAPI", version="0.1.0", routes=fastapi_app.routes)
 
 
@@ -221,7 +224,7 @@ def use_route_names_as_operation_ids(app: FastAPI) -> None:
     for route in app.routes:
         if isinstance(route, APIRoute):
             if route.name in present_route_names:
-                raise Exception(f"Route name {route.name} is not unique")
+                raise ValueError(f"Route name {route.name} is not unique")
             present_route_names.add(route.name)
             route.operation_id = route.name
 

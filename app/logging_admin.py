@@ -85,7 +85,7 @@ class SetLoggerLevelView(BaseView):
     identity = "set_logger_level"
     include_in_schema = False
 
-    def is_visible(self, request: Request) -> bool:
+    def is_visible(self, request: Request) -> bool:  # noqa: ARG002
         return False
 
     @expose("/logging/set-logger-level", methods=["POST"])
@@ -128,13 +128,13 @@ class SetLoggerLevelView(BaseView):
 
         except AttributeError as e:
             root_logger = logging.getLogger()
-            root_logger.error(f"Invalid logging level: {level_name} - {e!s}")
+            root_logger.exception(f"Invalid logging level: {level_name}")
             raise HTTPException(
                 status_code=400, detail=f"Invalid logging level: {level_name}"
             ) from e
         except Exception as e:
             root_logger = logging.getLogger()
-            root_logger.error(f"Error setting logger level: {e!s}")
+            root_logger.exception("Error setting logger level")
             raise HTTPException(
                 status_code=500, detail=f"Error setting logger level: {e!s}"
             ) from e
@@ -155,11 +155,11 @@ class GetAllLoggersView(BaseView):
     identity = "get_all_loggers"
     include_in_schema = False
 
-    def is_visible(self, request: Request) -> bool:
+    def is_visible(self, request: Request) -> bool:  # noqa: ARG002
         return False
 
     @expose("/logging/get-all-loggers", methods=["GET"])
-    async def get_all_loggers(self, request: Request) -> JSONResponse:
+    async def get_all_loggers(self, _request: Request) -> JSONResponse:
         loggers_info: dict[str, Any] = {}
 
         # Get all loggers from the logging manager
@@ -167,12 +167,12 @@ class GetAllLoggersView(BaseView):
 
         # Always include root logger
         root_logger = logging.getLogger()
-        loggers_info[""] = self._get_logger_info(root_logger, "root")
+        loggers_info[""] = self._get_logger_info(root_logger)
 
         # Add all other loggers
         for name, logger_obj in logger_dict.items():
             if isinstance(logger_obj, logging.Logger):
-                loggers_info[name] = self._get_logger_info(logger_obj, name)
+                loggers_info[name] = self._get_logger_info(logger_obj)
             else:
                 # PlaceHolder objects - loggers that have been referenced but not
                 # created
@@ -188,7 +188,7 @@ class GetAllLoggersView(BaseView):
 
         return JSONResponse(content=loggers_info)
 
-    def _get_logger_info(self, logger: logging.Logger, name: str) -> dict[str, Any]:
+    def _get_logger_info(self, logger: logging.Logger) -> dict[str, Any]:
         """Get detailed information about a logger."""
         parent_name = None
         if logger.parent and logger.parent.name:
@@ -222,7 +222,7 @@ class PreviewBulkOperationView(BaseView):
     identity = "preview_bulk_operation"
     include_in_schema = False
 
-    def is_visible(self, request: Request) -> bool:
+    def is_visible(self, request: Request) -> bool:  # noqa: ARG002
         return False
 
     @expose("/logging/preview-bulk-operation", methods=["POST"])
@@ -290,7 +290,7 @@ class ExecuteBulkOperationView(BaseView):
     identity = "execute_bulk_operation"
     include_in_schema = False
 
-    def is_visible(self, request: Request) -> bool:
+    def is_visible(self, request: Request) -> bool:  # noqa: ARG002
         return False
 
     @expose("/logging/execute-bulk-operation", methods=["POST"])
@@ -363,7 +363,7 @@ class ApplyLoggingPresetView(BaseView):
     identity = "apply_logging_preset"
     include_in_schema = False
 
-    def is_visible(self, request: Request) -> bool:
+    def is_visible(self, request: Request) -> bool:  # noqa: ARG002
         return False
 
     @expose("/logging/apply-logging-preset", methods=["POST"])

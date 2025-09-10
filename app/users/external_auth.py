@@ -63,10 +63,10 @@ async def _get_jwks() -> dict[str, Any]:
         cache_control = response.headers.get("Cache-Control", "")
         max_age = 0
         for part in cache_control.split(","):
-            part = part.strip()
-            if part.startswith("max-age="):
+            part_stripped = part.strip()
+            if part_stripped.startswith("max-age="):
                 with contextlib.suppress(ValueError):
-                    max_age = int(part.split("=")[1])
+                    max_age = int(part_stripped.split("=")[1])
         _google_jwks_cache["keys"] = jwks
         _google_jwks_cache["expires_at"] = now + max_age
         return jwks

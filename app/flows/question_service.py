@@ -201,7 +201,7 @@ async def get_official_questions(
 
 
 async def task_generate_transcriptions(
-    ctx: dict[str, Any],
+    _: dict[str, Any],
     file_ids: list[
         int
     ],  # List of File ids for File objects already persisted to storage
@@ -345,9 +345,9 @@ async def task_generate_transcriptions(
                 else:
                     logger.warning(f"Failed to generate cover image for flow {flow_id}")
 
-        except Exception as e:
+        except Exception:
             # Log error but don't fail the entire operation since transcriptions are already done
-            logger.error(f"Failed to generate cover image for flow {flow_id}: {e!s}")
+            logger.exception(f"Failed to generate cover image for flow {flow_id}")
 
 
 async def generate_flow_cover_image(flow_title: str) -> str:
@@ -385,8 +385,8 @@ async def save_cover_image_to_flow(
 
     try:
         image_data = base64.b64decode(image_base64)
-    except Exception as e:
-        logger.error(f"Failed to decode base64 image for flow {flow_id}: {e!s}")
+    except Exception:
+        logger.exception(f"Failed to decode base64 image for flow {flow_id}")
         return None
 
     # Create file-like object in memory
@@ -419,7 +419,7 @@ async def save_cover_image_to_flow(
 #! Exclusively for create_flow_with_optional_files on flow_service.py
 # TODO: Move back to flow_service.py: currently here to avoid circular imports of generate_flow_cover_image -> Create new file for such funtions
 async def task_generate_flow_cover_image(
-    ctx: dict[str, Any],
+    _: dict[str, Any],
     flow_id: int,
     flow_title: str,
 ) -> None:
@@ -449,8 +449,8 @@ async def task_generate_flow_cover_image(
         else:
             logger.warning(f"Failed to generate cover image for flow {flow_id}")
 
-    except Exception as e:
-        logger.error(f"Error generating cover image for flow {flow_id}: {e!s}")
+    except Exception:
+        logger.exception(f"Error generating cover image for flow {flow_id}")
         # Do not propagate error, as it is not a critical operation
 
 
@@ -487,8 +487,8 @@ async def generate_tags_for_topic(topic: str) -> tuple[list[str], list[str]]:
 
         return [major_tag] if major_tag else [], minor_tags[:5]  # Limit to 5 minor tags
 
-    except Exception as e:
-        logger.error(f"Error generating tags for topic '{topic}': {e!s}")
+    except Exception:
+        logger.exception(f"Error generating tags for topic '{topic}'")
         return [], []
 
 
@@ -503,15 +503,13 @@ async def _classify_topic_subject(topic: str) -> str:
 
         response = await prompts.ClassifyTopicSubject().text(all_subjects, topic)
 
+    except Exception:
+        logger.exception(f"Error classifying topic subject for '{topic}'")
+        return "Conhecimentos Gerais"
+    else:
         response_text = response.strip()
         if response_text in all_subjects:
             return response_text
-
-        # Final fallback
-        return "Conhecimentos Gerais"
-
-    except Exception as e:
-        logger.error(f"Error classifying topic subject for '{topic}': {e!s}")
         return "Conhecimentos Gerais"
 
 
@@ -718,13 +716,11 @@ async def get_files_user_generated_questions(
                 }
                 block_questions.append(question_dict)
 
-            return block_questions
-
-        except Exception as e:
-            logger.error(
-                f"Error generating questions for block {block_index + 1}: {e!s}"
-            )
+        except Exception:
+            logger.exception(f"Error generating questions for block {block_index + 1}")
             return []
+        else:
+            return block_questions
 
     # Execute all block processing tasks in parallel
     tasks: list[Coroutine[Any, Any, list[BlockQuestion]]] = [
@@ -739,7 +735,7 @@ async def get_files_user_generated_questions(
 
     for block_index, block_questions in enumerate(block_results):
         if isinstance(block_questions, BaseException):
-            logger.error(f"Exception in block {block_index + 1}: {block_questions}")
+            logger.exception(f"Exception in block {block_index + 1}")
             continue
         for block_question in block_questions:
             question_data = block_question["question_data"]
@@ -1135,8 +1131,8 @@ async def _generate_block_title(block_text: str) -> str:
             block_text=block_text,
         )
         return response.strip()
-    except Exception as e:
-        logger.error(f"Error generating block title: {e!s}")
+    except Exception:
+        logger.exception("Error generating block title")
         # Return a fallback title if generation fails
         return "Conteúdo transcrito"
 
@@ -1159,16 +1155,16 @@ async def generate_flow_title_from_block_titles(
             titles_text=titles_text,
         )
 
+    except Exception:
+        logger.exception("Error generating title from transcriptions")
+        return "Material de Estudo"
+    else:
         title = result.strip()
         # Ensure title is not too long
         if len(title) > 60:
             title = title[:57] + "..."
 
         return title if title else "Material de Estudo"
-
-    except Exception as e:
-        logger.error(f"Error generating title from transcriptions: {e}")
-        return "Material de Estudo"
 
 
 async def verify_question_pertinence_to_topic(
@@ -1260,6 +1256,12 @@ async def verify_question_pertinence_to_topic(
         score_str = response.strip()
         try:
             score = int(score_str)
+        except ValueError:
+            logger.warning(
+                f"Could not parse pertinence score '{score_str}' for question {question_id}, flow {flow_id}. Using default score 0."
+            )
+            return 0
+        else:
             # Ensure score is within valid range
             if 0 <= score <= 5:
                 return score
@@ -1267,15 +1269,10 @@ async def verify_question_pertinence_to_topic(
                 f"Invalid pertinence score {score} for question {question_id}, flow {flow_id}. Using default score 0."
             )
             return 0
-        except ValueError:
-            logger.warning(
-                f"Could not parse pertinence score '{score_str}' for question {question_id}, flow {flow_id}. Using default score 0."
-            )
-            return 0
 
-    except Exception as e:
-        logger.error(
-            f"Error verifying question pertinence for question {question_id}, flow {flow_id}: {e}"
+    except Exception:
+        logger.exception(
+            f"Error verifying question pertinence for question {question_id}, flow {flow_id}"
         )
         return 0  # Default to 0 if there's an error
 

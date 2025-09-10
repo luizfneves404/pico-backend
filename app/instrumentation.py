@@ -47,7 +47,7 @@ class ArqPollingSampler(Sampler):
         kind: SpanKind | None = None,
         attributes: Attributes | None = None,
         links: Sequence[Link] | None = None,
-        trace_state: TraceState | None = None,
+        trace_state: TraceState | None = None,  # noqa: ARG002
     ) -> SamplingResult:
         # Check if the span has attributes and the db.statement key
         if attributes and STATEMENT_KEY in attributes:
@@ -88,7 +88,7 @@ def instrument_base() -> None:
 
 
 def request_attributes_mapper(
-    request: Request | WebSocket, attributes: dict[str, Any]
+    _: Request | WebSocket, attributes: dict[str, Any]
 ) -> dict[str, Any]:
     """
     As per logfire docs:

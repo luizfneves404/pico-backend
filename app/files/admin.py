@@ -163,7 +163,11 @@ class FileAdmin(CustomModelView, model=File):
     }
 
     async def on_model_change(
-        self, data: dict[str, Any], model: File, is_created: bool, request: Request
+        self,
+        data: dict[str, Any],
+        model: File,
+        is_created: bool,
+        request: Request,  # noqa: ARG002
     ) -> None:
         """Handle file upload and create/update File record."""
         # If this is an update and we have a new file, delete the old one

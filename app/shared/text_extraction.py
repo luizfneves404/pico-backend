@@ -55,20 +55,19 @@ class DummyTextractor:
         return document
 
     def detect_document_text(
-        self, file_source: str, save_image: bool = True
+        self, file_source: str, _save_image: bool = True
     ) -> Document:
         logger.info(f"[DUMMY] Would extract text from {file_source}")
-        document = self._build_document(file_source)
-        return document
+        return self._build_document(file_source)
 
     def start_document_text_detection(
         self,
         file_source: str,
-        s3_output_path: str,
-        s3_upload_path: str,
-        client_request_token: str,
+        _s3_output_path: str,
+        _s3_upload_path: str,
+        _client_request_token: str,
         job_tag: str,
-        save_image: bool = True,
+        _save_image: bool = True,
     ):
         logger.info(f"[DUMMY] Would start document text detection for {file_source}")
         job_id = f"Dummy job id for {file_source}"
@@ -80,14 +79,13 @@ class DummyTextractor:
         }
         return LazyDocument(job_id=job_id, api=TextractAPI.DETECT_TEXT)
 
-    def get_result(self, job_id: str, api: TextractAPI):
+    def get_result(self, job_id: str, _: TextractAPI):
         logger.info(f"[DUMMY] Would get result for job {job_id}")
         # Retrieve the stored result or use a default if not found
         job_data = self._job_results.get(
             job_id, {"text": f"Default text for unknown job {job_id}"}
         )
-        document = self._build_document(job_data["file_source"])
-        return document
+        return self._build_document(job_data["file_source"])
 
 
 class TextractorProtocol(Protocol):
@@ -213,8 +211,8 @@ async def call_pen_to_print_api(file_like: IO[bytes]) -> str:
         # Process the response
         try:
             response_json = response.json()
-        except Exception as e:
-            logger.error(f"Failed to parse JSON response: {e}")
+        except Exception:
+            logger.exception("Failed to parse JSON response")
             response.raise_for_status()
             raise
 

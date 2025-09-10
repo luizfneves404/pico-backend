@@ -267,9 +267,9 @@ async def arq_worker(
 def app(
     session_factory: SessionFactory,
     websocket_session_factory: SessionFactory,
-    arq_worker: Worker,
-    redis_for_tests: redis.Redis,
-    firebase_for_tests: None,
+    arq_worker: Worker,  # noqa: ARG001
+    redis_for_tests: redis.Redis,  # noqa: ARG001
+    firebase_for_tests: None,  # noqa: ARG001
 ) -> Generator[FastAPI, None, None]:
     async def get_db_session_override():
         async with session_factory() as session, session.begin():

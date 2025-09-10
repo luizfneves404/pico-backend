@@ -77,7 +77,7 @@ async def transcribe_uploaded_pdf(file_like: IO[bytes]) -> str:
             ),
         )
     except errors.APIError as e:
-        logger.error("Gemini APIError %s - %s", e.code, e.message)
+        logger.exception("Gemini APIError %s - %s", e.code, e.message)
         raise ValueError("Falha no OCR do PDF.") from e
 
     text = (response.text or "").strip()

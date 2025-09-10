@@ -518,9 +518,7 @@ async def community_feed(
         .offset((pagination.page - 1) * pagination.size)
     )
     result = await db_session.scalars(query)
-    flows = list(result)
-
-    return flows
+    return list(result)
 
 
 async def submit_answer_multiple_choice(

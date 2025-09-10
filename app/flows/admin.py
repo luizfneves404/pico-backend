@@ -44,12 +44,11 @@ class ContentBlocksField(JSONField):
         if self.raw_data:
             return self.raw_data[0]
         elif self.data:
-            json_str = json.dumps(
+            return json.dumps(
                 [block.model_dump(mode="json") for block in self.data],
                 indent=4,
                 ensure_ascii=False,
             )
-            return json_str
         else:
             return "[]"
 
@@ -776,8 +775,8 @@ class QuestionAdmin(CustomModelView, model=Question):
         self,
         data: dict[str, Any],
         model: Question,
-        is_created: bool,
-        request: Request | None = None,
+        is_created: bool,  # noqa: ARG002
+        request: Request | None = None,  # noqa: ARG002
     ) -> None:
         """Process array fields before saving."""
         if "content_blocks" in data:

@@ -114,7 +114,7 @@ class LocalStorage(StorageBackend):
         if isinstance(file_obj_or_path, str):
             shutil.copyfile(file_obj_or_path, file_path)
         else:
-            with open(file_path, "wb") as f:
+            with Path.open(file_path, "wb") as f:
                 shutil.copyfileobj(file_obj_or_path, f)
 
         logger.info("Uploaded file to local storage")
@@ -126,7 +126,7 @@ class LocalStorage(StorageBackend):
             file_path.unlink()
             logger.info("Deleted file from local storage")
 
-    def get_url(self, file_id: str, expiration: int = 3600) -> str:
+    def get_url(self, file_id: str, expiration: int = 3600) -> str:  # noqa: ARG002
         file_path = self.storage_dir / file_id
         if not file_path.exists():
             raise FileNotFoundError(f"File {file_id} not found in storage")
@@ -137,7 +137,7 @@ class LocalStorage(StorageBackend):
         file_path = self.storage_dir / file_id
         if not file_path.exists():
             raise FileNotFoundError(f"File {file_id} not found in local storage")
-        return open(file_path, "rb")
+        return Path.open(file_path, "rb")
 
 
 storage: StorageBackend

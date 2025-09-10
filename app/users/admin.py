@@ -171,7 +171,7 @@ class UserAdmin(CustomModelView, model=User):
         )
 
     async def on_model_change(
-        self, data: dict[str, Any], model: User, is_created: bool, request: Request
+        self, data: dict[str, Any], model: User, is_created: bool, _: Request
     ) -> None:
         if data.get("hashed_password") and (
             is_created

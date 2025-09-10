@@ -11,7 +11,6 @@ from app.users.service import get_password_hash, get_user
 async def create_superuser(
     username: str,
     email: str,
-    phone_number: str,
     password: str,
 ) -> User | None:
     """Create a superuser in the database.
@@ -64,10 +63,9 @@ async def main():
     """Main function to create a superuser."""
     username = input("Enter username: ")
     email = input("Enter email: ")
-    phone_number = input("Enter phone number: ")
     password = input("Enter password: ")
 
-    user = await create_superuser(username, email, phone_number, password)
+    user = await create_superuser(username, email, password)
     if user:
         print(f"Superuser created successfully with ID: {user.id}")
 

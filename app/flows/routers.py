@@ -211,20 +211,20 @@ async def create_flow(
         ) from e
 
 
-@flows_router.get("/{id}/is-ready", response_model=bool)
+@flows_router.get("/{id}/is-ready", response_model=bool, dependencies=[CurrentUserDep])
 async def is_flow_ready_for_question_creation(
     db_session: DBSessionAnnotated,
-    current_user: CurrentUserAnnotated,
     id: int,  # noqa: A002
 ) -> bool:
     """Check if a flow is ready"""
     try:
         flow = await flow_service.get_flow(db_session, flow_id=id)
-        return flow.is_ready
     except flow_service.FlowNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Flow not found"
         ) from e
+    else:
+        return flow.is_ready
 
 
 @flows_router.post(
