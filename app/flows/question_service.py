@@ -30,7 +30,6 @@ from app.files.service import create_file
 from app.flows import prompts
 from app.flows.constants import (
     PROMPT_COVER_GENERATION,
-    QuestionInstance,
 )
 from app.flows.db_types import RichText, TextBlock
 from app.flows.models import (
@@ -47,6 +46,7 @@ from app.flows.models import (
     QuestionDifficulty,
     QuestionSourceType,
 )
+from app.flows.prompts import QuestionInstance
 from app.flows.schemas import PromptType
 from app.shared import ai_utils, gemini_utils, openai_utils
 

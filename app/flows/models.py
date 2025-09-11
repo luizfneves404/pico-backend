@@ -815,7 +815,9 @@ class FlowQuestionUser(Base, kw_only=True):
 
     grade: Mapped[float | None] = mapped_column(default=None)
 
-    choice_id: Mapped[int | None] = mapped_column(ForeignKey("choice.id"), default=None)
+    choice_id: Mapped[int | None] = mapped_column(
+        ForeignKey("choice.id", ondelete="CASCADE"), default=None
+    )
     choice: Mapped["Choice | None"] = relationship(lazy="raise_on_sql", default=None)
 
     submitted_text: Mapped[str] = mapped_column(Text, default="")
