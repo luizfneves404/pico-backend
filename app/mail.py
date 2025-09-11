@@ -230,10 +230,15 @@ async def send_bulk_email(
 
 
 class AdminEmailHandler(logging.Handler):
+    ERROR_DEDUP_WINDOW = datetime.timedelta(minutes=15)
+
     def __init__(self):
         super().__init__()
         self.email_count = 0
         self.window_start = datetime.datetime.now(datetime.UTC)
+        self.last_sent: dict[
+            str, datetime.datetime
+        ] = {}  # key: error signature, value: last sent time
 
     def _within_window(self) -> bool:
         """Check if we are still within the current rate-limiting window."""
@@ -252,6 +257,22 @@ class AdminEmailHandler(logging.Handler):
             return True
         return False
 
+    def _should_send_for_error(self, record: logging.LogRecord) -> bool:
+        """Check if this specific error was sent recently (deduplication)."""
+        now = datetime.datetime.now(datetime.UTC)
+
+        # Use a stable signature: level + logger + message + exception type
+        error_signature = f"{record.levelname}|{record.name}|{record.getMessage()}"
+        if record.exc_info and record.exc_info[0]:
+            error_signature += f"|{record.exc_info[0].__name__}"
+
+        last_time = self.last_sent.get(error_signature)
+        if last_time and now - last_time < self.ERROR_DEDUP_WINDOW:
+            return False  # too soon, skip duplicate
+
+        self.last_sent[error_signature] = now
+        return True
+
     def emit(self, record: logging.LogRecord) -> None:
         try:
             if not settings.enable_error_emails:
@@ -260,6 +281,10 @@ class AdminEmailHandler(logging.Handler):
 
             if not self._should_send_email():
                 logger.debug("Rate limit reached, skipping error email")
+                return
+
+            if not self._should_send_for_error(record):
+                logger.debug("Duplicate error within dedup window, skipping email")
                 return
 
             # Build email content
