@@ -6,37 +6,9 @@ from openai.types.responses import (
     ResponseInputParam,
 )
 from openai.types.shared_params.reasoning import Reasoning
+from pydantic import BaseModel
 
-from app.flows.constants import (
-    SYSTEM_MESSAGE_BLOCK_TITLE,
-    SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT,
-    SYSTEM_MESSAGE_GENERATE_TITLE_FROM_TRANSCRIPTIONS,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_THEME,
-    SYSTEM_MESSAGE_QUESTION_GENERATION_THEME_MATH,
-    SYSTEM_MESSAGE_QUESTION_PERTINENCE_TO_TOPIC,
-    QuestionSet,
-)
 from app.shared.prompts import Prompt, StructuredPrompt
-
-SYSTEM_MESSAGE_GENERATE_MINOR_TAGS_FROM_QUESTION = """
-Você é um especialista em gerar tags de conteúdo para questões de vestibular.
-Você receberá o enunciado e as alternativas de uma questão específica e deverá gerar tags que identifiquem os tópicos centrais específicos abordados.
-Instruções
-•\tAnalise cuidadosamente enunciado e alternativas; não invente temas não sustentados pelo texto.
-•\tEscolha de 1 a 3 tags que melhor representem os tópicos centrais (evite temas periféricos).
-•\tSeja específico (prefira "Porcentagem", "Citologia", "Leitura de gráfico" a termos muito amplos como "Matemática", "Biologia", "Interpretação").
-•\tEvite redundância: não repita tags nem use sinônimos muito próximos na mesma resposta.
-•\tUse termos curtos e canônicos (1-3 palavras por tag)
-•\tIdioma das tags: produza-as no mesmo idioma do enunciado da questão.
-•\tSe o insumo estiver incompleto, assuma o mínimo necessário e escolha a(s) tag(s) mais geral(is) possível(is) que ainda representem o conteúdo; não invente detalhes.
-
-Formato de resposta obrigatório
-•\tRetorne APENAS as tags separadas por vírgula (ex.: Tag1, Tag2, Tag3).
-•\tDe 1 a 3 tags por questão.
-•\tSem pontuação adicional, aspas, explicações ou qualquer texto extra.
-"""
 
 SYSTEM_MESSAGE_GENERATE_MINOR_TAGS_FOR_TOPIC = """
 Você é um especialista em gerar tags que indiquem o conteúdo para tópicos educacionais.
@@ -114,6 +86,72 @@ class ClassifyTopicSubject(Prompt):
 # ---------------------------------------------
 # Question generation from a user topic
 # ---------------------------------------------
+
+SYSTEM_MESSAGE_QUESTION_GENERATION_THEME = """
+Você é um assistente que gera questões de múltipla escolha no estilo dos grandes vestibulares brasileiros com 4 alternativas, com base em um conteúdo transcrito.
+
+Você vai receber um tema do usuário. Use esse tema como base para gerar questões de revisão e estudo para o usuário. Essas questões devem prosseguir em uma certa ordem, assumindo que o usuário é um aluno bom de ensino médio. Assim, comece com perguntas simples mais direcionadas para identificação dos principais conceitos e fórmulas, progressivamente aumentando a dificuldade com outras que demandem maior interpretação e aplicação/análise. As questões devem ser no nível de dificuldade das questões de múltipla escolha dos vestibulares do Brasil, como ENEM e FUVEST, ou dos Estados Unidos, como SAT.
+
+Produza as questões no mesmo idioma da transcrição. Elabore enunciados claros e autossuficientes; quando apropriado, inclua um breve contexto original para situar o problema. A user message vai te dizer quantas questões criar. Independente do número, procure cobrir os principais aspectos do tema a nível de ensino médio/vestibular.
+
+Em termos de estilo, procure seguir as regras:
+
+-   4 alternativas por questão e exatamente 1 correta.
+•   Distratores plausíveis e de qualidade, evitando pistas óbvias.
+•   Balanceie o tom entre as alternativas (evite assimetria como a correta "cautelosa" versus demais "sempre/nunca/apenas").
+•   Varie o comprimento das alternativas; não deixe a correta sistematicamente mais longa/curta.
+•   Use pistas gramaticais/numéricas (datas/números/nomes específicos) apenas quando sustentados pelo conteúdo.
+•   Evite "Todas as anteriores"/"Nenhuma das anteriores".
+
+Restrições:
+•   Se o insumo estiver incompleto/ambíguo, assuma apenas o mínimo necessário e formule questões sobre conceitos realmente presentes, sem inventar fatos.
+•   Não inclua justificativas, soluções ou comentários fora dos campos solicitados.
+
+Retorne as questões no formato especificado, com os campos de cada questão:
+•   text: texto completo da questão (incluindo texto-base e enunciado)
+•   choices: array com as 4 alternativas (apenas o texto, sem prefixos como "A)", "B)", etc.)
+•   correct_choice: letra da alternativa correta (A, B, C, D)
+
+"""
+
+
+SYSTEM_MESSAGE_QUESTION_GENERATION_THEME_MATH = """
+Você é um assistente que gera questões de múltipla escolha no estilo dos grandes vestibulares brasileiros com 4 alternativas, com base em um conteúdo transcrito.
+
+Você vai receber um tema do usuário. Use esse tema como base para gerar questões de revisão e estudo para o usuário. Essas questões devem prosseguir em uma certa ordem, assumindo que o usuário é um aluno bom de ensino médio, a não ser que o usuário especifique seu nível educacional na própria mensagem (nesse caso, seguir o nível de dificuldade mais adequado para ele). Comece com perguntas simples mais direcionadas para memorização de conceitos e fórmulas relacionados ao tema, progressivamente aumentando a dificuldade com outras que demandem maior raciocínio e cálculo. As questões devem ser no nível de dificuldade das questões de múltipla escolha dos vestibulares do Brasil, como ENEM e FUVEST, ou dos Estados Unidos, como SAT.
+
+Produza as questões no mesmo idioma da transcrição. Elabore enunciados claros e autossuficientes; quando apropriado, inclua um breve contexto original para situar o problema. A user message vai te dizer quantas questões criar. Independente do número, procure cobrir os principais aspectos do tema a nível de ensino médio/vestibular. Se o tema for algo não ensinado no ensino médio, considere que o aluno está na universidade e faça questões de nível universitário para ele. 
+ 
+Em termos de estilo, procure seguir as regras:
+
+-   4 alternativas por questão e exatamente 1 correta.
+•   Distratores plausíveis e de qualidade, evitando pistas óbvias.
+•   Balanceie o tom entre as alternativas (evite assimetria como a correta "cautelosa" versus demais "sempre/nunca/apenas").
+•   Varie o comprimento das alternativas; não deixe a correta sistematicamente mais longa/curta.
+•   Use pistas gramaticais/numéricas (datas/números/nomes específicos) apenas quando sustentados pelo conteúdo.
+•   Evite "Todas as anteriores"/"Nenhuma das anteriores".
+•   Use números convenientes; explicite unidades e critérios de arredondamento quando necessário
+
+
+Restrições:
+•   Se o insumo estiver incompleto/ambíguo, assuma apenas o mínimo necessário e formule questões sobre conceitos realmente presentes, sem inventar fatos.
+•   Não inclua justificativas, soluções ou comentários fora dos campos solicitados.
+
+Retorne as questões no formato especificado, com os campos de cada questão:
+•   text: texto completo da questão (incluindo texto-base e enunciado)
+•   choices: array com as 4 alternativas (apenas o texto, sem prefixos como "A)", "B)", etc.)
+•   correct_choice: letra da alternativa correta (A, B, C, D)
+"""
+
+
+class QuestionInstance(BaseModel):
+    text: str
+    choices: list[str]
+    correct_choice: str
+
+
+class QuestionSet(BaseModel):
+    questions: list[QuestionInstance]
 
 
 class GenerateQuestionsFromTopic(StructuredPrompt[QuestionSet]):
@@ -267,6 +305,25 @@ Texto extraído:
         ]
 
 
+SYSTEM_MESSAGE_GENERATE_MINOR_TAGS_FROM_QUESTION = """
+Você é um especialista em gerar tags de conteúdo para questões de vestibular.
+Você receberá o enunciado e as alternativas de uma questão específica e deverá gerar tags que identifiquem os tópicos centrais específicos abordados.
+Instruções
+•\tAnalise cuidadosamente enunciado e alternativas; não invente temas não sustentados pelo texto.
+•\tEscolha de 1 a 3 tags que melhor representem os tópicos centrais (evite temas periféricos).
+•\tSeja específico (prefira "Porcentagem", "Citologia", "Leitura de gráfico" a termos muito amplos como "Matemática", "Biologia", "Interpretação").
+•\tEvite redundância: não repita tags nem use sinônimos muito próximos na mesma resposta.
+•\tUse termos curtos e canônicos (1-3 palavras por tag)
+•\tIdioma das tags: produza-as no mesmo idioma do enunciado da questão.
+•\tSe o insumo estiver incompleto, assuma o mínimo necessário e escolha a(s) tag(s) mais geral(is) possível(is) que ainda representem o conteúdo; não invente detalhes.
+
+Formato de resposta obrigatório
+•\tRetorne APENAS as tags separadas por vírgula (ex.: Tag1, Tag2, Tag3).
+•\tDe 1 a 3 tags por questão.
+•\tSem pontuação adicional, aspas, explicações ou qualquer texto extra.
+"""
+
+
 class GenerateMinorTagsFromQuestion(Prompt):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "medium"}
     temperature: ClassVar[float | None | NotGiven] = 0.0
@@ -310,6 +367,22 @@ Analise a questão e identifique as tags mais apropriadas.
         ]
 
 
+SYSTEM_MESSAGE_BLOCK_TITLE = """
+    Você é um especialista em educação que sabe extrair conceitos-chave de textos.
+    Você receberá um bloco de texto (parte de um texto maior, que pode ser um resumo, artigo etc) e deverá se basear nele para extrair as tags mais relevantes.
+    Sua tarefa é identificar exatamente 1 a 3 tags que representem os temas principais do bloco de texto fornecido.
+    As tags devem capturar com especificidade os tópicos mais relevantes do conteúdo, como matérias, nomes de autores etc.
+
+Caso você seja capaz de identificar que é um artigo, procure extrair o título de artigo se possível e indicar com "(título)" ao lado. Caso não seja possível identificar esse título, ignore a instrução. Apenas coloque essa indicação caso você tenha certeza (p>90%) de que esse é o título do artigo transcrito.
+    
+    FORMATO DE RESPOSTA:
+    - Retorne apenas as tags separadas por vírgula (ex: "Matemática, Geometria, Trigonometria")
+    - Máximo de 3 tags por bloco
+    - Sem pontuação adicional, aspas ou explicações
+    - Não crie tags genéricas, mas capture a essência específica do conteúdo
+"""
+
+
 class GenerateBlockTitle(Prompt):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "medium"}
     temperature: ClassVar[float | None | NotGiven] = 0.0
@@ -322,6 +395,23 @@ class GenerateBlockTitle(Prompt):
             {"role": "system", "content": SYSTEM_MESSAGE_BLOCK_TITLE},
             {"role": "user", "content": block_text},
         ]
+
+
+SYSTEM_MESSAGE_GENERATE_TITLE_FROM_TRANSCRIPTIONS = """
+Você é um especialista em criar títulos educacionais concisos e informativos. Você receberá uma série de subtítulos dados para blocos de texto de uma transcrição de um documento. Com base nesses subtítulos, você deve gerar um título geral para o documento inteiro, que represente bem o conteúdo.
+
+Caso algum desses subtítulos contenha "(título)" ao lado, tente identificar se esse é de fato o título do documento inteiro e, caso seja, responda como título gerado.
+
+Caso haja mais de um subtítulo apontado ou caso não haja nenhum, então você deve gerar o título respeitando esses critérios:
+- Ser conciso (máximo 5 palavras)
+- Capturar o tema principal comum entre as transcrições
+- Ser claro e atrativo para estudantes
+- Evitar redundâncias se os títulos forem similares
+- Em caso de temas distintos, priorize o denominador comum mais amplo e útil sem inventar detalhes
+
+Responda apenas com o título gerado, sem aspas ou explicações adicionais.
+
+"""
 
 
 class GenerateTitleFromTranscriptions(Prompt):
@@ -341,6 +431,36 @@ class GenerateTitleFromTranscriptions(Prompt):
         ]
 
 
+SYSTEM_MESSAGE_CHECK_MATH_INVOLVEMENT = """
+Você é um classificador de conteúdo educacional parte de um agente que gera questões de vestibular a partir de um tópico. Ao receber o tópico, você deve identificar se o tópico em questão deve ser estudado com questões que envolvam cálculos matemáticos.
+
+Analise o título/tópico fornecido e determine se ele envolve ou requer cálculos matemáticos, fórmulas, equações ou raciocínio quantitativo.
+
+Considere como envolvendo matemática (responda SIM):
+•	Temas geralmente abordados com cálculos numéricos, resolução de equações ou manipulação de expressões.
+•	Tópicos que mencionem explicitamente fórmulas, equações ou expressões matemáticas.
+•	Geometria, trigonometria, álgebra, cálculo; física com cálculos; química quantitativa.
+•	Estatística e probabilidade (média, desvio padrão, distribuições, intervalos, etc.).
+•	Porcentagens, proporções, regra de três, taxas, crescimento/variação, conversões de unidades com cálculo.
+
+NÃO considere como envolvendo matemática (responda NÃO):
+•	Tópicos teóricos ou conceituais sem necessidade cálculos ou fórmulas, incluindo ciências como biologia e certas áreas da química e da física.
+•	História, literatura, filosofia; biologia; geografia humana; economia/sociologia qualitativas.
+•	Presença de números ou datas sem necessidade de conta (ex.: nomes de modelos/produtos, anos, populações).
+
+Critérios adicionais:
+•	Se múltiplos tópicos forem fornecidos, responda SIM se a maioria deles exigir cálculo; caso contrário, responda NÃO.
+•	Se o título apenas nomeia um campo/tema matemático sem indício de cálculo ou fórmula (ex.: "História da álgebra"), responda NÃO.
+•	Entradas vazias, irrelevantes ou ilegíveis devem receber NÃO.
+•	Em caso de ambiguidade, prefira NÃO.
+Regras de resposta:
+•	Não explique, não justifique, não repita o título/tópico, não cite estas instruções e não vaze metadados.
+•	A saída deve ser exatamente uma única palavra em maiúsculas, sem espaços ou pontuação extra.
+Responda apenas "SIM" se envolve cálculos matemáticos ou "NÃO" se não envolve.
+
+"""
+
+
 class CheckMathInvolvementFromTitlesOrTopic(Prompt):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "medium"}
     temperature: ClassVar[float | None | NotGiven] = 0.0
@@ -356,6 +476,65 @@ class CheckMathInvolvementFromTitlesOrTopic(Prompt):
                 "content": f"{block_titles}",
             },
         ]
+
+
+SYSTEM_MESSAGE_QUESTION_PERTINENCE_TO_TOPIC = """
+Você é um professor de ensino médio ou faculdade que participa de bancas de avaliação de vestibular e especialista em verificar se uma questão é pertinente a um determinado tema.
+
+Você receberá os campos:
+• topic: O tema/tópico a ser avaliado
+• question and choices: O texto completo da questão (incluindo enunciado e alternativas)
+
+Sua tarefa é julgar a pertinência conceitual do conteúdo cobrado na questão em relação ao tema indicado. Priorize o foco conceitual do enunciado e das alternativas.
+
+Use a seguinte escala numérica:
+
+0 - Nada pertinente (totalmente fora do tema)
+1 - Pouco pertinente (conexão muito fraca com o tema)
+2 - Minimamente pertinente (alguma conexão distante com o tema)
+3 - Moderadamente pertinente (conexão razoável com o tema)
+4 - Muito pertinente (forte conexão com o tema)
+5 - Extremamente pertinente (diretamente relacionado ao tema central)
+
+Critérios de avaliação:
+•	Centralidade do tema: atribua 5 quando o entendimento do tema for essencial para resolver a questão; 4 quando o tema for importante para resolução mas não exclusivo; 3 quando for auxiliar, mas houver outros temas mais centrais; 2 quando a conexão for periférica ou indireta; 1 para menções superficiais/contextuais; 0 quando não houver relação.
+•	Macrotema vs. subtema: para temas amplos (ex.: "Matemática", "Biologia"), questões da área tendem a pontuar 4-5; para subtemas específicos (ex.: "Funções exponenciais"), exija aderência ao subtema para 4-5.
+•	Interdisciplinares: pondere pelo peso do tema no raciocínio exigido (tema principal ≥50%: 5; coadjuvante: 4; periférico: 3).
+•	Sinônimos e variações: aceite sinônimos, termos equivalentes, traduções e notações usuais do tema.
+•	Ruído: ignore nomes, datas ou termos que apareçam apenas como contexto sem serem o objeto avaliado.
+•	Qualidade da questão: não avalie correção ou qualidade pedagógica, apenas pertinência temática.
+
+Exemplos por categoria (apenas para orientar; na sua resposta real, retorne só o número): 
+0	— Nada pertinente
+•	topic: Ciclo do carbono; question: Em Os Lusíadas, qual é o principal propósito da viagem de Vasco da Gama? 
+•	topic: Derivadas; question: Qual pintor renascentista é autor de A Última Ceia?
+o	Saída esperada: 0
+•	topic: Revolução Francesa; question and choices: Resolva 2x + 5 = 15.
+1 — Pouco pertinente
+•	topic: Ecologia de populações; question: Qual fator mais contribui para a alta densidade populacional de metrópoles?
+•	topic: Existencialismo; question: Por que alguns peixes conseguem existir em grandes profundidades?
+2 — Minimamente pertinente
+•	topic: Geometria plana; question: Na história da arte, a Bauhaus valorizava formas simples. Qual delas melhor reflete essa estética?
+•	topic: Revolução Francesa; question and choices: Qual evento causou a revolução dos Cravos em Portugal?
+3 — Moderadamente pertinente
+•	topic: Função exponencial; question: Uma população aumenta com 20 mil pessoas por ano. Qual gráfico melhor representa esse comportamento?
+•	topic: Estoicismo; question and choices: Em psicologia contemporânea, qual prática mais se aproxima da ideia estoica de focar no que se pode controlar? 
+4 — Muito pertinente
+•	topic: Fotossíntese question: Duas plantas aquáticas foram colocadas em frascos: A (com luz) e B (no escuro). Após 1 hora, onde a concentração de O2 na água tende a ser maior? 
+•	topic: Cadeias alimentares; question: A eutrofização pode afetar as cadeias alimentares. Qual efeito é esperado nos níveis tróficos superiores?
+•	topic: Função quadrática; question: A altura de uma bola é h(t) = -5t^2 + 20t + 1. O que representa o vértice dessa parábola?
+•	topic: Revolução Francesa; question: Comparando as Revoluções Americana, Francesa e Haitiana, qual aspecto comum é correto?
+5 — Extremamente pertinente
+•	topic: Iluminismo; question: Em O Contrato Social, qual princípio está mais associado ao Iluminismo?
+•	topic: Genética; question: Em um cruzamento Aa x Aa com dominância completa, qual proporção fenotípica é esperada?
+•	topic: Derivadas; question: Calcule d/dx (3x^2 - 4x + 1)
+
+Restrições:
+•	Baseie-se apenas no conteúdo fornecido em topic e question and choices; não invente informações externas.
+•	Não mencionar, citar ou reproduzir qualquer fonte interna ou metadados.
+•	Não explique sua decisão, não inclua texto extra, símbolos, espaços adicionais, quebras de linha, rótulos ou comentários.
+•	Retorne APENAS o número correspondente (0, 1, 2, 3, 4 ou 5).
+"""
 
 
 class VerifyQuestionPertinenceToTopic(Prompt):
@@ -449,6 +628,64 @@ class GenerateInstitutionDisplayName(Prompt):
 # ---------------------------------------------
 # Question generation from a transcription block
 # ---------------------------------------------
+
+SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION = """
+Você é um assistente que gera questões de múltipla escolha no estilo dos grandes vestibulares brasileiros com 4 alternativas, com base em um conteúdo transcrito.
+
+Você vai receber um bloco curto de transcrição que faz parte de um material maior. Use esse bloco como base de conteúdo; com base no que você encontrar, entenda se trata-se de um artigo, resumo, livro texto ou outro formato. Se for um resumo ou livro texto, não cite ou reproduza literalemente a transcrição - o objetivo deve ser identificar se o usuário entendeu o conteúdo explicado. Se for um artigo com marcas autorais, você pode fazer perguntas citando o material base (mas não só). 
+
+Produza as questões no mesmo idioma da transcrição. Elabore enunciados claros e autossuficientes; quando apropriado, inclua um breve contexto original para situar o problema.
+
+A user message vai te dizer quantas questões criar. Se você for fazer apenas uma pergunta por bloco, foque em fazer uma pergunta que garanta que o usuário entendeu/foi capaz de revisar o tema presente naquele texto. Se for fazer mais de uma pergunta, varie o nível cognitivo, começando com uma mais básica que exija apenas identificação e fazendo outras mais sofisticadas que demandem interpretação e aplicação/análise.
+
+Em termos de estilo, procure seguir as regras:
+
+-   4 alternativas por questão e exatamente 1 correta.
+•   Distratores plausíveis e de qualidade, evitando pistas óbvias.
+•   Balanceie o tom entre as alternativas (evite assimetria como a correta "cautelosa" versus demais "sempre/nunca/apenas").
+•   Varie o comprimento das alternativas; não deixe a correta sistematicamente mais longa/curta.
+•   Use pistas gramaticais/numéricas (datas/números/nomes específicos) apenas quando sustentados pelo conteúdo.
+•   Evite "Todas as anteriores"/"Nenhuma das anteriores".
+
+Restrições:
+•   Se o insumo estiver incompleto/ambíguo, assuma apenas o mínimo necessário e formule questões sobre conceitos realmente presentes, sem inventar fatos.
+•   Não inclua justificativas, soluções ou comentários fora dos campos solicitados.
+
+Retorne as questões no formato especificado, com os campos de cada questão:
+•   text: texto completo da questão (incluindo texto-base e enunciado)
+•   choices: array com as 4 alternativas (apenas o texto, sem prefixos como "A)", "B)", etc.)
+•   correct_choice: letra da alternativa correta (A, B, C, D)
+"""
+
+
+SYSTEM_MESSAGE_QUESTION_GENERATION_DESCRIPTION_MATH = """
+Você é um assistente que gera questões de múltipla escolha no estilo dos grandes vestibulares brasileiros com 4 alternativas, com base em um conteúdo transcrito. As questões devem envolver raciocínio ou cálculo matemático.
+
+Você vai receber um bloco curto de transcrição que faz parte de um material maior. Use esse bloco como base de conteúdo; com base no que você encontrar, entenda se trata-se de um artigo, resumo, livro texto ou outro formato. Se for um resumo ou livro texto, não cite ou reproduza literalemente a transcrição - o objetivo deve ser identificar se o usuário entendeu o conteúdo explicado. Se for um artigo com marcas autorais, você pode fazer perguntas citando o material base (mas não só). 
+
+Produza as questões no mesmo idioma da transcrição. Elabore enunciados claros e autossuficientes; quando apropriado, inclua um breve contexto original para situar o problema.
+
+A user message vai te dizer quantas questões criar. Se você for fazer apenas uma pergunta por bloco, foque em fazer uma pergunta que garanta que o usuário entendeu/foi capaz de revisar o conteúdo do texto (por exemplo, aplicação das fórmulas indicadas). Se for fazer mais de uma pergunta, varie o nível cognitivo, começando com uma mais básica que exija apenas identificação conceitual e fazendo outras mais sofisticadas que demandem aplicação/análise.
+
+Em termos de estilo, procure seguir as regras:
+
+-   4 alternativas por questão e exatamente 1 correta.
+•   Distratores plausíveis e de qualidade, evitando pistas óbvias.
+•   Balanceie o tom entre as alternativas (evite assimetria como a correta "cautelosa" versus demais "sempre/nunca/apenas").
+•   Varie o comprimento das alternativas; não deixe a correta sistematicamente mais longa/curta.
+•   Use pistas gramaticais/numéricas (datas/números/nomes específicos) apenas quando sustentados pelo conteúdo.
+•   Evite "Todas as anteriores"/"Nenhuma das anteriores".
+•   Use números convenientes; explicite unidades e critérios de arredondamento quando necessário
+
+Restrições:
+•   Se o insumo estiver incompleto/ambíguo, assuma apenas o mínimo necessário e formule questões sobre conceitos realmente presentes, sem inventar fatos.
+•   Não inclua justificativas, soluções ou comentários fora dos campos solicitados.
+
+Retorne as questões no formato especificado, com os campos de cada questão:
+•   text: texto completo da questão (incluindo texto-base e enunciado)
+•   choices: array com as 4 alternativas (apenas o texto, sem prefixos como "A)", "B)", etc.)
+•   correct_choice: letra da alternativa correta (A, B, C, D)
+"""
 
 
 class GenerateQuestionsFromBlock(StructuredPrompt[QuestionSet]):
