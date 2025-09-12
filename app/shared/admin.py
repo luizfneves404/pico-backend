@@ -4,7 +4,7 @@ import io
 import json
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Any, ClassVar, TypeVar, cast
 
 from fastapi import HTTPException, Request, Response
@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse
 from geoalchemy2 import Geography
 from markupsafe import Markup
 from pydantic import BaseModel, ValidationError
+from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import (
     ColumnProperty,
@@ -19,9 +20,10 @@ from sqlalchemy.orm import (
     InstrumentedAttribute,
 )
 from starlette.datastructures import UploadFile
+from starlette.responses import StreamingResponse
 from wtforms import StringField
 
-from app.base import resync_autoincrement
+from app.base import Base, resync_autoincrement
 from app.shared.bootstrap_sqladmin import monkey_patch_sqladmin
 
 monkey_patch_sqladmin()  # it is necessary to run this before importing sqladmin.
@@ -278,6 +280,35 @@ class AdminWithImport(SQLAdminAdmin):
                     }
                 )
             return result
+
+    async def export(self, request: Request) -> Response:
+        """
+        Custom export endpoint that enables streaming.
+        """
+        identity = request.path_params["identity"]
+        export_type = request.path_params["export_type"]
+
+        # We use your existing _find_custom_model_view to get the view instance
+        model_view = self._find_custom_model_view(identity)
+
+        # SECURITY CHECKS (from original sqladmin)
+        if not model_view.can_export or not model_view.is_accessible(request):
+            raise HTTPException(status_code=403)
+        if export_type not in model_view.export_types:
+            raise HTTPException(status_code=404)
+
+        # === THE MAGIC HAPPENS HERE ===
+        # If the view supports our custom streaming method for CSV, use it.
+        if hasattr(model_view, "stream_export") and export_type == "csv":
+            return await model_view.stream_export(request, export_type)
+
+        # --- FALLBACK TO DEFAULT BEHAVIOR ---
+        # For other types (json) or views without the custom method,
+        # use the original memory-intensive method.
+        rows = await model_view.get_model_objects(
+            request=request, limit=model_view.export_max_rows
+        )
+        return await model_view.export_data(rows, export_type=export_type)
 
 
 class LocationField(StringField):
@@ -674,3 +705,46 @@ class CustomModelView(ModelView):
                 guide[field_name] = f"Type: {annotation!s}"
 
         return guide
+
+    async def stream_export(
+        self, request: Request, export_type: str
+    ) -> StreamingResponse:
+        """
+        Handles the streaming export for CSVs. The request object is passed
+        directly from our custom Admin.export method.
+        """
+
+        async def generate_rows() -> AsyncGenerator[str, None]:
+            buffer = io.StringIO()
+            writer = csv.writer(buffer)
+
+            # Write header
+            writer.writerow(self._export_prop_names)
+            buffer.seek(0)
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate()
+
+            # Stream data
+            async with self.session_maker() as session:
+                stmt: Select[Base] = self.list_query(request)
+                stmt = self.sort_query(stmt, request)
+                result = await session.stream(stmt)
+
+                async for row_obj in result.scalars():
+                    vals = [
+                        serialize_for_csv(await self.get_prop_value(row_obj, name))
+                        for name in self._export_prop_names
+                    ]
+                    writer.writerow(vals)
+                    buffer.seek(0)
+                    yield buffer.getvalue()
+                    buffer.seek(0)
+                    buffer.truncate()
+
+        filename = self.get_export_name(export_type=export_type)
+        return StreamingResponse(
+            content=generate_rows(),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f"attachment;filename={filename}"},
+        )
