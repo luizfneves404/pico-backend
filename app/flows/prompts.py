@@ -34,7 +34,7 @@ FORMATO DE RESPOSTA OBRIGATÓRIO:
 
 class GenerateMinorTagsForTopic(Prompt):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "medium"}
-    temperature: ClassVar[float | None | NotGiven] = 0.0
+    temperature: ClassVar[float | None | NotGiven] = NOT_GIVEN
 
     def model(self) -> str:
         return "gpt-5-mini"
@@ -66,7 +66,7 @@ Matérias disponíveis
 
 class ClassifyTopicSubject(Prompt):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "medium"}
-    temperature: ClassVar[float | None | NotGiven] = 0.0
+    temperature: ClassVar[float | None | NotGiven] = NOT_GIVEN
 
     def model(self) -> str:
         return "gpt-5-mini"
@@ -156,7 +156,7 @@ class QuestionSet(BaseModel):
 
 class GenerateQuestionsFromTopic(StructuredPrompt[QuestionSet]):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "medium"}
-    temperature: ClassVar[float | None | NotGiven] = 0.0
+    temperature: ClassVar[float | None | NotGiven] = NOT_GIVEN
 
     def model(self) -> str:
         return "gpt-5"
@@ -211,7 +211,7 @@ Saída: Responda APENAS "true" se precisa de papel ou "false" caso contrário. N
 
 class IsQuantitative(Prompt):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "high"}
-    temperature: ClassVar[float | None | NotGiven] = 0.0
+    temperature: ClassVar[float | None | NotGiven] = NOT_GIVEN
 
     def model(self) -> str:
         return "gpt-5"
@@ -269,7 +269,7 @@ Matérias disponíveis:
 
 class ClassifyQuestionSubject(Prompt):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "medium"}
-    temperature: ClassVar[float | None | NotGiven] = 0.0
+    temperature: ClassVar[float | None | NotGiven] = NOT_GIVEN
 
     def model(self) -> str:
         return "gpt-5-mini"
@@ -326,7 +326,7 @@ Formato de resposta obrigatório
 
 class GenerateMinorTagsFromQuestion(Prompt):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "medium"}
-    temperature: ClassVar[float | None | NotGiven] = 0.0
+    temperature: ClassVar[float | None | NotGiven] = NOT_GIVEN
 
     def model(self) -> str:
         return "gpt-5-mini"
@@ -385,7 +385,7 @@ Caso você seja capaz de identificar que é um artigo, procure extrair o título
 
 class GenerateBlockTitle(Prompt):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "medium"}
-    temperature: ClassVar[float | None | NotGiven] = 0.0
+    temperature: ClassVar[float | None | NotGiven] = NOT_GIVEN
 
     def model(self) -> str:
         return "gpt-5-mini"
@@ -416,7 +416,7 @@ Responda apenas com o título gerado, sem aspas ou explicações adicionais.
 
 class GenerateTitleFromTranscriptions(Prompt):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "medium"}
-    temperature: ClassVar[float | None | NotGiven] = 0.0
+    temperature: ClassVar[float | None | NotGiven] = NOT_GIVEN
 
     def model(self) -> str:
         return "gpt-5-mini"
@@ -463,7 +463,7 @@ Responda apenas "SIM" se envolve cálculos matemáticos ou "NÃO" se não envolv
 
 class CheckMathInvolvementFromTitlesOrTopic(Prompt):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "medium"}
-    temperature: ClassVar[float | None | NotGiven] = 0.0
+    temperature: ClassVar[float | None | NotGiven] = NOT_GIVEN
 
     def model(self) -> str:
         return "gpt-5-mini"
@@ -539,7 +539,7 @@ Restrições:
 
 class VerifyQuestionPertinenceToTopic(Prompt):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "medium"}
-    temperature: ClassVar[float | None | NotGiven] = 0.0
+    temperature: ClassVar[float | None | NotGiven] = NOT_GIVEN
 
     def model(self) -> str:
         return "gpt-5-mini"
@@ -610,7 +610,7 @@ Formatting:
 
 class GenerateInstitutionDisplayName(Prompt):
     reasoning: ClassVar[Reasoning | None | NotGiven] = NOT_GIVEN
-    temperature: ClassVar[float | None | NotGiven] = 1.0
+    temperature: ClassVar[float | None | NotGiven] = NOT_GIVEN
 
     def model(self) -> str:
         return "gpt-5-nano"
@@ -690,7 +690,7 @@ Retorne as questões no formato especificado, com os campos de cada questão:
 
 class GenerateQuestionsFromBlock(StructuredPrompt[QuestionSet]):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "medium"}
-    temperature: ClassVar[float | None | NotGiven] = 0.0
+    temperature: ClassVar[float | None | NotGiven] = NOT_GIVEN
 
     def model(self) -> str:
         return "gpt-5"
@@ -729,7 +729,7 @@ class GenerateQuestionsFromBlock(StructuredPrompt[QuestionSet]):
 
 class GenerateAnswer(Prompt):
     reasoning: ClassVar[Reasoning | None | NotGiven] = {"effort": "high"}
-    temperature: ClassVar[float | None | NotGiven] = 0.0
+    temperature: ClassVar[float | None | NotGiven] = NOT_GIVEN
 
     def model(self) -> str:
         return "gpt-5"
