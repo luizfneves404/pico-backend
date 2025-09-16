@@ -14,6 +14,7 @@ from arq.connections import RedisSettings
 from arq.cron import CronJob, cron
 from arq.typing import SecondsTimedelta, StartupShutdown, WorkerCoroutine
 from arq.worker import Function
+from google.genai.errors import ServerError
 
 from app import arq_client, redis_client
 from app.config import settings
@@ -89,6 +90,9 @@ def make_worker_settings(
         await redis_client.close()
         await arq_client.close()
 
+    redis_config = RedisSettings.from_dsn(redis_url)
+    redis_config.retry_on_error = [ServerError]
+
     class WorkerSettings:
         functions: Sequence[WorkerCoroutine | Function] = [
             ping,
@@ -107,7 +111,7 @@ def make_worker_settings(
             task_generate_and_consolidate_tags,
             task_determine_institution_display_name,
         ]
-        redis_settings: RedisSettings = RedisSettings.from_dsn(redis_url)
+        redis_settings: RedisSettings = redis_config
         on_startup: StartupShutdown | None = startup
         on_shutdown: StartupShutdown | None = shutdown
         burst: bool = burst_mode
