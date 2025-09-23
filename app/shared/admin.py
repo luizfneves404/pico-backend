@@ -1,6 +1,4 @@
 import copy
-import csv
-import io
 import json
 import logging
 import re
@@ -9,13 +7,11 @@ from typing import Any, ClassVar, TypeVar, cast
 
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
-from geoalchemy2 import Geography
 from markupsafe import Markup
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import (
-    ColumnProperty,
     DeclarativeBase,
     InstrumentedAttribute,
 )
@@ -41,6 +37,8 @@ ModelType = TypeVar("ModelType", bound=DeclarativeBase)
 
 WKT_RE = re.compile(r"^POINT\(\s*([-0-9\.]+)\s+([-0-9\.]+)\s*\)$")
 
+STREAM_EXPORT_BUFFER_SIZE = 1000
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,7 +49,7 @@ def bool_formatter(value: bool) -> Markup:
 
 
 class ImportResult(BaseModel):
-    """Simple import result with clear error messages."""
+    """Import outcome with validation errors, independent of file format."""
 
     total_rows: int
     successful_rows: int
@@ -59,8 +57,8 @@ class ImportResult(BaseModel):
     errors: list[dict[str, Any]]
 
 
-class CSVImportError(Exception):
-    """Exception raised during CSV import operations."""
+class ImportErrorHTTP(Exception):
+    """Raised when import preconditions are not met."""
 
     pass
 
@@ -72,20 +70,20 @@ class AdminWithImport(SQLAdminAdmin):
                 return view
         raise HTTPException(status_code=404)
 
-    async def import_csv(self, request: Request) -> HTMLResponse | Response:
-        """Main import endpoint - handles both form display and file processing."""
+    async def import_jsonl(self, request: Request) -> HTMLResponse:
+        """Import endpoint: shows form (GET) and processes upload (POST)."""
         model_view = self._find_custom_model_view(request.path_params["identity"])
 
         if not model_view.can_import or not model_view.is_accessible(request):
             raise HTTPException(status_code=403)
 
         if not model_view.import_schema:
-            raise CSVImportError("No import schema configured for this model")
+            raise ImportErrorHTTP("No import schema configured for this model")
 
-        headers = list(model_view.import_schema.model_fields.keys())  # type: ignore
+        headers = list(model_view.import_schema.model_fields.keys())
 
         if request.method == "GET":
-            context = {
+            context: dict[str, Any] = {
                 "model_view": model_view,
                 "model_name": model_view.model.__name__,
                 "sample_columns": headers,
@@ -97,25 +95,25 @@ class AdminWithImport(SQLAdminAdmin):
                 request, "sqladmin/import.html", context
             )
 
-        elif request.method == "POST":
+        if request.method == "POST":
             return await self._handle_import_upload(request, model_view)
-        else:
-            raise HTTPException(status_code=405, detail="Method not allowed")
+
+        raise HTTPException(status_code=405, detail="Method not allowed")
 
     async def import_template(self, request: Request) -> Response:
-        """Download CSV template endpoint."""
+        """Download JSON Lines template."""
         model_view = self._find_custom_model_view(request.path_params["identity"])
 
         if not model_view.can_import or not model_view.is_accessible(request):
             raise HTTPException(status_code=403)
 
-        csv_content = model_view.generate_import_template()
+        jsonl_content = model_view.generate_import_template_jsonl()
 
-        filename = f"{model_view.model.__name__.lower()}_import_template.csv"
+        filename = f"{model_view.model.__name__.lower()}_import_template.jsonl"
 
         return Response(
-            content=csv_content,
-            media_type="text/csv",
+            content=jsonl_content,
+            media_type="application/x-ndjson",
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
@@ -124,25 +122,22 @@ class AdminWithImport(SQLAdminAdmin):
         request: Request,
         model_view: "CustomModelView",
     ) -> HTMLResponse:
-        """Handle CSV file upload and processing."""
+        """Dispatch between file-upload schema and JSONL import."""
         form = await request.form()
         dry_run = form.get("dry_run") == "true"
 
         if model_view.is_file_upload_schema():
-            # Handle file upload schema
             result = await self._handle_file_upload_import(form, model_view, dry_run)
         else:
-            # Handle traditional CSV import
-            result = await self._handle_csv_import(form, model_view, dry_run)
+            result = await self._handle_jsonl_import(form, model_view, dry_run)
 
-        cleaned_data = copy.deepcopy(result.errors)
-        for error in cleaned_data:
-            # Handle different types of data structures in error["data"]
-            if isinstance(error["data"], list):
-                for data in error["data"]:
-                    # Only process if data is a dictionary
+        cleaned: list[dict[str, Any]] = copy.deepcopy(result.errors)
+        for error in cleaned:
+            data_obj: Any = error.get("data")
+            if isinstance(data_obj, list):
+                for data in data_obj:
                     if isinstance(data, dict):
-                        for key, value in data.items():
+                        for key, value in cast("dict[str, Any]", data).items():
                             if isinstance(value, UploadFile):
                                 data[key] = f"UploadFile(filename='{value.filename}')"
                             elif isinstance(value, list):
@@ -154,14 +149,13 @@ class AdminWithImport(SQLAdminAdmin):
                                     )
                                     for item in cast("list[Any]", value)
                                 ]
-                    # If data is not a dict (e.g., string), leave it as is
-            elif isinstance(error["data"], dict):
-                # Handle case where error["data"] is a single dictionary
-                for key, value in error["data"].items():
+            elif isinstance(data_obj, dict):
+                data_dict = cast("dict[str, Any]", data_obj)
+                for key, value in data_dict.items():
                     if isinstance(value, UploadFile):
-                        error["data"][key] = f"UploadFile(filename='{value.filename}')"
+                        data_dict[key] = f"UploadFile(filename='{value.filename}')"
                     elif isinstance(value, list):
-                        error["data"][key] = [
+                        data_dict[key] = [
                             (
                                 f"UploadFile(filename='{item.filename}')"
                                 if isinstance(item, UploadFile)
@@ -169,142 +163,129 @@ class AdminWithImport(SQLAdminAdmin):
                             )
                             for item in cast("list[Any]", value)
                         ]
-            # If error["data"] is neither list nor dict (e.g., string), leave it as is
 
-        result.errors = cleaned_data
+        result.errors = cleaned
 
-        context = {
+        context: dict[str, Any] = {
             "model_view": model_view,
             "model_name": model_view.model.__name__,
             "result": result,
             "dry_run": dry_run,
         }
-
         return await self.templates.TemplateResponse(
             request, "sqladmin/import_result.html", context
         )
 
-    async def _handle_csv_import(
+    async def _handle_jsonl_import(
         self, form: Any, model_view: "CustomModelView", dry_run: bool
-    ) -> ImportResult:
-        """Handle traditional CSV import."""
-        file = form.get("csv_file")
+    ) -> "ImportResult":
+        """Parse uploaded JSON Lines file and pass rows for validation."""
+        file = form.get("jsonl_file")
 
         if not file or not isinstance(file, UploadFile):
             raise HTTPException(status_code=400, detail="No file uploaded")
 
-        if not file.filename or not file.filename.endswith(".csv"):
-            raise HTTPException(status_code=400, detail="File must be a CSV file")
+        if not file.filename or not file.filename.lower().endswith(".jsonl"):
+            raise HTTPException(status_code=400, detail="File must be a .jsonl file")
 
-        file_content = await file.read()
+        raw = await file.read()
         try:
-            content = file_content.decode("utf-8")
-            csv_reader = csv.DictReader(io.StringIO(content))
-            rows = list(csv_reader)
-
+            text = raw.decode("utf-8")
         except UnicodeDecodeError as e:
             raise HTTPException(
                 status_code=400,
-                detail="Invalid file encoding. Please use UTF-8 encoded CSV files.",
+                detail="Invalid file encoding. Please use UTF-8 encoded files.",
             ) from e
-        except csv.Error as e:
-            raise HTTPException(
-                status_code=400, detail=f"Error parsing CSV file: {e!s}"
-            ) from e
+
+        rows: list[dict[str, Any]] = []
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid JSON on line {line_number}: {e.msg}",
+                ) from e
+            if not isinstance(obj, dict):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Line {line_number} must be a JSON object",
+                )
+            rows.append(cast("dict[str, Any]", obj))
+
+        if model_view.import_max_rows and len(rows) > model_view.import_max_rows:
+            raise HTTPException(status_code=400, detail="Too many rows in file")
 
         return await model_view.import_data(rows, dry_run=dry_run)
 
     async def _handle_file_upload_import(
         self, form: Any, model_view: "CustomModelView", dry_run: bool
     ) -> "ImportResult":
-        """Handle file upload import (zip files, direct uploads, etc.)."""
-        # Build form data matching the schema
+        """Validate pydantic schema for forms with UploadFile fields."""
         form_data: dict[str, Any] = {}
 
         if not model_view.import_schema:
             raise HTTPException(status_code=500, detail="No import schema configured")
 
-        import_schema = model_view.import_schema  # Type narrowing
+        import_schema = model_view.import_schema
         for field_name, field_info in import_schema.model_fields.items():
-            annotation_str = str(field_info.annotation)
+            ann_str = str(field_info.annotation)
 
-            if "UploadFile" in annotation_str and "list" not in annotation_str:
-                # Handle single file upload
+            if "UploadFile" in ann_str and "list" not in ann_str:
                 file_value = form.get(field_name)
-                if isinstance(file_value, UploadFile) and file_value.filename:
-                    form_data[field_name] = file_value
-                else:
-                    form_data[field_name] = None
-
-            elif "UploadFile" in annotation_str and "list" in annotation_str:
-                # Handle multiple file uploads
+                form_data[field_name] = (
+                    file_value
+                    if isinstance(file_value, UploadFile) and file_value.filename
+                    else None
+                )
+            elif "UploadFile" in ann_str and "list" in ann_str:
                 file_values = form.getlist(field_name)
-                upload_files = [
+                form_data[field_name] = [
                     f for f in file_values if isinstance(f, UploadFile) and f.filename
                 ]
-                # Assigning an empty list is often better for type-hinted list fields
-                form_data[field_name] = upload_files
-
             else:
-                # Handle regular form fields (text, etc.)
                 form_data[field_name] = form.get(field_name)
 
-                # Validate and process using the schema
         try:
-            validated_data = import_schema.model_validate(form_data)
-            return await model_view.import_file_data([validated_data], dry_run=dry_run)
+            validated = import_schema.model_validate(form_data)
+            return await model_view.import_file_data([validated], dry_run=dry_run)
         except ValidationError as e:
-            # Convert validation errors to ImportResult format
             result = ImportResult(
-                total_rows=1,
-                successful_rows=0,
-                failed_rows=1,
-                errors=[],
+                total_rows=1, successful_rows=0, failed_rows=1, errors=[]
             )
-            for error in e.errors():
-                error_field_name = str(error["loc"][0]) if error["loc"] else "unknown"
-                # Get field info for error reporting
-                error_field_info = import_schema.model_fields.get(error_field_name)
-                expected_type = (
-                    str(error_field_info.annotation) if error_field_info else "unknown"
-                )
-
+            for err in e.errors():
+                field_name = str(err["loc"][0]) if err["loc"] else "unknown"
+                field_info = import_schema.model_fields.get(field_name)
+                expected = str(field_info.annotation) if field_info else "unknown"
                 result.errors.append(
                     {
                         "row": 1,
-                        "field": error_field_name,
-                        "message": error["msg"],
-                        "input_value": form_data.get(error_field_name, "N/A"),
-                        "expected_type": expected_type,
+                        "field": field_name,
+                        "message": err["msg"],
+                        "input_value": form_data.get(field_name, "N/A"),
+                        "expected_type": expected,
                         "data": form_data,
                     }
                 )
             return result
 
     async def export(self, request: Request) -> Response:
-        """
-        Custom export endpoint that enables streaming.
-        """
+        """Extend export to support JSON Lines streaming as 'jsonl'."""
         identity = request.path_params["identity"]
         export_type = request.path_params["export_type"]
 
-        # We use your existing _find_custom_model_view to get the view instance
         model_view = self._find_custom_model_view(identity)
 
-        # SECURITY CHECKS (from original sqladmin)
         if not model_view.can_export or not model_view.is_accessible(request):
             raise HTTPException(status_code=403)
         if export_type not in model_view.export_types:
             raise HTTPException(status_code=404)
 
-        # === THE MAGIC HAPPENS HERE ===
-        # If the view supports our custom streaming method for CSV, use it.
-        if hasattr(model_view, "stream_export") and export_type == "csv":
+        if hasattr(model_view, "stream_export") and export_type == "jsonl":
             return await model_view.stream_export(request, export_type)
 
-        # --- FALLBACK TO DEFAULT BEHAVIOR ---
-        # For other types (json) or views without the custom method,
-        # use the original memory-intensive method.
         rows = await model_view.get_model_objects(
             request=request, limit=model_view.export_max_rows
         )
@@ -339,101 +320,28 @@ class LocationField(StringField):
 
 
 class CustomFormConverter(ModelConverter):
-    @converts("geoalchemy2.types.Geography")
+    @converts("geoalchemy2.types.Geography")  # pyright: ignore[reportUnknownVariableType]
     def conv_location(
         self,
         _model: type,
-        _prop: ColumnProperty[Geography],
+        _prop: Any,
         kwargs: dict[str, Any],
-    ) -> LocationField:
+    ) -> LocationField:  # pyright: ignore[reportIncompatibleMethodOverride]
         return LocationField(**kwargs)
 
 
-def serialize_for_csv(value: Any) -> str:
-    """Serialize any value to a CSV-safe string with explicit type handling."""
-    if value is None:
-        return ""  # Empty string for None/null values
-    elif isinstance(value, bool):
-        return "true" if value else "false"  # JSON boolean format
-    elif isinstance(value, int | float):
-        return str(value)
-    elif isinstance(value, str):
-        return value
-    elif isinstance(value, list | dict):
-        return json.dumps(value)
-    else:
-        # Fallback for other types (datetime, etc.)
-        return json.dumps(value, default=str)
-
-
-def parse_field_value(value: str | None) -> Any:
-    """Parse a CSV string value with explicit type conversion rules.
-
-    Special handling for empty strings vs None:
-    - Empty CSV cell (None from CSV reader) -> None
-    - Cell with just quotes '""' -> empty string ""
-    - Cell with 'null' -> None
-    """
-    if value is None:
-        return None
-    if value == '""':
-        return ""
-    if not value or value.strip() == "":
-        return None
-
-    value = value.strip()
-
-    # null marker
-    if value.lower() == "null":
-        return None
-
-    # booleans
-    if value.lower() == "true":
-        return True
-    if value.lower() == "false":
-        return False
-
-    # JSON objects/arrays
-    if value.startswith(("{", "[")):
-        try:
-            return json.loads(value)
-        except (json.JSONDecodeError, ValueError):
-            pass
-
-    # 🛑 DO NOT coerce to number here, let pydantic handle it
-    return value  # Always return string unless JSON, bool, or null
+def _json_default(value: Any) -> Any:
+    """Default JSON serializer used for non-JSON-native types."""
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    return str(value)
 
 
 class CustomModelView(ModelView):
-    """Enhanced ModelView with explicit CSV import functionality.
+    """ModelView with JSON Lines import and export support.
 
-    CSV Import Contract:
-    - Empty cells = None/null values
-    - Empty strings: Use '""' (literal two quotes)
-    - Booleans: "true" or "false" (case-insensitive)
-    - Numbers: Plain numeric values (123, 45.67)
-    - Strings: Plain text (quotes not needed unless part of the content)
-    - Lists/Objects: Valid JSON format (["item1", "item2"], {"key": "value"})
-    - Null values: Empty cell or "null"
-
-    Example usage:
-    ```python
-    class UserImportSchema(BaseModel):
-        email: str
-        name: str
-        is_active: bool = True
-        tags: list[str] = []
-
-    class UserAdmin(CustomModelView, model=User):
-        can_import = True
-        import_schema = UserImportSchema
-        import_template_data = {
-            "email": "user@example.com",
-            "name": "John Doe",
-            "is_active": True,
-            "tags": ["tag1", "tag2"],
-        }
-    ```
+    Import expects one JSON object per line. Export with type "jsonl"
+    streams one JSON object per line containing the selected export columns.
     """
 
     form_converter = CustomFormConverter
@@ -444,15 +352,17 @@ class CustomModelView(ModelView):
         str: lambda value: value if value else "[EMPTY STRING]",
     }
 
-    # Import configuration
+    # Import / Export configuration
     can_import: ClassVar[bool] = False
     import_max_rows: ClassVar[int] = 100000
     import_schema: type[BaseModel] | None = None
     import_template_data: ClassVar[dict[str, Any]] = {}
-    session_maker: async_sessionmaker[AsyncSession]
+    session_maker: ClassVar[async_sessionmaker[AsyncSession]]
+
+    export_types: ClassVar[list[str]] = ["jsonl", "json"]
 
     async def to_orm_model(self, validated_data_list: list[Any]) -> list[Any]:
-        """Convert list of Pydantic models to list of ORM models."""
+        """Convert schema models to ORM instances."""
         return [self.model(**data.model_dump()) for data in validated_data_list]
 
     def is_file_upload_schema(self) -> bool:
@@ -481,7 +391,7 @@ class CustomModelView(ModelView):
     async def import_file_data(
         self, validated_data_list: list[Any], dry_run: bool = False
     ) -> ImportResult:
-        """Import file data using validated schema objects."""
+        """Persist file-based schema objects or validate on dry-run."""
         result = ImportResult(
             total_rows=len(validated_data_list),
             successful_rows=0,
@@ -549,9 +459,9 @@ class CustomModelView(ModelView):
     async def import_data(
         self, rows: list[dict[str, Any]], dry_run: bool = False
     ) -> ImportResult:
-        """Import CSV data using Pydantic schema with explicit type handling."""
+        """Validate and import JSON Lines rows using the configured schema."""
         if not self.import_schema:
-            raise CSVImportError("No import schema configured for this model")
+            raise ImportErrorHTTP("No import schema configured for this model")
 
         result = ImportResult(
             total_rows=len(rows),
@@ -564,16 +474,7 @@ class CustomModelView(ModelView):
         validated_data_list: list[BaseModel] = []
         for row_idx, raw_row in enumerate(rows, 1):
             try:
-                # Parse each field value with explicit type handling
-                cleaned_row: dict[str, Any] = {}
-                for key, value in raw_row.items():
-                    if isinstance(value, str):
-                        cleaned_row[key] = parse_field_value(value)
-                    else:
-                        cleaned_row[key] = value
-
-                # Validate with Pydantic schema
-                validated_data = self.import_schema.model_validate(cleaned_row)
+                validated_data = self.import_schema.model_validate(raw_row)
                 validated_data_list.append(validated_data)
                 result.successful_rows += 1
 
@@ -641,36 +542,18 @@ class CustomModelView(ModelView):
         field_info = self.import_schema.model_fields[field_name]
         return str(field_info.annotation)
 
-    def generate_import_template(self) -> str:
-        """Generate CSV template with properly serialized sample data."""
+    def generate_import_template_jsonl(self) -> str:
+        """Generate a minimal JSON Lines template using sample data."""
         if not self.import_schema:
-            raise CSVImportError("No import schema configured for this model")
+            raise ImportErrorHTTP("No import schema configured for this model")
 
         if not self.import_template_data:
-            raise CSVImportError("No import template data configured for this model")
+            raise ImportErrorHTTP("No import template data configured for this model")
 
-        headers = list(self.import_schema.model_fields.keys())
-
-        # Generate sample row with consistent serialization
-        sample_row: list[str] = []
-        try:
-            for field_name in headers:
-                if field_name in self.import_template_data:
-                    value = self.import_template_data[field_name]
-                    sample_row.append(serialize_for_csv(value))
-                else:
-                    # Provide empty string for missing optional fields
-                    sample_row.append("")
-        except Exception as e:
-            raise CSVImportError(f"Error generating template: {e!s}") from e
-
-        # Create CSV with header and sample row
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(headers)
-        writer.writerow(sample_row)
-
-        return output.getvalue()
+        line = json.dumps(
+            self.import_template_data, ensure_ascii=False, default=_json_default
+        )
+        return line + "\n"
 
     def get_import_format_guide(self) -> dict[str, str]:
         """Generate format guide for CSV imports."""
@@ -709,42 +592,29 @@ class CustomModelView(ModelView):
     async def stream_export(
         self, request: Request, export_type: str
     ) -> StreamingResponse:
-        """
-        Handles the streaming export for CSVs. The request object is passed
-        directly from our custom Admin.export method.
-        """
+        """Stream export as JSON Lines when export_type == "jsonl"."""
 
         async def generate_rows() -> AsyncGenerator[str, None]:
-            buffer = io.StringIO()
-            writer = csv.writer(buffer)
-
-            # Write header
-            writer.writerow(self._export_prop_names)
-            buffer.seek(0)
-            yield buffer.getvalue()
-            buffer.seek(0)
-            buffer.truncate()
-
-            # Stream data
             async with self.session_maker() as session:
-                stmt: Select[Base] = self.list_query(request)
-                stmt = self.sort_query(stmt, request)
+                stmt: Select[tuple[Base]] = self.list_query(request)
+                stmt: Select[tuple[Base]] = self.sort_query(stmt, request)
+                stmt = stmt.execution_options(yield_per=STREAM_EXPORT_BUFFER_SIZE)
                 result = await session.stream(stmt)
 
-                async for row_obj in result.scalars():
-                    vals = [
-                        serialize_for_csv(await self.get_prop_value(row_obj, name))
-                        for name in self._export_prop_names
-                    ]
-                    writer.writerow(vals)
-                    buffer.seek(0)
-                    yield buffer.getvalue()
-                    buffer.seek(0)
-                    buffer.truncate()
+                async for rowobj in result.scalars():
+                    rowdict = {k: getattr(rowobj, k) for k in self._export_prop_names}
+                    yield (
+                        json.dumps(
+                            rowdict,
+                            ensure_ascii=False,
+                            default=_json_default,
+                        )
+                        + "\n"
+                    )
 
         filename = self.get_export_name(export_type=export_type)
         return StreamingResponse(
             content=generate_rows(),
-            media_type="text/csv; charset=utf-8",
+            media_type="application/x-ndjson; charset=utf-8",
             headers={"Content-Disposition": f"attachment;filename={filename}"},
         )

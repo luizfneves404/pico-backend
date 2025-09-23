@@ -60,8 +60,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         import_routes: list[Route] = [
             Route(
                 "/{identity}/import",
-                endpoint=admin.import_csv,
-                name="import_csv",
+                endpoint=admin.import_jsonl,
+                name="import_jsonl",
                 methods=["GET", "POST"],
             ),
             Route(

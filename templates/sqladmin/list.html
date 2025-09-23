@@ -8,8 +8,7 @@
       <div class="ms-auto">
         {% if model_view.can_import %}
         <div class="ms-3 d-inline-block">
-          <a href="{{ url_for('admin:import_csv', identity=model_view.identity) }}"
-            class="btn btn-success">
+          <a href="{{ url_for('admin:import_jsonl', identity=model_view.identity) }}" class="btn btn-success">
             Import
           </a>
         </div>
@@ -62,38 +61,46 @@
               data-url="{{ url_for('admin:delete', identity=model_view.identity) }}" data-bs-toggle="modal"
               data-bs-target="#modal-delete">Delete selected items</a>
             {% endif %}
-      
+
             {# NEW: Loop through actions to create "Select All" buttons #}
             {% if model_view._custom_actions_in_list %}
-            <li><hr class="dropdown-divider"></li>
-            <li><h6 class="dropdown-header">Apply to ALL items</h6></li>
+            <li>
+              <hr class="dropdown-divider">
+            </li>
+            <li>
+              <h6 class="dropdown-header">Apply to ALL items</h6>
+            </li>
             {% for custom_action, label in model_view._custom_actions_in_list.items() %}
-              <a class="dropdown-item" id="action-select-all-post" href="#"
-                data-url="{{ model_view._url_for_action(request, custom_action) }}"
-                data-confirmation="{{ model_view._custom_actions_confirmation.get(custom_action) }}">
-                {{ label }} (All)
-              </a>
+            <a class="dropdown-item" id="action-select-all-post" href="#"
+              data-url="{{ model_view._url_for_action(request, custom_action) }}"
+              data-confirmation="{{ model_view._custom_actions_confirmation.get(custom_action) }}">
+              {{ label }} (All)
+            </a>
             {% endfor %}
-            <li><hr class="dropdown-divider"></li>
-            <li><h6 class="dropdown-header">Apply to selected items</h6></li>
+            <li>
+              <hr class="dropdown-divider">
+            </li>
+            <li>
+              <h6 class="dropdown-header">Apply to selected items</h6>
+            </li>
             {% endif %}
-      
+
             {% for custom_action, label in model_view._custom_actions_in_list.items() %}
-              {% if custom_action in model_view._custom_actions_confirmation %}
-              <a class="dropdown-item" href="#" data-bs-toggle="modal"
-                data-bs-target="#modal-confirmation-{{ custom_action }}">
-                {{ label }}
-              </a>
-              {% else %}
-              <a class="dropdown-item" id="action-custom-{{ custom_action }}" href="#"
-                data-url="{{ model_view._url_for_action(request, custom_action) }}">
-                {{ label }}
-              </a>
-              {% endif %}
+            {% if custom_action in model_view._custom_actions_confirmation %}
+            <a class="dropdown-item" href="#" data-bs-toggle="modal"
+              data-bs-target="#modal-confirmation-{{ custom_action }}">
+              {{ label }}
+            </a>
+            {% else %}
+            <a class="dropdown-item" id="action-custom-{{ custom_action }}" href="#"
+              data-url="{{ model_view._url_for_action(request, custom_action) }}">
+              {{ label }}
+            </a>
+            {% endif %}
             {% endfor %}
           </div>
           {% endif %}
-      </div>
+        </div>
         {% if model_view.column_searchable_list %}
         <div class="col-md-4 text-muted">
           <div class="input-group">
@@ -123,7 +130,8 @@
               <a href="{{ request.url.include_query_params(sort='desc') }}"><i class="fa-solid fa-arrow-up"></i> {{
                 label }}</a>
               {% elif request.query_params.get("sortBy") == name and request.query_params.get("sort") == "desc" %}
-              <a href="{{ request.url.include_query_params(sort='asc') }}"><i class="fa-solid fa-arrow-down"></i> {{ label
+              <a href="{{ request.url.include_query_params(sort='asc') }}"><i class="fa-solid fa-arrow-down"></i> {{
+                label
                 }}</a>
               {% else %}
               <a href="{{ request.url.include_query_params(sortBy=name, sort='asc') }}">{{ label }}</a>
@@ -223,7 +231,8 @@
         </a>
         <div class="dropdown-menu">
           {% for page_size_option in model_view.page_size_options %}
-          <a class="dropdown-item" href="{{ request.url.include_query_params(pageSize=page_size_option, page=pagination.resize(page_size_option).page) }}">
+          <a class="dropdown-item"
+            href="{{ request.url.include_query_params(pageSize=page_size_option, page=pagination.resize(page_size_option).page) }}">
             {{ page_size_option }} / Page
           </a>
           {% endfor %}
@@ -248,6 +257,6 @@
 
 {# IMPORTANT: Add your custom script AFTER the parent scripts #}
 {% block tail %}
-  {{ super() }} {# This will include any scripts from parent templates, if necessary #}
-  <script src="{{ url_for('static', path='js/custom_admin.js') }}"></script>
+{{ super() }} {# This will include any scripts from parent templates, if necessary #}
+<script src="{{ url_for('static', path='js/custom_admin.js') }}"></script>
 {% endblock %}

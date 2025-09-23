@@ -16,7 +16,7 @@ class CountryAdmin(CustomModelView, model=Country):
     icon = "fa-solid fa-flag"
 
     # Enable CSV import
-    can_import: ClassVar[bool] = True
+    can_import = True
     import_schema = CountryImportSchema
     import_template_data: ClassVar = {
         "code": "AA",

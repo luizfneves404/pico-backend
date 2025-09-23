@@ -1,5 +1,5 @@
-import csv
 import io
+import json
 import zipfile
 from typing import Any, ClassVar
 
@@ -17,7 +17,7 @@ from app.shared.admin import CustomModelView
 
 
 class FileImportRecord(BaseModel):
-    """Individual file record from CSV manifest."""
+    """Individual file record from manifest (JSON Lines)."""
 
     filename: str
     original_name: str | None = None
@@ -42,49 +42,44 @@ class FileImportSchema(BaseModel):
     """Schema for file import - either zip upload or direct files."""
 
     zip_file: UploadFile | None = None
-    csv_manifest: str | None = None
+    jsonl_manifest: str | None = None
     direct_files: list[UploadFile] | None = None
 
-    @field_validator("csv_manifest")
+    @field_validator("jsonl_manifest")
     @classmethod
     def validate_csv(cls, v: str | None) -> str | None:
-        """Validate CSV manifest format."""
+        """Validate manifest in JSON Lines format."""
         if v is None:
             return v
 
-        # Parse and validate CSV structure
-        try:
-            reader = csv.DictReader(io.StringIO(v))
-            required_fields = {"filename"}
+        lines = [line for line in io.StringIO(v).read().splitlines() if line.strip()]
+        if not lines:
+            raise ValueError("Manifest cannot be empty")
 
-            if not reader.fieldnames or not required_fields.issubset(
-                set(reader.fieldnames)
-            ):
-                raise ValueError('CSV must have "filename" column')
-
-            # Validate each row
-            records = list(reader)
-            if not records:
-                raise ValueError("CSV manifest cannot be empty")
-
-            for i, row in enumerate(records):
-                try:
-                    FileImportRecord(**row)
-                except Exception as e:
-                    raise ValueError(f"Invalid CSV row {i + 1}: {e}") from e
-
-        except Exception as e:
-            raise ValueError(f"Invalid CSV format: {e}") from e
+        for i, line in enumerate(lines, start=1):
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON on line {i}: {e.msg}") from e
+            try:
+                FileImportRecord(**obj)
+            except Exception as e:
+                raise ValueError(f"Invalid record at line {i}: {e}") from e
 
         return v
 
-    def parse_csv_manifest(self) -> list[FileImportRecord]:
-        """Parse CSV manifest into FileImportRecord objects."""
-        if not self.csv_manifest:
+    def parse_jsonl_manifest(self) -> list[FileImportRecord]:
+        """Parse JSON Lines manifest into FileImportRecord objects."""
+        if not self.jsonl_manifest:
             return []
 
-        reader = csv.DictReader(io.StringIO(self.csv_manifest))
-        return [FileImportRecord(**row) for row in reader]
+        records: list[FileImportRecord] = []
+        for line in io.StringIO(self.jsonl_manifest).read().splitlines():
+            if not line.strip():
+                continue
+            data = json.loads(line)
+            records.append(FileImportRecord(**data))
+        return records
 
 
 class FileAdmin(CustomModelView, model=File):
@@ -158,7 +153,8 @@ class FileAdmin(CustomModelView, model=File):
     import_schema = FileImportSchema
     import_template_data: ClassVar = {
         "zip_file": "Upload a ZIP file containing files to import",
-        "csv_manifest": "filename,original_name\ndocument1.pdf,My Document.pdf\nimage.jpg,Profile Image.jpg",
+        "jsonl_manifest": '{"filename": "document1.pdf", "original_name": "My Document.pdf"}\n'
+        '{"filename": "image.jpg", "original_name": "Profile Image.jpg"}',
         "direct_files": "Or upload files directly (for small batches)",
     }
 
@@ -198,10 +194,10 @@ class FileAdmin(CustomModelView, model=File):
         files: list[File] = []
 
         for validated_data in validated_data_list:
-            if validated_data.zip_file and validated_data.csv_manifest:
-                # Process zip file with CSV manifest
+            if validated_data.zip_file and validated_data.jsonl_manifest:
+                # Process zip file with JSONL manifest
                 zip_files = await self.process_zip_import(
-                    validated_data.zip_file, validated_data.parse_csv_manifest()
+                    validated_data.zip_file, validated_data.parse_jsonl_manifest()
                 )
                 files.extend(zip_files)
 
@@ -214,7 +210,7 @@ class FileAdmin(CustomModelView, model=File):
 
             else:
                 raise ValueError(
-                    "Either zip_file+csv_manifest or direct_files must be provided"
+                    "Either zip_file+jsonl_manifest or direct_files must be provided"
                 )
 
         return files

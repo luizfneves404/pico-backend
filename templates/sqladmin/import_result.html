@@ -7,11 +7,11 @@
       <h3 class="card-title">
         Import Results - {{ model_name }}
         {% if dry_run %}
-          <span class="badge bg-info ms-2">Preview Mode</span>
+        <span class="badge bg-info ms-2">Preview Mode</span>
         {% endif %}
       </h3>
       <div class="ms-auto">
-        <a href="{{ url_for('admin:import_csv', identity=model_view.identity) }}" class="btn btn-secondary me-2">
+        <a href="{{ url_for('admin:import_jsonl', identity=model_view.identity) }}" class="btn btn-secondary me-2">
           <i class="fa-solid fa-upload"></i> Import Another File
         </a>
         <a href="{{ url_for('admin:list', identity=model_view.identity) }}" class="btn btn-primary">
@@ -19,7 +19,7 @@
         </a>
       </div>
     </div>
-    
+
     <div class="card-body">
       <div class="row mb-4">
         <div class="col-md-3">
@@ -59,86 +59,89 @@
       </div>
 
       {% if result.failed_rows == 0 %}
-        <div class="alert alert-success" role="alert">
-          <i class="fa-solid fa-check-circle"></i>
-          <strong>Success!</strong> 
-          {% if dry_run %}
-            All {{ result.successful_rows }} rows validated successfully. To import the data, please upload the file again with "Preview Only" unchecked.
-          {% else %}
-            All {{ result.successful_rows }} rows imported successfully.
-          {% endif %}
-        </div>
+      <div class="alert alert-success" role="alert">
+        <i class="fa-solid fa-check-circle"></i>
+        <strong>Success!</strong>
+        {% if dry_run %}
+        All {{ result.successful_rows }} rows validated successfully. To import the data, please upload the file again
+        with "Preview Only" unchecked.
+        {% else %}
+        All {{ result.successful_rows }} rows imported successfully.
+        {% endif %}
+      </div>
       {% elif result.successful_rows == 0 %}
-        <div class="alert alert-danger" role="alert">
-          <i class="fa-solid fa-exclamation-triangle"></i>
-          <strong>Import Failed!</strong> No rows could be processed. Please check the errors below and fix your CSV file.
-        </div>
+      <div class="alert alert-danger" role="alert">
+        <i class="fa-solid fa-exclamation-triangle"></i>
+        <strong>Import Failed!</strong> No rows could be processed. Please check the errors below and fix your JSONL
+        file.
+      </div>
       {% else %}
-        <div class="alert alert-warning" role="alert">
-          <i class="fa-solid fa-exclamation-triangle"></i>
-          <strong>Partial Success!</strong> 
-          {% if dry_run %}
-            {{ result.successful_rows }} rows validated successfully, but {{ result.failed_rows }} rows have errors. To import the valid data, please upload the file again with "Preview Only" unchecked.
-          {% else %}
-            {{ result.successful_rows }} rows imported successfully, but {{ result.failed_rows }} rows failed.
-          {% endif %}
-        </div>
+      <div class="alert alert-warning" role="alert">
+        <i class="fa-solid fa-exclamation-triangle"></i>
+        <strong>Partial Success!</strong>
+        {% if dry_run %}
+        {{ result.successful_rows }} rows validated successfully, but {{ result.failed_rows }} rows have errors. To
+        import the valid data, please upload the file again with "Preview Only" unchecked.
+        {% else %}
+        {{ result.successful_rows }} rows imported successfully, but {{ result.failed_rows }} rows failed.
+        {% endif %}
+      </div>
       {% endif %}
 
       {% if result.errors %}
-        <div class="mt-4">
-          <h4>Errors ({{ result.errors|length }})</h4>
-          <div class="table-responsive">
-            <table class="table table-striped">
-              <thead>
-                <tr>
-                  <th>Row</th>
-                  <th>Field</th>
-                  <th>Error</th>
-                  <th>Data</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for error in result.errors[:100] %}
-                <tr>
-                  <td>{{ error.row }}</td>
-                  <td>
-                    {% if error.field != 'general' %}
-                      <code>{{ error.field }}</code>
-                    {% else %}
-                      <span class="text-muted">General</span>
-                    {% endif %}
-                  </td>
-                  <td>
-                    <span class="text-danger">{{ error.message }}</span>
-                  </td>
-                  <td>
-                    <details>
-                      <summary class="btn btn-sm btn-outline-secondary">View Data</summary>
-                      <pre class="mt-2 small">{{ error.data | tojson(indent=2) }}</pre>
-                    </details>
-                  </td>
-                </tr>
-                {% endfor %}
-                {% if result.errors|length > 100 %}
-                <tr>
-                  <td colspan="4" class="text-center text-muted">
-                    ... and {{ result.errors|length - 100 }} more errors
-                  </td>
-                </tr>
-                {% endif %}
-              </tbody>
-            </table>
-          </div>
+      <div class="mt-4">
+        <h4>Errors ({{ result.errors|length }})</h4>
+        <div class="table-responsive">
+          <table class="table table-striped">
+            <thead>
+              <tr>
+                <th>Row</th>
+                <th>Field</th>
+                <th>Error</th>
+                <th>Data</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for error in result.errors[:100] %}
+              <tr>
+                <td>{{ error.row }}</td>
+                <td>
+                  {% if error.field != 'general' %}
+                  <code>{{ error.field }}</code>
+                  {% else %}
+                  <span class="text-muted">General</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <span class="text-danger">{{ error.message }}</span>
+                </td>
+                <td>
+                  <details>
+                    <summary class="btn btn-sm btn-outline-secondary">View Data</summary>
+                    <pre class="mt-2 small">{{ error.data | tojson(indent=2) }}</pre>
+                  </details>
+                </td>
+              </tr>
+              {% endfor %}
+              {% if result.errors|length > 100 %}
+              <tr>
+                <td colspan="4" class="text-center text-muted">
+                  ... and {{ result.errors|length - 100 }} more errors
+                </td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
         </div>
+      </div>
       {% endif %}
 
       <div class="mt-4">
-        
+
         {% if result.errors %}
-          <button type="button" class="btn btn-outline-secondary" onclick="downloadErrors()">
-            <i class="fa-solid fa-download"></i> Download Error Report
-          </button>
+        <button type="button" class="btn btn-outline-secondary" onclick="downloadErrors()">
+          <i class="fa-solid fa-download"></i> Download Error Report
+        </button>
         {% endif %}
       </div>
     </div>
@@ -146,23 +149,23 @@
 </div>
 
 <script>
-const IMPORT_ERRORS = {{ result.errors | tojson | safe }};
+  const IMPORT_ERRORS = {{ result.errors | tojson | safe }};
 
-function downloadErrors() {
-  const csvContent = "Row,Field,Error,Data\n" + 
-    IMPORT_ERRORS.map(error => 
-      `${error.row},"${error.field}","${error.message.replace(/"/g, '""')}","${JSON.stringify(error.data).replace(/"/g, '""')}"`
-    ).join('\n');
-  
-  const blob = new Blob([csvContent], { type: 'text/csv' });
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'import_errors.csv';
-  document.body.appendChild(a);
-  a.click();
-  window.URL.revokeObjectURL(url);
-  document.body.removeChild(a);
-}
+  function downloadErrors() {
+    const csvContent = "Row,Field,Error,Data\n" +
+      IMPORT_ERRORS.map(error =>
+        `${error.row},"${error.field}","${error.message.replace(/"/g, '""')}","${JSON.stringify(error.data).replace(/"/g, '""')}"`
+      ).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'import_errors.csv';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }
 </script>
 {% endblock %}

@@ -33,30 +33,24 @@ class TestFileImport:
         with pytest.raises(ValueError, match="Filename too long"):
             FileImportRecord(filename="a" * 300)
 
-    async def test_csv_manifest_validation(self):
-        """Test CSV manifest validation."""
-        # Valid CSV
-        csv_content = (
-            "filename,original_name\ndocument.pdf,"
-            "My Document.pdf\nimage.jpg,Profile.jpg"
+    async def test_jsonl_manifest_validation(self):
+        """Test JSONL manifest validation."""
+        # Valid JSONL manifest
+        jsonl_content = (
+            '{"filename": "document.pdf", "original_name": "My Document.pdf"}\n'
+            '{"filename": "image.jpg", "original_name": "Profile.jpg"}'
         )
-        schema = FileImportSchema(csv_manifest=csv_content)
-        records = schema.parse_csv_manifest()
+        schema = FileImportSchema(jsonl_manifest=jsonl_content)
+        records = schema.parse_jsonl_manifest()
         assert len(records) == 2
         assert records[0].filename == "document.pdf"
         assert records[0].original_name == "My Document.pdf"
 
-        # Invalid: missing filename column
-        with pytest.raises(ValueError, match='CSV must have "filename" column'):
-            FileImportSchema(csv_manifest="name,size\ntest.pdf,1000")
-
-        # Invalid: empty CSV
-        with pytest.raises(ValueError, match="CSV manifest cannot be empty"):
-            FileImportSchema(csv_manifest="filename\n")
-
-        # Invalid: bad filename in CSV
-        with pytest.raises(ValueError, match="Invalid CSV row"):
-            FileImportSchema(csv_manifest="filename\n../bad.pdf")
+        with pytest.raises(
+            ValueError,
+            match="Invalid JSON on line 1: Expecting property name enclosed in double quotes",
+        ):
+            FileImportSchema(jsonl_manifest='{filename": "test.pdf"}')
 
     async def test_validate_upload_file(self):
         """Test upload file validation."""
@@ -126,7 +120,7 @@ class TestFileImport:
         await admin.process_direct_import(files)
 
     async def test_create_zip_with_manifest(self):
-        """Test creating a zip file with CSV manifest for import."""
+        """Test creating a zip file with JSONL manifest for import."""
         # Create test files
         files_content = {
             "document1.pdf": b"PDF content 1",
@@ -134,11 +128,11 @@ class TestFileImport:
             "document2.pdf": b"PDF content 2",
         }
 
-        # Create CSV manifest
-        csv_content = """filename,original_name
-document1.pdf,First Document.pdf
-image.jpg,Profile Image.jpg
-document2.pdf,Second Document.pdf"""
+        # Create JSONL manifest
+
+        jsonl_content = """{"filename": "document1.pdf", "original_name": "First Document.pdf"}
+{"filename": "image.jpg", "original_name": "Profile Image.jpg"}
+{"filename": "document2.pdf", "original_name": "Second Document.pdf"}"""
 
         # Create zip file
         zip_buffer = io.BytesIO()
@@ -150,8 +144,8 @@ document2.pdf,Second Document.pdf"""
         zip_buffer.seek(0)
 
         # Test that we can parse the manifest
-        schema = FileImportSchema(csv_manifest=csv_content)
-        records = schema.parse_csv_manifest()
+        schema = FileImportSchema(jsonl_manifest=jsonl_content)
+        records = schema.parse_jsonl_manifest()
 
         assert len(records) == 3
         assert records[0].filename == "document1.pdf"

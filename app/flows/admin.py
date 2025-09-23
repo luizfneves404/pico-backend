@@ -351,6 +351,24 @@ class QuestionAdmin(CustomModelView, model=Question):
         Question.created_at,
     )
 
+    column_export_list: ClassVar[list[MODEL_ATTR]] = [
+        Question.id,
+        Question.content_blocks,
+        Question.answer_content_blocks,
+        Question.major_tags,
+        Question.minor_tags,
+        Question.difficulty,
+        Question.source_type,
+        Question.answer_type,
+        Question.is_active,
+        Question.is_quantitative,
+        Question.official_source_id,
+        Question.source_user_id,
+        Question.parameter_a,
+        Question.parameter_b,
+        Question.parameter_c,
+    ]
+
     column_labels: ClassVar[dict[MODEL_ATTR, str]] = {
         Question.is_quantitative: "Quantitative?",
         Question.is_active: "Active?",
