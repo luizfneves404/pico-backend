@@ -1,0 +1,101 @@
+workflow:
+  rules:
+    # Automatically run pipeline on the main branch
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+
+    # Allow manual pipeline runs via the UI on any branch
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: always
+
+    # Prevent pipeline from running automatically on other branches
+    - when: never
+
+stages:
+  - pipeline
+
+variables:
+  # defaults to execute all steps in normal pipeline
+  DOCKER_DRIVER: overlay2
+  DOCKER_HOST: tcp://docker:2375/
+  DOCKER_TLS_CERTDIR: ""
+  DOCKER_BUILDKIT: 1
+  RUN_BUILD_PUSH: "true"
+  RUN_DEPLOY: "true"
+  RUN_TESTS: "true"
+
+  ADMIN_EMAILS: $ADMIN_EMAILS
+  ADMIN_NAMES: $ADMIN_NAMES
+  BRANCH_KEY: $BRANCH_KEY
+  BRANCH_KEY_TEST: $BRANCH_KEY_TEST
+  FIREBASE_JSON_SERVICE_KEY: $FIREBASE_JSON_SERVICE_KEY
+  GEMINI_API_KEY: 123456
+  OPENAI_API_KEY: 123456
+  PEN_TO_PRINT_RAPIDAPI_KEY: 123456
+  TINIFY_API_KEY: 123456
+  GOOGLE_CLIENT_ID: 123456
+  APPLE_APP_ID: 123456
+  MOCK_OPENAI: true
+  MOCK_GEMINI: true
+
+pipeline-job:
+  image: registry.gitlab.com/gitlab-org/cloud-deploy/aws-base:latest
+  stage: pipeline
+  services:
+    - docker:dind
+  script:
+    - apt-get -y update
+    - apt-get -y install ca-certificates curl
+    - install -m 0755 -d /etc/apt/keyrings
+    - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    - chmod a+r /etc/apt/keyrings/docker.asc
+
+    # Add the repository to Apt sources:
+    - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+
+    - apt-get -y update
+    - apt install -y docker-compose-plugin
+
+    # Conditional logic
+    - |
+      if [ "$RUN_TESTS" == "true" ]; then
+        echo "Running tests..."
+        echo "Starting services with Docker Compose..."
+        docker compose --file docker-compose-test.yml --file docker-compose-test-ci.yml up --build --abort-on-container-exit
+        docker compose down
+      else
+        echo "Skipping tests..."
+      fi
+
+    - |
+      if [ "$RUN_BUILD_PUSH" == "true" ]; then
+        echo "Setting up AWS CLI..."
+        aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
+        aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
+        aws configure set default.region "$AWS_DEFAULT_REGION"
+
+        echo "Building and pushing backend image to AWS ECR..."
+        aws ecr get-login-password --region sa-east-1 | docker login --username "$CI_REGISTRY_USER" --password-stdin "$BACKEND_CI_REGISTRY"
+        docker pull "$BACKEND_CI_REGISTRY:latest" || true
+        docker build --cache-from "$BACKEND_CI_REGISTRY:latest" --build-arg BUILDKIT_INLINE_CACHE=1 --build-arg INSTALL_TEST=false -t backend -f ./docker/Dockerfile .
+        docker tag backend:latest "$BACKEND_CI_REGISTRY:latest"
+        docker push "$BACKEND_CI_REGISTRY:latest"
+      else
+        echo "Skipping build and push..."
+      fi
+
+    - |
+      if [ "$RUN_DEPLOY" == "true" ]; then
+        echo "Deploying to AWS ECS by updating services, using the latest task definition..."
+        aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
+        aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
+        aws configure set default.region "$AWS_DEFAULT_REGION"
+
+        LATEST_TASK_DEF=$(aws ecs describe-task-definition --task-definition "$CI_AWS_WEB_ECS_TASK_DEFINITION" --query 'taskDefinition.taskDefinitionArn' --output text)
+        aws ecs update-service --cluster "$CI_AWS_WEB_ECS_CLUSTER" --service "$CI_AWS_WEB_ECS_SERVICE" --task-definition "$LATEST_TASK_DEF" --force-new-deployment
+
+        LATEST_TASK_DEF=$(aws ecs describe-task-definition --task-definition "$CI_AWS_WORKER_ECS_TASK_DEFINITION" --query 'taskDefinition.taskDefinitionArn' --output text)
+        aws ecs update-service --cluster "$CI_AWS_WORKER_ECS_CLUSTER" --service "$CI_AWS_WORKER_ECS_SERVICE" --task-definition "$LATEST_TASK_DEF" --force-new-deployment
+      else
+        echo "Skipping deploy..."
+      fi

@@ -1,0 +1,3 @@
+# Ignore everything except what we need for the PostgreSQL build
+*
+!docker/docker-entrypoint-initdb.d/ 

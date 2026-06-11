@@ -1,0 +1,77 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        - INSTALL_TEST=true
+
+    volumes:
+      - ./uv_cache:/tmp/uv_cache
+      - /var/run/docker.sock:/var/run/docker.sock # for local testing
+
+    group_add:
+      - "${DOCKER_GROUP_ID:-1001}"
+
+    command: /bin/bash /code/docker/docker-test-entrypoint.sh
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      - DOCKER_HOST=${DOCKER_HOST:-unix:///var/run/docker.sock} # uses CI/CD variable if available, otherwise uses local docker socket
+
+      - ADMIN_URL=admin
+      - AWS_SES_FROM_EMAIL=pico@example.com
+      - DATABASE_URL=postgresql+asyncpg://postgres:${DB_PASSWORD}@postgres:5432/picodb
+      - DATABASE_SSL_VERIFY_FULL=false
+      - DOCS_URL=/docs
+      - ENVIRONMENT=test
+      - OPENAPI_API_KEY=123456
+      - OPENAPI_URL=/openapi.json
+      - REDIS_URL=redis://redis:6379 # isn't used because we use testcontainers for redis
+      - SECRET_KEY=${SECRET_KEY}
+      - STORAGE__BACKEND=local
+      - STORAGE__BASE_PATH=storage
+      - TEXTRACT_PROFILE_NAME=eonfweogfnw-2385545
+      - TEXTRACT_REGION_NAME=us-east-1
+      - UVICORN_HOST=0.0.0.0
+      - UVICORN_PORT=8000
+      - UVICORN_RELOAD=false
+      - GOOGLE_CLIENT_ID=123456
+      - APPLE_APP_ID=123456
+      - MOCK_OPENAI=true
+      - MOCK_GEMINI=true
+
+      # API Keys
+      - BRANCH_API_KEY
+      - BRANCH_API_KEY_TEST
+      - FIREBASE_JSON_SERVICE_KEY
+      - GEMINI_API_KEY
+      - OPENAI_API_KEY
+      - PEN_TO_PRINT_RAPIDAPI_KEY
+      - TINIFY_API_KEY
+
+      # Other configuration
+      - ADMIN_EMAILS
+      - ADMIN_NAMES
+
+  postgres:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.postgres
+      args:
+        - POSTGRES_VERSION=17
+        - PGVECTOR_VERSION=v0.8.0
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: picodb
+    volumes:
+      - ./docker/docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

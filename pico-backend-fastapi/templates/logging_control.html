@@ -1,0 +1,589 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="container-xl">
+    <div class="page-header d-print-none">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <h2 class="page-title">
+                    <i class="fa-solid fa-gear me-2"></i>
+                    Logging Control Center
+                </h2>
+                <p class="text-muted">Manage logging levels for all application loggers</p>
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-outline-primary" onclick="refreshAllData()">
+                    <i class="fa-solid fa-refresh me-1"></i>
+                    Refresh All
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="page-body">
+        <div class="row row-deck row-cards">
+            <!-- Quick Logger Level Change Card -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fa-solid fa-bolt me-2"></i>
+                            Quick Logger Control
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <form action="{{ url_for('admin:set_logger_level') }}" method="post" id="quick-logger-form">
+                            <div class="mb-3">
+                                <label class="form-label">Logger Name:</label>
+                                <div class="input-group">
+                                    <input type="text" name="logger_name" class="form-control" 
+                                           placeholder="e.g., sqlalchemy.engine, app.models, __main__" 
+                                           list="logger-suggestions" required>
+                                    <datalist id="logger-suggestions">
+                                        <!-- Populated dynamically -->
+                                    </datalist>
+                                    <button type="button" class="btn btn-outline-secondary" onclick="showLoggerPicker()">
+                                        <i class="fa-solid fa-search"></i>
+                                    </button>
+                                </div>
+                                <small class="text-muted">Enter logger name or use the search button to browse existing loggers</small>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Logging Level:</label>
+                                <select name="level" class="form-select" required>
+                                    {% for level in logging_levels %}
+                                    <option value="{{ level.name }}" data-value="{{ level.value }}">
+                                        {{ level.name }} ({{ level.value }})
+                                        {% if level.description %}
+                                            - {{ level.description }}
+                                        {% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="create_if_missing" id="create_if_missing" checked>
+                                    <label class="form-check-label" for="create_if_missing">
+                                        Create logger if it doesn't exist
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fa-solid fa-save me-2"></i>
+                                    Update Logger Level
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bulk Operations Card -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fa-solid fa-layer-group me-2"></i>
+                            Bulk Operations
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Filter by Logger Pattern:</label>
+                            <input type="text" id="logger-pattern" class="form-control" 
+                                   placeholder="e.g., sqlalchemy.*, app.*, *engine*">
+                            <small class="text-muted">Use * for wildcards. Leave empty to affect all loggers.</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Set Level for Matching Loggers:</label>
+                            <select id="bulk-level" class="form-select">
+                                {% for level in logging_levels %}
+                                <option value="{{ level.name }}">{{ level.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="button" class="btn btn-warning" onclick="previewBulkOperation()">
+                                <i class="fa-solid fa-eye me-2"></i>
+                                Preview Changes
+                            </button>
+                            <button type="button" class="btn btn-danger" onclick="executeBulkOperation()" id="bulk-execute-btn" disabled>
+                                <i class="fa-solid fa-magic me-2"></i>
+                                Execute Bulk Change
+                            </button>
+                        </div>
+                        
+                        <div id="bulk-preview" class="mt-3" style="display: none;">
+                            <!-- Preview content will be inserted here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Current Loggers Table -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fa-solid fa-list me-2"></i>
+                            Current Logger Configuration
+                        </h3>
+                        <div class="card-actions">
+                            <div class="input-group input-group-sm me-2" style="width: 250px;">
+                                <input type="text" class="form-control" id="logger-filter" 
+                                       placeholder="Filter loggers...">
+                                <button class="btn btn-outline-secondary" type="button" onclick="clearFilter()">
+                                    <i class="fa-solid fa-times"></i>
+                                </button>
+                            </div>
+                            <button class="btn btn-sm btn-outline-primary" onclick="refreshLoggerLevels()">
+                                <i class="fa-solid fa-refresh me-1"></i>
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="logger-levels-content">
+                            <div class="d-flex justify-content-center p-4">
+                                <div class="spinner-border spinner-border-sm" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Presets Card -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fa-solid fa-bookmark me-2"></i>
+                            Logging Presets
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="d-grid">
+                                    <button class="btn btn-outline-success" onclick="applyPreset('development')">
+                                        <i class="fa-solid fa-code me-2"></i>
+                                        Development Mode
+                                    </button>
+                                </div>
+                                <small class="text-muted d-block mt-1">DEBUG for app loggers, INFO for libraries</small>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="d-grid">
+                                    <button class="btn btn-outline-warning" onclick="applyPreset('production')">
+                                        <i class="fa-solid fa-server me-2"></i>
+                                        Production Mode
+                                    </button>
+                                </div>
+                                <small class="text-muted d-block mt-1">WARNING+ for all loggers</small>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="d-grid">
+                                    <button class="btn btn-outline-info" onclick="applyPreset('debugging')">
+                                        <i class="fa-solid fa-bug me-2"></i>
+                                        Debug Everything
+                                    </button>
+                                </div>
+                                <small class="text-muted d-block mt-1">DEBUG for all loggers</small>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="d-grid">
+                                    <button class="btn btn-outline-secondary" onclick="applyPreset('quiet')">
+                                        <i class="fa-solid fa-volume-mute me-2"></i>
+                                        Quiet Mode
+                                    </button>
+                                </div>
+                                <small class="text-muted d-block mt-1">ERROR+ only</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Information Card -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fa-solid fa-question-circle me-2"></i>
+                            Logging Information
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <h5>Logging Levels (Python):</h5>
+                                <ul class="list-unstyled">
+                                    <li><strong>CRITICAL (50):</strong> Serious error, program may be unable to continue</li>
+                                    <li><strong>ERROR (40):</strong> A serious problem has occurred</li>
+                                    <li><strong>WARNING (30):</strong> Something unexpected happened</li>
+                                    <li><strong>INFO (20):</strong> General information about program execution</li>
+                                    <li><strong>DEBUG (10):</strong> Detailed information for debugging</li>
+                                    <li><strong>NOTSET (0):</strong> No level set (inherits from parent)</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-4">
+                                <h5>Common Logger Patterns:</h5>
+                                <ul class="list-unstyled">
+                                    <li><code>sqlalchemy.engine</code> - SQL statements</li>
+                                    <li><code>sqlalchemy.pool</code> - Connection pooling</li>
+                                    <li><code>sqlalchemy.orm</code> - ORM operations</li>
+                                    <li><code>requests.*</code> - HTTP requests</li>
+                                    <li><code>urllib3.*</code> - URL library</li>
+                                    <li><code>__main__</code> - Main application</li>
+                                    <li><code>app.*</code> - Your application modules</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-4">
+                                <h5>Important Notes:</h5>
+                                <ul class="list-unstyled">
+                                    <li>• Changes are applied immediately</li>
+                                    <li>• Changes persist until application restart</li>
+                                    <li>• Lower levels include higher levels</li>
+                                    <li>• Child loggers inherit from parents</li>
+                                    <li>• Use wildcards (*) for pattern matching</li>
+                                    <li>• Be careful with DEBUG in production</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Logger Picker Modal -->
+<div class="modal fade" id="loggerPickerModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Select Logger</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="text" class="form-control mb-3" id="modal-logger-filter" 
+                       placeholder="Filter loggers...">
+                <div id="logger-picker-content" style="max-height: 400px; overflow-y: auto;">
+                    <!-- Content will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentLoggers = {};
+let bulkPreviewData = [];
+
+async function refreshLoggerLevels() {
+    const content = document.getElementById('logger-levels-content');
+    content.innerHTML = `
+        <div class="d-flex justify-content-center p-4">
+            <div class="spinner-border spinner-border-sm" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    `;
+    
+    try {
+        const response = await fetch('{{ url_for("admin:get_all_loggers") }}');
+        const data = await response.json();
+        currentLoggers = data;
+        
+        renderLoggersTable(data);
+        updateLoggerSuggestions(Object.keys(data));
+    } catch (error) {
+        content.innerHTML = '<div class="alert alert-danger m-3">Failed to load logger information</div>';
+    }
+}
+
+function renderLoggersTable(loggers, filter = '') {
+    const content = document.getElementById('logger-levels-content');
+    
+    const filteredLoggers = Object.entries(loggers).filter(([name, info]) => 
+        name.toLowerCase().includes(filter.toLowerCase())
+    );
+    
+    if (filteredLoggers.length === 0) {
+        content.innerHTML = '<div class="alert alert-info m-3">No loggers match the current filter.</div>';
+        return;
+    }
+    
+    let html = `
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Logger Name</th>
+                        <th>Level</th>
+                        <th>Effective Level</th>
+                        <th>Handlers</th>
+                        <th>Propagate</th>
+                        <th>Parent</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    for (const [loggerName, info] of filteredLoggers) {
+        const levelColor = getLevelColor(info.level);
+        const effectiveLevelColor = getLevelColor(info.effective_level);
+        
+        html += `
+            <tr>
+                <td>
+                    <code class="text-nowrap">${loggerName || '(root)'}</code>
+                    ${info.disabled ? '<span class="badge bg-danger ms-1">DISABLED</span>' : ''}
+                </td>
+                <td><span class="badge bg-${levelColor}">${info.level}</span></td>
+                <td><span class="badge bg-${effectiveLevelColor}">${info.effective_level}</span></td>
+                <td>${info.handlers_count}</td>
+                <td>
+                    ${info.propagate ? 
+                        '<i class="fa-solid fa-check text-success"></i>' : 
+                        '<i class="fa-solid fa-times text-danger"></i>'}
+                </td>
+                <td>
+                    ${info.parent ? `<code class="small">${info.parent}</code>` : '<em>None</em>'}
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary" onclick="quickEditLogger('${loggerName}')">
+                        <i class="fa-solid fa-edit"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }
+    
+    html += '</tbody></table></div>';
+    content.innerHTML = html;
+}
+
+function getLevelColor(level) {
+    const colors = {
+        'CRITICAL': 'danger',
+        'ERROR': 'danger',
+        'WARNING': 'warning',
+        'INFO': 'info',
+        'DEBUG': 'success',
+        'NOTSET': 'secondary'
+    };
+    return colors[level] || 'secondary';
+}
+
+function updateLoggerSuggestions(loggerNames) {
+    const datalist = document.getElementById('logger-suggestions');
+    datalist.innerHTML = loggerNames.map(name => `<option value="${name}">`).join('');
+}
+
+function quickEditLogger(loggerName) {
+    const form = document.getElementById('quick-logger-form');
+    form.elements['logger_name'].value = loggerName;
+    
+    if (currentLoggers[loggerName]) {
+        form.elements['level'].value = currentLoggers[loggerName].level;
+    }
+    
+    // Scroll to form
+    form.scrollIntoView({ behavior: 'smooth' });
+    form.elements['logger_name'].focus();
+}
+
+function showLoggerPicker() {
+    const modal = new bootstrap.Modal(document.getElementById('loggerPickerModal'));
+    const content = document.getElementById('logger-picker-content');
+    
+    let html = '<div class="list-group">';
+    for (const [loggerName, info] of Object.entries(currentLoggers)) {
+        html += `
+            <button class="list-group-item list-group-item-action logger-picker-item" 
+                    onclick="selectLogger('${loggerName}')">
+                <div class="d-flex w-100 justify-content-between">
+                    <h6 class="mb-1">${loggerName || '(root)'}</h6>
+                    <small class="badge bg-${getLevelColor(info.level)}">${info.level}</small>
+                </div>
+                <p class="mb-1 text-muted small">Effective: ${info.effective_level} | Handlers: ${info.handlers_count}</p>
+            </button>
+        `;
+    }
+    html += '</div>';
+    
+    content.innerHTML = html;
+    modal.show();
+}
+
+function selectLogger(loggerName) {
+    document.querySelector('input[name="logger_name"]').value = loggerName;
+    bootstrap.Modal.getInstance(document.getElementById('loggerPickerModal')).hide();
+}
+
+async function previewBulkOperation() {
+    const pattern = document.getElementById('logger-pattern').value;
+    const level = document.getElementById('bulk-level').value;
+    
+    try {
+        const response = await fetch('{{ url_for("admin:preview_bulk_operation") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pattern, level })
+        });
+        
+        const data = await response.json();
+        bulkPreviewData = data.affected_loggers;
+        
+        const preview = document.getElementById('bulk-preview');
+        if (data.affected_loggers.length === 0) {
+            preview.innerHTML = '<div class="alert alert-warning">No loggers match the specified pattern.</div>';
+        } else {
+            let html = `
+                <div class="alert alert-info">
+                    <strong>${data.affected_loggers.length} logger(s) will be affected:</strong>
+                    <ul class="mb-0 mt-2">
+            `;
+            
+            data.affected_loggers.forEach(logger => {
+                html += `<li><code>${logger}</code></li>`;
+            });
+            
+            html += '</ul></div>';
+            preview.innerHTML = html;
+            document.getElementById('bulk-execute-btn').disabled = false;
+        }
+        
+        preview.style.display = 'block';
+    } catch (error) {
+        document.getElementById('bulk-preview').innerHTML = 
+            '<div class="alert alert-danger">Failed to preview bulk operation</div>';
+    }
+}
+
+async function executeBulkOperation() {
+    const pattern = document.getElementById('logger-pattern').value;
+    const level = document.getElementById('bulk-level').value;
+    
+    if (!confirm(`Are you sure you want to set ${bulkPreviewData.length} loggers to level ${level}?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('{{ url_for("admin:execute_bulk_operation") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pattern, level })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            alert(`Successfully updated ${data.updated_count} loggers`);
+            refreshLoggerLevels();
+            document.getElementById('bulk-preview').style.display = 'none';
+            document.getElementById('bulk-execute-btn').disabled = true;
+        } else {
+            alert('Failed to execute bulk operation');
+        }
+    } catch (error) {
+        alert('Error executing bulk operation');
+    }
+}
+
+async function applyPreset(presetName) {
+    if (!confirm(`Apply ${presetName} logging preset? This will change multiple logger levels.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('{{ url_for("admin:apply_logging_preset") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ preset: presetName })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            alert(`Applied ${presetName} preset. Updated ${data.updated_count} loggers.`);
+            refreshLoggerLevels();
+        } else {
+            alert('Failed to apply preset');
+        }
+    } catch (error) {
+        alert('Error applying preset');
+    }
+}
+
+function clearFilter() {
+    document.getElementById('logger-filter').value = '';
+    renderLoggersTable(currentLoggers);
+}
+
+function refreshAllData() {
+    refreshLoggerLevels();
+}
+
+// Event listeners
+document.getElementById('logger-filter').addEventListener('input', function(e) {
+    renderLoggersTable(currentLoggers, e.target.value);
+});
+
+document.getElementById('modal-logger-filter').addEventListener('input', function(e) {
+    const filter = e.target.value.toLowerCase();
+    const items = document.querySelectorAll('.logger-picker-item');
+    
+    items.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        item.style.display = text.includes(filter) ? 'block' : 'none';
+    });
+});
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', function() {
+    refreshLoggerLevels();
+});
+
+// Form submission handling
+document.getElementById('quick-logger-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    
+    try {
+        const response = await fetch(this.action, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            alert(data.message || 'Logger level updated successfully');
+            refreshLoggerLevels();
+            this.reset();
+        } else {
+            const error = await response.json();
+            alert('Error: ' + (error.error || 'Failed to update logger level'));
+        }
+    } catch (error) {
+        alert('Network error occurred');
+    }
+});
+</script>
+{% endblock %}

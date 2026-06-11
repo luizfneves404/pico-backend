@@ -1,0 +1,17 @@
+# pass docker-compose-test.yml before this file, so that this one overrides the other one
+
+services:
+  web:
+    # Use the CI job's network so that docker:dind can be found at DOCKER_HOST
+    network_mode: "host"
+    environment:
+      - DOCKER_HOST=tcp://127.0.0.1:2375
+      # Override the database URL to use localhost for the CI's host network
+      - DATABASE_URL=postgresql+asyncpg://postgres:${DB_PASSWORD}@localhost:5432/picodb
+
+      - REDIS_URL=redis://localhost:6379 # isn't used, but might as well add for consistency
+
+  postgres:
+    # The postgres container also needs to join the shared network
+    # so the web service can find it at localhost.
+    network_mode: "host"

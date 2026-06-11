@@ -1,0 +1,1059 @@
+import logging
+import random
+import re
+import secrets
+import unicodedata
+from datetime import UTC, datetime, timedelta
+from typing import Literal
+
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+from fastapi import Request
+from geoalchemy2 import WKTElement
+from pydantic import AwareDatetime, BaseModel, TypeAdapter, ValidationError
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+import app.community.service as community_service
+from app import mail
+from app.countries.service import CountryNotFound, get_country
+from app.education import service as education_service
+from app.education.models import EducationInfo
+from app.mail import send_password_reset_email
+from app.redis_client import get_redis
+from app.shared.validation import (
+    LowercaseEmailStr,
+    UnsetDefault,
+    UsernameStr,
+    phone_number_adapter,
+)
+from app.users import external_auth
+from app.users.constants import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    DELETED_EMAIL,
+    DELETED_PHONE_NUMBER,
+    DELETED_USERNAME,
+    NUM_RANKED_USERS,
+    SENTINEL_USERNAMES,
+    SOCIAL_SCORE_INCREMENT_BY_REFERRAL,
+    WELCOME_EMAIL_MESSAGE,
+    WELCOME_EMAIL_SUBJECT,
+)
+from app.users.exceptions import (
+    AccountExistsError,
+    EmailAlreadyExists,
+    InvalidCountryCodeError,
+    InvalidCourseIdError,
+    InvalidCredentialsError,
+    InvalidInstitutionIdError,
+    InvalidLevelIdError,
+    InvalidResetTokenError,
+    InvalidStageIdError,
+    InvalidTokenError,
+    MissingNameError,
+    PhoneNumberAlreadyExists,
+    ReferredByNotFoundError,
+    SocialAuthError,
+    UsernameAlreadyExists,
+    UserNotFoundError,
+)
+from app.users.models import SignupSource, User
+from app.users.schemas import EducationInfoIn, UserUpdate
+from app.users.social import (
+    check_contacts,
+    get_ranking,
+    search_username,
+)
+from app.users.utils import get_streak_info
+
+logger = logging.getLogger(__name__)
+__all__ = [
+    # Constants
+    "ACCESS_TOKEN_EXPIRE_MINUTES",
+    "DELETED_EMAIL",
+    "DELETED_PHONE_NUMBER",
+    "DELETED_USERNAME",
+    "NUM_RANKED_USERS",
+    "SENTINEL_USERNAMES",
+    "WELCOME_EMAIL_MESSAGE",
+    "WELCOME_EMAIL_SUBJECT",
+    "AccountExistsError",
+    "EmailAlreadyExists",
+    "InvalidCountryCodeError",
+    "InvalidCredentialsError",
+    "InvalidResetTokenError",
+    "InvalidTokenError",
+    "MissingNameError",
+    "PhoneNumberAlreadyExists",
+    "ReferredByNotFoundError",
+    "SocialAuthError",
+    # Exceptions
+    "UserNotFoundError",
+    "UsernameAlreadyExists",
+    # Authentication
+    "authenticate_user_by_apple",
+    "authenticate_user_by_google",
+    "authenticate_user_by_password",
+    # Social
+    "check_contacts",
+    # CRUD
+    "create_user_by_password",
+    "delete_user",
+    "get_password_hash",
+    "get_ranking",
+    "get_sentinel_users",
+    # Utils
+    "get_streak_info",
+    "get_user",
+    "search_username",
+    "to_other_user_out",
+    # Profile management
+    "update_user_fields",
+    "verify_password",
+]
+
+PASSWORD_REQUIRED_FIELDS = {"username", "phone_number", "email", "password"}
+HASH_PREFIX = "$argon2id$"
+
+
+async def _set_education_field(
+    db_session: AsyncSession,
+    user: User,
+    education_data: EducationInfoIn,
+    field_name: Literal["current_education", "intended_education"],
+) -> None:
+    """Set either current or intended education for a user.
+
+    Args:
+        db_session: Database session
+        user: User to update
+        education_data: Education data to set
+        field_name: Which education field to update
+    """
+    education_info: EducationInfo | None = getattr(user, field_name)
+
+    if education_info:
+        # Update existing education
+        if education_data.level_id is not UnsetDefault:
+            education_info.level_id = education_data.level_id
+
+        if education_data.stage_id is not UnsetDefault:
+            education_info.stage_id = education_data.stage_id
+
+        if education_data.institution_id is not UnsetDefault:
+            education_info.institution_id = education_data.institution_id
+
+        if education_data.course_id is not UnsetDefault:
+            education_info.course_id = education_data.course_id
+
+        try:
+            await db_session.flush()
+        except IntegrityError as e:
+            if "level_id" in str(e.orig):
+                raise InvalidLevelIdError from e
+            if "stage_id" in str(e.orig):
+                raise InvalidStageIdError from e
+            if "institution_id" in str(e.orig):
+                raise InvalidInstitutionIdError from e
+            if "course_id" in str(e.orig):
+                raise InvalidCourseIdError from e
+        await db_session.refresh(education_info)
+    else:
+        # Create new education
+        try:
+            new_education = await _create_education_from_data(
+                db_session, education_data
+            )
+            setattr(user, field_name, new_education)
+            await db_session.flush()
+        except IntegrityError as e:
+            if "level_id" in str(e.orig):
+                raise InvalidLevelIdError from e
+            if "stage_id" in str(e.orig):
+                raise InvalidStageIdError from e
+            if "institution_id" in str(e.orig):
+                raise InvalidInstitutionIdError from e
+            if "course_id" in str(e.orig):
+                raise InvalidCourseIdError from e
+
+    logger.info(f"User {user.id} updated their {field_name}")
+
+    # Automatically join communities based on education information
+    await db_session.refresh(user, ["current_education", "intended_education"])
+    if user.current_education:
+        await db_session.refresh(
+            user.current_education, ["institution", "course", "stage"]
+        )
+        if user.current_education.institution and (
+            user.current_education.course or user.current_education.stage
+        ):
+            joined_community = await community_service.change_user_education_community(
+                db_session,
+                user=user,
+                institution=user.current_education.institution,
+                course=user.current_education.course,
+                stage=user.current_education.stage,
+            )
+            if joined_community:
+                logger.info(
+                    f"User {user.id} automatically joined the community"
+                    f"{joined_community.name} with subtitle"
+                    f"{joined_community.subtitle} because of their education,"
+                    "leaving the previous community"
+                )
+            else:
+                logger.info(
+                    f"User {user.id} was already in the community"
+                    "when changing education"
+                )
+
+
+async def _create_user(
+    db_session: AsyncSession,
+    *,
+    name: str,
+    email: str,
+    signup_source: SignupSource,
+    referred_by_username: str | None,
+    hashed_password: str | None,
+    google_id: str | None,
+    apple_id: str | None,
+) -> User:
+    """Centralized user creation function.
+
+    Args:
+        db_session: Database session
+        name: User's name
+        email: User's email
+        signup_source: How the user came to know the app
+        referred_by_username: Username of the referring user
+        hashed_password: Pre-hashed password for password-based auth
+        google_id: Google ID for Google auth
+        apple_id: Apple ID for Apple auth
+
+    Returns:
+        Created user
+
+    Raises:
+        ReferredByNotFoundError: If referring user not found
+        UsernameAlreadyExists: If generated username is taken
+        EmailAlreadyExists: If email is taken
+    """
+    referred_by_id = None
+    if referred_by_username:
+        referred_by = await get_user(db_session, username=referred_by_username)
+        if not referred_by:
+            raise ReferredByNotFoundError
+        referred_by_id = referred_by.id
+
+    base_username = _normalize_username(name)
+    username = f"{base_username}{random.randint(1000, 9999)}"
+
+    new_user = User(
+        name=name,
+        username=username,
+        email=email,
+        hashed_password=hashed_password or "",
+        google_id=google_id or "",
+        apple_id=apple_id or "",
+        signup_source=signup_source,
+        referred_by_id=referred_by_id,
+        instagram_account="",
+    )
+
+    try:
+        db_session.add(new_user)
+        await db_session.flush()
+    except IntegrityError as e:
+        error_msg = str(e.orig)
+        if "username" in error_msg:
+            raise UsernameAlreadyExists from e
+        if "email" in error_msg:
+            raise EmailAlreadyExists from e
+        raise
+
+    if referred_by_id:
+        await db_session.execute(
+            update(User)
+            .where(User.id == new_user.referred_by_id)
+            .values(social_score=User.social_score + SOCIAL_SCORE_INCREMENT_BY_REFERRAL)
+        )
+
+    await db_session.refresh(new_user, ["referrals"])
+
+    if new_user.email:
+        await mail.enqueue_email(
+            mail.EmailMessage(
+                subject=WELCOME_EMAIL_SUBJECT,
+                body_html=WELCOME_EMAIL_MESSAGE.format(username=new_user.username),
+                to_emails=[new_user.email],
+            ),
+        )
+
+    return new_user
+
+
+async def _create_social_user(
+    db_session: AsyncSession,
+    *,
+    name: str | None,
+    email: str,
+    signup_source: SignupSource,
+    referred_by_username: str,
+    google_id: str | None = None,
+    apple_id: str | None = None,
+) -> User:
+    """Create a new user from social authentication.
+
+    Args:
+        db_session: Database session
+        name: User's name
+        email: User's email
+        google_id: Google ID if authenticating with Google
+        apple_id: Apple ID if authenticating with Apple
+        signup_source: How the user came to know the app. Defaults to
+        SignupSource.UNKNOWN.
+    Returns:
+        Created user
+
+    Raises:
+        UsernameAlreadyExists: If generated username is taken
+        EmailAlreadyExists: If email is taken
+    """
+    display_name = name or f"User {random.randint(1000, 9999)}"
+
+    return await _create_user(
+        db_session,
+        name=display_name,
+        email=email,
+        signup_source=signup_source,
+        referred_by_username=referred_by_username,
+        hashed_password="",
+        google_id=google_id,
+        apple_id=apple_id,
+    )
+
+
+async def _create_education_from_data(
+    db_session: AsyncSession,
+    education_data: EducationInfoIn,
+) -> EducationInfo:
+    """Create an Education object from input data.
+
+    Args:
+        db_session: The database session
+        education_data: Dictionary containing education information
+
+    Returns:
+        Created Education object or None if no data provided
+    """
+    if education_data.level_id is UnsetDefault:
+        raise ValueError("Level id is required if creating education")
+
+    institution_id = (
+        education_data.institution_id
+        if education_data.institution_id is not UnsetDefault
+        else None
+    )
+    course_id = (
+        education_data.course_id
+        if education_data.course_id is not UnsetDefault
+        else None
+    )
+    stage_id = (
+        education_data.stage_id if education_data.stage_id is not UnsetDefault else None
+    )
+
+    return await education_service.build_education(
+        db_session,
+        level_id=education_data.level_id,
+        stage_id=stage_id,
+        institution_id=institution_id,
+        course_id=course_id,
+    )
+
+
+async def validate_username(
+    db_session: AsyncSession, username: str
+) -> tuple[bool, str | None]:
+    try:
+        username_adapter: TypeAdapter[UsernameStr] = TypeAdapter(UsernameStr)
+        validated_username = username_adapter.validate_python(username)
+    except ValueError:
+        return False, None
+    else:
+        user = await get_user(db_session, username=validated_username)
+        return user is None, validated_username
+
+
+async def validate_email(
+    db_session: AsyncSession, email: str
+) -> tuple[bool, str | None]:
+    try:
+        email_adapter: TypeAdapter[LowercaseEmailStr] = TypeAdapter(LowercaseEmailStr)
+        validated_email = email_adapter.validate_python(email)
+    except ValueError:
+        return False, None
+    else:
+        user = await get_user(db_session, email=validated_email)
+        return user is None, validated_email
+
+
+async def validate_phone_number(
+    db_session: AsyncSession, phone_number: str
+) -> tuple[bool, str | None]:
+    try:
+        validated_phone_number = phone_number_adapter.validate_python(phone_number)
+    except ValidationError:
+        return False, None
+    else:
+        user = await get_user(db_session, phone_number=validated_phone_number)
+        return user is None, validated_phone_number
+
+
+async def validate_user_field(
+    db_session: AsyncSession,
+    field_name: Literal["username", "email", "phone_number"],
+    field_value: str,
+) -> tuple[bool, str | None]:
+    if field_name == "username":
+        return await validate_username(db_session, field_value)
+    if field_name == "email":
+        return await validate_email(db_session, field_value)
+    if field_name == "phone_number":
+        return await validate_phone_number(db_session, field_value)
+    raise ValueError(f"Invalid field name: {field_name}")
+
+
+async def update_user_fields(
+    db_session: AsyncSession,
+    *,
+    user: User,
+    updates: UserUpdate,
+    current_password: str | None = None,
+) -> tuple[User, list[str]]:
+    """Update multiple user fields atomically with field-specific validation.
+
+    Args:
+        db_session: Database session
+        user: User to update
+        updates: Typed update data
+        current_password: Current password for sensitive field updates
+
+    Returns:
+        Tuple of (updated_user, list_of_updated_fields)
+
+    Raises:
+        InvalidCredentialsError: If password required but invalid
+        UsernameAlreadyExists: If username already taken
+        PhoneNumberAlreadyExists: If phone number already taken
+        EmailAlreadyExists: If email already taken
+        InvalidCountryCodeError: If country code is invalid
+    """
+    # Check if any sensitive fields are being updated
+    sensitive_fields_to_update = PASSWORD_REQUIRED_FIELDS.intersection(
+        updates.model_fields_set
+    )
+
+    if sensitive_fields_to_update:
+        if not current_password:
+            raise InvalidCredentialsError(
+                "Password required for sensitive field updates"
+            )
+        if not verify_password(current_password, user.hashed_password):
+            raise InvalidCredentialsError("Invalid password")
+
+    updated_fields: list[str] = []
+
+    # Handle current_education field explicitly
+    if updates.current_education is not UnsetDefault:
+        await _set_education_field(
+            db_session, user, updates.current_education, "current_education"
+        )
+        updated_fields.append("current_education")
+
+    # Handle intended_education field explicitly
+    if updates.intended_education is not UnsetDefault:
+        await _set_education_field(
+            db_session, user, updates.intended_education, "intended_education"
+        )
+        updated_fields.append("intended_education")
+
+    # Handle username field explicitly
+    if (
+        updates.username is not UnsetDefault
+        and updates.username.strip().lower() != user.username.lower()
+    ):
+        try:
+            user.username = updates.username.strip()
+            await db_session.flush()
+            updated_fields.append("username")
+        except IntegrityError as e:
+            await db_session.rollback()
+            if "username" in str(e.orig):
+                raise UsernameAlreadyExists from e
+            raise
+
+    # Handle name field explicitly
+    if updates.name is not UnsetDefault and updates.name != user.name:
+        user.name = updates.name.strip()
+        updated_fields.append("name")
+
+    # Handle password field explicitly
+    if updates.password is not UnsetDefault:
+        user.hashed_password = get_password_hash(updates.password.get_secret_value())
+        updated_fields.append("password")
+
+    # Handle phone_number field explicitly
+    if (
+        updates.phone_number is not UnsetDefault
+        and updates.phone_number != user.phone_number
+    ):
+        try:
+            user.phone_number = updates.phone_number
+            await db_session.flush()
+            updated_fields.append("phone_number")
+        except IntegrityError as e:
+            await db_session.rollback()
+            if "phone_number" in str(e.orig):
+                raise PhoneNumberAlreadyExists from e
+            raise
+
+    # Handle email field explicitly
+    if updates.email is not UnsetDefault and updates.email != user.email:
+        try:
+            user.email = updates.email
+            await db_session.flush()
+            updated_fields.append("email")
+        except IntegrityError as e:
+            await db_session.rollback()
+            if "email" in str(e.orig):
+                raise EmailAlreadyExists from e
+            raise
+
+    # Handle country_code field explicitly
+    if updates.country_code is not UnsetDefault:
+        try:
+            country = await get_country(db_session, country_code=updates.country_code)
+        except CountryNotFound as e:
+            raise InvalidCountryCodeError(
+                f"Invalid country code: {updates.country_code}"
+            ) from e
+        user.country_id = country.id
+        await db_session.flush()
+        updated_fields.append("country_code")
+
+    if updates.location is not UnsetDefault:
+        new_location = WKTElement(
+            f"POINT({updates.location.longitude} {updates.location.latitude})",
+            srid=4326,
+        )
+        user.location = new_location  # type: ignore # this should work according to geoalchemy2
+        updated_fields.append("location")
+
+    if (
+        updates.instagram_account is not UnsetDefault
+        and updates.instagram_account != user.instagram_account
+    ):
+        user.instagram_account = updates.instagram_account
+        updated_fields.append("instagram_account")
+
+    if updated_fields:
+        await db_session.flush()
+        logger.info(f"User {user.id} updated fields: {', '.join(updated_fields)}")
+
+    return user, updated_fields
+
+
+async def authenticate_user_by_password(
+    db_session: AsyncSession, email: str, password: str
+) -> User | Literal[False]:
+    """Given credentials, return a user if they are valid.
+
+    Args:
+        db_session: The database session.
+        email: The email of the user to authenticate.
+        password: The password of the user to authenticate.
+
+    Returns:
+        The user if the credentials are valid, otherwise False.
+    """
+    user = await get_user(db_session, email=email)
+    if not user:
+        logger.info(f"User with email {email} not found when authenticating")
+        return False
+    if not user.hashed_password:
+        logger.warning(
+            f"User with email {email} should not be authenticating with password"
+        )
+        return False
+    if not verify_password(password, user.hashed_password):
+        logger.info(
+            f"User with email {email} password is incorrect when authenticating"
+        )
+        return False
+    return user
+
+
+async def authenticate_user_by_google(
+    db_session: AsyncSession,
+    *,
+    id_token: str,
+    signup_source: SignupSource,
+    referred_by_username: str,
+) -> User:
+    """Authenticate user using Google ID token.
+
+    Args:
+        db_session: Database session
+        id_token: Google ID token
+        signup_source: How the user came to know the app
+        referred_by_username: Username of referring user
+        country_code: Country code for the user
+
+    Returns:
+        Authenticated user
+
+    Raises:
+        InvalidTokenError: If token is invalid
+        AccountExistsError: If account exists with different auth method
+    """
+    google_user_info = await external_auth.verify_google_id_token(id_token)
+
+    existing_user = await get_user(db_session, google_id=google_user_info.sub)
+    if existing_user:
+        return existing_user
+
+    existing_user = await get_user(db_session, email=google_user_info.email)
+    if existing_user:
+        if google_user_info.email_verified:
+            # oh, sorry, this email on your google account must be yours! let me give
+            # you access to this existing account!
+            await db_session.execute(
+                update(User)
+                .where(User.id == existing_user.id)
+                .values(
+                    google_id=google_user_info.sub,
+                    hashed_password="",
+                    apple_id="",
+                )
+            )  # needs to be one query so as not to fail the constraint
+            return existing_user
+        # you're going to have to do more to convince me that this email on
+        # your google account is yours
+        raise AccountExistsError
+
+    # there is no user with the same email nor google_id
+
+    return await _create_social_user(
+        db_session,
+        name=google_user_info.name,
+        email=google_user_info.email,
+        google_id=google_user_info.sub,
+        signup_source=signup_source,
+        referred_by_username=referred_by_username,
+    )
+
+
+async def authenticate_user_by_apple(
+    db_session: AsyncSession,
+    *,
+    id_token: str,
+    name: str | None = None,
+    signup_source: SignupSource,
+    referred_by_username: str,
+) -> User:
+    """Authenticate user using Apple ID token.
+
+    Args:
+        db_session: Database session
+        id_token: Apple ID token
+        name: Name of the user. Can be None because the user may be just logging in,
+        not signing up.
+        signup_source: How the user came to know the app.
+        Defaults to SignupSource.UNKNOWN.
+    Returns:
+        Authenticated user
+
+    Raises:
+        InvalidTokenError: If token is invalid
+        AccountExistsError: If account exists with different auth method
+    """
+    user_info = await external_auth.verify_apple_id_token(id_token)
+
+    existing_user = await get_user(db_session, apple_id=user_info.sub)
+    if existing_user:
+        return existing_user
+
+    existing_user = await get_user(db_session, email=user_info.email)
+    if existing_user:
+        if user_info.email_verified:
+            # oh, sorry, this email on your apple account must be yours! let
+            # me give you access to this existing account!
+            await db_session.execute(
+                update(User)
+                .where(User.id == existing_user.id)
+                .values(
+                    apple_id=user_info.sub,
+                    hashed_password="",
+                    google_id="",
+                )
+            )  # needs to be one query so as not to fail the constraint
+            return existing_user
+        # you're going to have to do more to convince me that
+        # this email on your apple account is yours
+        raise AccountExistsError
+    # Keep original logic - require name, but provide fallback for deleted users
+    if name is None:
+        # This is the original error case - but let's try to recover for deleted users
+        logger.warning(
+            f"Apple didn't provide name for user {user_info.sub}. Attempting fallback."
+        )
+
+        # Try to generate a name from email if available
+        if user_info.email and not user_info.email.startswith("apple.user."):
+            # We have a real email, generate name from it
+            fallback_name = _generate_name_from_email(user_info.email)
+            logger.info(
+                f"Generated fallback name '{fallback_name}' from Apple email for"
+                " deleted user"
+            )
+            name = fallback_name
+        else:
+            # No real email available, use generic name as last resort
+            name = "Apple User"
+            logger.info(
+                "Using generic 'Apple User' name - no email or name from Apple"
+                " (likely deleted user)"
+            )
+
+    return await _create_social_user(
+        db_session,
+        name=name,
+        email=user_info.email,
+        apple_id=user_info.sub,
+        signup_source=signup_source,
+        referred_by_username=referred_by_username,
+    )
+
+
+def _generate_name_from_email(email: str) -> str:
+    """Generate a display name from an email address.
+
+    Args:
+        email: The email address to generate a name from
+
+    Returns:
+        A human-readable name based on the email
+
+    Examples:
+        "john.doe@example.com" -> "John Doe"
+        "jane_smith123@gmail.com" -> "Jane Smith"
+        "user@domain.co" -> "User"
+    """
+    # Extract the local part (before @)
+    local_part = email.split("@")[0]
+
+    # Replace common separators with spaces
+    name_parts = local_part.replace(".", " ").replace("_", " ").replace("-", " ")
+
+    # Remove numbers and special characters, keep only letters and spaces
+    clean_name = "".join(
+        char for char in name_parts if char.isalpha() or char.isspace()
+    )
+
+    # Split into words, capitalize each, and join
+    words = [word.capitalize() for word in clean_name.split() if word]
+
+    if not words:
+        # Fallback if no valid words found
+        return "User"
+
+    return " ".join(words)
+
+
+def _normalize_username(raw_name: str) -> str:
+    """Normalize a name to create a username.
+
+    Args:
+        raw_name: The raw name to normalize
+
+    Returns:
+        Normalized username
+    """
+    nfkd_form = unicodedata.normalize("NFKD", raw_name)
+    no_accents = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+    no_spaces = no_accents.replace(" ", "_")
+    only_alnum = re.sub(r"[^a-zA-Z0-9_]", "", no_spaces)
+    return only_alnum.lower()
+
+
+async def get_user(
+    db_session: AsyncSession,
+    *,
+    username: str | None = None,
+    id: int | None = None,  # noqa: A002
+    phone_number: str | None = None,
+    email: str | None = None,
+    google_id: str | None = None,
+    apple_id: str | None = None,
+    exclude_sentinel: bool = True,
+) -> User | None:
+    """Get a user by either username or user_id.
+
+    Args:
+        db_session: The database session
+        username: Username to look up. Defaults to None.
+        id: User ID to look up. Defaults to None.
+        phone_number: Phone number to look up. Defaults to None.
+        email: Email to look up. Defaults to None.
+        google_id: Google ID to look up. Defaults to None.
+        apple_id: Apple ID to look up. Defaults to None.
+        exclude_sentinel: Whether to exclude sentinel usernames. Defaults to True.
+
+    Returns:
+        The found user
+
+    Raises:
+        UserNotFound: If no user is found
+        ValueError: If neither username nor user_id is provided
+    """
+
+    if username is not None:
+        stmt = select(User).where(User.username == username.strip())
+    elif id is not None:
+        stmt = select(User).where(User.id == id)
+    elif phone_number is not None:
+        stmt = select(User).where(User.phone_number == phone_number)
+    elif email is not None:
+        stmt = select(User).where(User.email == email.strip().lower())
+    elif google_id is not None:
+        stmt = select(User).where(User.google_id == google_id)
+    elif apple_id is not None:
+        stmt = select(User).where(User.apple_id == apple_id)
+    else:
+        raise ValueError(
+            "Must provide either username, user_id, phone_number,"
+            " email, google_id, or apple_id"
+        )
+
+    if exclude_sentinel:
+        stmt = stmt.where(~User.username.in_(SENTINEL_USERNAMES))
+
+    return (await db_session.scalars(stmt)).first()
+
+
+async def create_user_by_password(
+    db_session: AsyncSession,
+    *,
+    name: str,
+    password: str,
+    email: str,
+    referred_by_username: str | None,
+    signup_source: SignupSource,
+) -> User:
+    """Create a new user, choosing a username based on the name.
+
+    Args:
+        db_session: The database session
+        name: The name of the user to create
+        password: The password of the user to create
+        email: The email of the user to create
+        referred_by_username: The username of the user who referred the new user.
+        Defaults to None.
+        signup_source: How the user came to know the app.
+        Defaults to SignupSource.UNKNOWN.
+
+    Raises:
+        ReferredByNotFoundError: The referred by user was not found
+        UsernameAlreadyExists: There's a user with this username, case insensitive
+        PhoneNumberAlreadyExists: There's a user with this phone number
+        EmailAlreadyExists: There's a user with this email
+
+    Returns:
+        The created user
+    """
+    return await _create_user(
+        db_session,
+        name=name,
+        email=email,
+        signup_source=signup_source,
+        referred_by_username=referred_by_username,
+        hashed_password=get_password_hash(password),
+        google_id=None,
+        apple_id=None,
+    )
+
+
+async def delete_user(
+    db_session: AsyncSession, user: User, current_password: str
+) -> None:
+    """Delete a user after password verification.
+
+    Args:
+        db_session: The database session
+        user: The user to delete
+        current_password: Current password for verification
+
+    Raises:
+        InvalidCredentialsError: If password is incorrect
+    """
+    # TODO: improve dealing with google and apple users
+    if (
+        not user.google_id
+        and not user.apple_id
+        and not verify_password(current_password, user.hashed_password)
+    ):
+        raise InvalidCredentialsError
+
+    logger.info(f"Deleting user {user.id}")
+    # TODO: delete from analytics too
+    await db_session.delete(user)
+    await db_session.flush()
+
+
+async def get_sentinel_users(db_session: AsyncSession) -> list[User]:
+    """Get all sentinel users (system users).
+
+    Args:
+        db_session: The database session
+
+    Returns:
+        List of sentinel users
+    """
+    return list(
+        (
+            await db_session.scalars(
+                select(User).where(User.username.in_(SENTINEL_USERNAMES))
+            )
+        ).all()
+    )
+
+
+async def to_other_user_out(
+    db_session: AsyncSession,
+    user_ids: list[int],
+) -> list[User]:
+    """Convert user IDs to OtherUserOut objects.
+
+    Args:
+        db_session: The database session
+        user_ids: List of user IDs to convert
+
+    Returns:
+        List of OtherUserOut objects
+    """
+    result = await db_session.scalars(
+        select(User)
+        .where(User.id.in_(user_ids))
+        .options(
+            selectinload(User.current_education),
+            selectinload(User.intended_education),
+        )
+    )
+    return list(result.all())
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a plain password against its hashed version.
+
+    Args:
+        plain_password: The plain text password to verify
+        hashed_password: The hashed password to verify against
+
+    Returns:
+        True if password matches, False otherwise
+    """
+    ph = PasswordHasher()
+    try:
+        ph.verify(hashed_password, plain_password)
+    except VerifyMismatchError:
+        return False
+    else:
+        return True
+
+
+def get_password_hash(password: str) -> str:
+    """Generate a hash for the given password.
+
+    Args:
+        password: The plain text password to hash
+
+    Returns:
+        The hashed password
+    """
+    ph = PasswordHasher()
+    return ph.hash(password)
+
+
+class ResetPasswordTokenData(BaseModel):
+    user_id: int
+    email: str
+    expires_at: AwareDatetime
+
+
+async def request_password_reset(
+    request: Request, db_session: AsyncSession, email: str
+) -> None:
+    """Request password reset for user by email"""
+    user = await get_user(db_session, email=email)
+    if not user:
+        return
+
+    # Generate secure token
+    token = secrets.token_urlsafe(32)
+
+    now = datetime.now(UTC)
+
+    # Store token with expiration (15 minutes)
+    token_data = ResetPasswordTokenData(
+        user_id=user.id,
+        email=email,
+        expires_at=now + timedelta(minutes=15),
+    )
+
+    await get_redis().setex(
+        f"reset_token:{token}",
+        timedelta(minutes=15),
+        token_data.model_dump_json(),
+    )
+
+    await send_password_reset_email(request, email, token)
+
+
+async def get_valid_reset_token(token: str) -> ResetPasswordTokenData:
+    """Get a valid reset token"""
+    try:
+        token_data = ResetPasswordTokenData.model_validate_json(
+            await get_redis().get(f"reset_token:{token}")
+        )
+    except ValidationError as e:
+        raise InvalidResetTokenError(
+            f"Invalid or expired reset token: {e.errors()}"
+        ) from e
+
+    if token_data.expires_at < datetime.now(UTC):
+        raise InvalidResetTokenError("Reset token has expired")
+    return token_data
+
+
+async def reset_password(
+    db_session: AsyncSession, token: str, new_password: str
+) -> bool:
+    """Reset password using token from email"""
+    # Get token data
+    token_data = await get_valid_reset_token(token)
+
+    # Get user and update password
+    user = await get_user(db_session, id=token_data.user_id)
+    if not user:
+        raise UserNotFoundError("User not found")
+
+    user.hashed_password = get_password_hash(new_password)
+
+    # Delete used token
+    await get_redis().delete(f"reset_token:{token}")
+
+    return True

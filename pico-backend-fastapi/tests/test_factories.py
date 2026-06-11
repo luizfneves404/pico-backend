@@ -1,0 +1,18 @@
+import pytest
+
+from app.users.models import User
+from app.users.service import verify_password
+
+
+@pytest.mark.usefixtures("session")
+async def test_create_user(user: User) -> None:
+    """Test creating a user with the factory."""
+    # Verify the user was created with default values
+    assert user.username.startswith("user")
+    assert user.email == f"{user.username}@example.com"
+    assert user.phone_number.startswith("tel:+55-11-99999-9")
+    assert verify_password("defaultpassword", user.hashed_password)
+    assert user.is_superuser is False
+    assert user.is_bot is False
+    assert user.bot_difficulty is None
+    assert user.signup_source == "social"

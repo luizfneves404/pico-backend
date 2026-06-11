@@ -1,0 +1,74 @@
+import asyncio
+
+from pydantic import SecretStr
+
+from app.database import db_manager
+from app.users.models import User
+from app.users.schemas import SignupSource, UserIn
+from app.users.service import get_password_hash, get_user
+
+
+async def create_superuser(
+    username: str,
+    email: str,
+    password: str,
+) -> User | None:
+    """Create a superuser in the database.
+
+    Args:
+        username: The username for the superuser
+        email: The email for the superuser
+        phone_number: The phone number for the superuser
+        password: The password for the superuser
+
+    Returns:
+        The created User object if successful, None if user already exists
+    """
+    async with db_manager.use_db(), db_manager.session_with_transaction() as session:
+        # Check if user already exists
+        existing_user = await get_user(session, username=username)
+        if existing_user:
+            print(f"User {username} already exists")
+            return None
+
+        # Create new user
+        user_data = UserIn(
+            name=username,
+            email=email,
+            password=SecretStr(password),
+            referred_by_username="",
+            signup_source=SignupSource.OTHER,  # Mark as admin-created
+        )
+
+        hashed_password = get_password_hash(user_data.password.get_secret_value())
+        db_user = User(
+            name=str(user_data.name),
+            username=str(user_data.name),
+            email=str(user_data.email),
+            hashed_password=str(hashed_password),
+            is_superuser=True,
+            google_id="",
+            apple_id="",
+            instagram_account="",
+        )
+
+        session.add(db_user)
+        await session.flush()
+
+        print(f"Superuser {username} created successfully")
+        return db_user
+
+
+async def main():
+    """Main function to create a superuser."""
+    username = input("Enter username: ")
+    email = input("Enter email: ")
+    password = input("Enter password: ")
+
+    user = await create_superuser(username, email, password)
+    if user:
+        print(f"Superuser created successfully with ID: {user.id}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -1,0 +1,107 @@
+[project]
+name = "pico-backend"
+version = "0.1.0"
+description = ""
+authors = []
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "sqlalchemy>=2.0.38,<3.0.0",
+    "asyncpg>=0.30.0,<0.31.0",
+    "pydantic-settings>=2.8.1,<3.0.0",
+    "PyJWT[crypto]>=2.10.1,<3.0.0",
+    "sqlalchemy-utils>=0.41.2,<0.42.0",
+    "pydantic-extra-types>=2.10.2,<3.0.0",
+    "boto3>=1.37.3,<2.0.0",
+    "pydantic[email]>=2.10.6,<3.0.0",
+    "phonenumbers>=8.13.55,<9.0.0",
+    "redis[hiredis]<6.0.0",
+    "arq>=0.26.3,<0.27.0",
+    "python-multipart>=0.0.20,<0.0.21",
+    "sqladmin[full]>=0.21.0,<0.22.0",
+    "openai>=1.68.2,<2.0.0",
+    "tiktoken>=0.9.0,<0.10.0",
+    "pylatexenc>=2.10,<3.0",
+    "firebase-admin>=6.7.0,<7.0.0",
+    "fastapi[standard]>=0.115.10,<0.116.0",
+    "uvicorn[standard]>=0.34.0,<0.35.0",
+    "alembic>=1.14.1,<2.0.0",
+    "amazon-textract-textractor>=1.9.1,<2.0.0",
+    "pgvector>=0.4.1,<0.5.0",
+    "semchunk>=3.2.1,<4.0.0",
+    "reportlab>=4.4.0,<5.0.0",
+    "babel>=2.17.0,<3.0.0",
+    "psycopg[binary, pool]>=3.2.7,<4.0.0",
+    "google-genai>=1.13.0,<2.0.0",
+    "coverage>=7.8.0,<8.0.0",
+    "pydeps>=3.0.1,<4.0.0",
+    "argon2-cffi>=23.1.0,<24.0.0",
+    "cryptography>=45.0.3,<46.0.0",
+    "geoalchemy2>=0.17.1,<0.18.0",
+    "logfire[fastapi,redis,sqlalchemy]>=4.3.1",
+    "opentelemetry-instrumentation-arq>=0.50b0",
+    "testcontainers[redis]>=4.12.0",
+]
+
+[dependency-groups]
+test = [
+    "pytest>=8.3.4,<9",
+    "pytest-xdist>=3.6.1,<4",
+    "httpx>=0.28.1,<0.29.0",
+    "httpx-ws>=0.7.2,<0.8.0",
+    "factory-boy>=3.3.3,<4.0.0",
+]
+dev = [
+    "sqlacodegen[pgvector]>=3.0.0,<4",
+    "types-boto3[essential]>=1.37.28,<2",
+    "pytest-cov>=6.1.1,<7",
+    "ruff>=0.12.10",
+    "pre-commit>=4.3.0",
+]
+
+[tool.uv]
+package = false
+default-groups = [
+    "test",
+    "dev",
+]
+
+[tool.ruff]
+line-length = 88 # default for black: https://black.readthedocs.io/en/stable/the_black_code_style/current_style.html
+lint.select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+    "A", # Builtin shadowing
+    "RUF", # Ruff specific rules
+    "PERF", # Performance rules
+    "FURB", # Refurbish the codebase
+    "PT", # pytest
+    "ARG", # unused args
+    "PTH", # use pathlib
+    "PL", # pylint
+    "TC", # type checking
+    "TRY", # tryceratops
+    "DTZ", # datetimezone
+    "LOG", # logging
+    "RET", # return statements
+]
+lint.ignore = ["E501", "PLR2004", "PLW0603", "PLR0912", "PLR0913", "PLR0915", "PLR0911","TRY003", "RET506", "RET505"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends", "fastapi.Query", "fastapi.params.Query", "fastapi.Form", "fastapi.File"]
+
+
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
