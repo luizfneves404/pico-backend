@@ -24,14 +24,14 @@ services:
 
       - ADMIN_URL=admin
       - AWS_SES_FROM_EMAIL=pico@example.com
-      - DATABASE_URL=postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@postgres:5432/picodb
+      - DATABASE_URL=postgresql+asyncpg://postgres:${DB_PASSWORD}@postgres:5432/picodb
       - DATABASE_SSL_VERIFY_FULL=false
       - DOCS_URL=/docs
       - ENVIRONMENT=test
       - OPENAPI_API_KEY=123456
       - OPENAPI_URL=/openapi.json
       - REDIS_URL=redis://redis:6379 # isn't used because we use testcontainers for redis
-      - SECRET_KEY=REDACTED_SECRET_KEY
+      - SECRET_KEY=${SECRET_KEY}
       - STORAGE__BACKEND=local
       - STORAGE__BASE_PATH=storage
       - TEXTRACT_PROFILE_NAME=eonfweogfnw-2385545
@@ -66,12 +66,12 @@ services:
         - PGVECTOR_VERSION=v0.8.0
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: REDACTED_DB_PASSWORD
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
       DB_NAME: picodb
     volumes:
       - ./docker/docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 5

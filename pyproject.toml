@@ -2,7 +2,7 @@
 name = "pico-backend"
 version = "0.1.0"
 description = ""
-authors = [{ name = "Luiz Felipe Neves", email = "luizfneves@proton.me" }]
+authors = []
 requires-python = ">=3.12,<4.0"
 dependencies = [
     "sqlalchemy>=2.0.38,<3.0.0",

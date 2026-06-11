@@ -7,7 +7,7 @@ services:
     environment:
       - DOCKER_HOST=tcp://127.0.0.1:2375
       # Override the database URL to use localhost for the CI's host network
-      - DATABASE_URL=postgresql+asyncpg://postgres:REDACTED_DB_PASSWORD@localhost:5432/picodb
+      - DATABASE_URL=postgresql+asyncpg://postgres:${DB_PASSWORD}@localhost:5432/picodb
 
       - REDIS_URL=redis://localhost:6379 # isn't used, but might as well add for consistency
 
